@@ -4,6 +4,7 @@ import 'leaflet-control-geocoder';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet-control-geocoder/dist/Control.Geocoder.css';
 import 'leaflet-routing-machine';
+import '../App.css';
 
 
 interface LatLng {
@@ -36,6 +37,13 @@ interface TileLayerConfig {
   };
 }
 
+interface LocationSuggestion {
+  display_name: string;
+  lat: string;
+  lon: string;
+  place_id: string;
+}
+
 export const MapView = () => {
   const [routeMode, setRouteMode] = useState(false);
   const [startPoint, setStartPoint] = useState<LatLng | null>(null);
@@ -48,6 +56,23 @@ export const MapView = () => {
   const [terrainData, setTerrainData] = useState<TerrainData | null>(null);
   const [isTerrainMode, setIsTerrainMode] = useState(false);
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(false);
+  
+  // New states for route planner modal
+  const [showRoutePlannerModal, setShowRoutePlannerModal] = useState(false);
+  const [startLocationInput, setStartLocationInput] = useState('');
+  const [endLocationInput, setEndLocationInput] = useState('');
+  const [startSuggestions, setStartSuggestions] = useState<LocationSuggestion[]>([]);
+  const [endSuggestions, setEndSuggestions] = useState<LocationSuggestion[]>([]);
+  const [selectedStartLocation, setSelectedStartLocation] = useState<LocationSuggestion | null>(null);
+  const [selectedEndLocation, setSelectedEndLocation] = useState<LocationSuggestion | null>(null);
+  const [showStartSuggestions, setShowStartSuggestions] = useState(false);
+  const [showEndSuggestions, setShowEndSuggestions] = useState(false);
+  const [routeOptions, setRouteOptions] = useState({
+    avoidFloods: false,
+    highGround: false,
+    fastest: true,
+    safest: false
+  });
   
   const mapRef = useRef<L.Map | null>(null);
   const routingControlRef = useRef<any>(null);
@@ -69,6 +94,147 @@ export const MapView = () => {
     iconAnchor: [12, 41],
     popupAnchor: [1, -34]
   });
+
+  // Geocoding function for location search
+  const searchLocations = async (query: string): Promise<LocationSuggestion[]> => {
+    if (query.length < 3) return [];
+    
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`
+      );
+      const data = await response.json();
+      return data.map((item: any) => ({
+        display_name: item.display_name,
+        lat: item.lat,
+        lon: item.lon,
+        place_id: item.place_id
+      }));
+    } catch (error) {
+      console.error('Error searching locations:', error);
+      return [];
+    }
+  };
+
+  // Handle start location input change
+  useEffect(() => {
+    const searchTimeout = setTimeout(async () => {
+      if (startLocationInput.length >= 3) {
+        const suggestions = await searchLocations(startLocationInput);
+        setStartSuggestions(suggestions);
+        setShowStartSuggestions(true);
+      } else {
+        setStartSuggestions([]);
+        setShowStartSuggestions(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(searchTimeout);
+  }, [startLocationInput]);
+
+  // Handle end location input change
+  useEffect(() => {
+    const searchTimeout = setTimeout(async () => {
+      if (endLocationInput.length >= 3) {
+        const suggestions = await searchLocations(endLocationInput);
+        setEndSuggestions(suggestions);
+        setShowEndSuggestions(true);
+      } else {
+        setEndSuggestions([]);
+        setShowEndSuggestions(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(searchTimeout);
+  }, [endLocationInput]);
+
+  // Handle selecting start location
+  const handleSelectStartLocation = (location: LocationSuggestion) => {
+    setSelectedStartLocation(location);
+    setStartLocationInput(location.display_name);
+    setStartSuggestions([]);
+    setShowStartSuggestions(false);
+    setStartPoint({ lat: parseFloat(location.lat), lng: parseFloat(location.lon) });
+  };
+
+  // Handle selecting end location
+  const handleSelectEndLocation = (location: LocationSuggestion) => {
+    setSelectedEndLocation(location);
+    setEndLocationInput(location.display_name);
+    setEndSuggestions([]);
+    setShowEndSuggestions(false);
+    setEndPoint({ lat: parseFloat(location.lat), lng: parseFloat(location.lon) });
+  };
+
+  // Handle find route button click
+  const handleFindRoute = () => {
+    if (selectedStartLocation && selectedEndLocation) {
+      setShowRoutePlannerModal(false);
+      setRouteMode(true);
+      
+      // Clear existing markers
+      markersRef.current.forEach(marker => {
+        if (mapRef.current && mapRef.current.hasLayer(marker)) {
+          mapRef.current.removeLayer(marker);
+        }
+      });
+      markersRef.current = [];
+
+      // Add markers for start and end points
+      if (mapRef.current) {
+        const startMarker = L.marker([startPoint!.lat, startPoint!.lng], { icon: startIcon })
+          .addTo(mapRef.current)
+          .bindPopup('Start: ' + selectedStartLocation.display_name);
+        
+        const endMarker = L.marker([endPoint!.lat, endPoint!.lng], { icon: endIcon })
+          .addTo(mapRef.current)
+          .bindPopup('End: ' + selectedEndLocation.display_name);
+        
+        markersRef.current.push(startMarker, endMarker);
+      }
+    }
+  };
+
+  // Use current location for start point
+  const useCurrentLocationAsStart = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        
+        // Reverse geocode to get location name
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`
+          );
+          const data = await response.json();
+          
+          const locationData: LocationSuggestion = {
+            display_name: data.display_name || 'Current Location',
+            lat: lat.toString(),
+            lon: lng.toString(),
+            place_id: 'current'
+          };
+          
+          handleSelectStartLocation(locationData);
+        } catch (error) {
+          // Fallback if reverse geocoding fails
+          const locationData: LocationSuggestion = {
+            display_name: `Current Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
+            lat: lat.toString(),
+            lon: lng.toString(),
+            place_id: 'current'
+          };
+          
+          handleSelectStartLocation(locationData);
+        }
+      }, (error) => {
+        alert('Unable to get current location: ' + error.message);
+      });
+    } else {
+      alert('Geolocation is not supported by this browser');
+    }
+  };
 
   // Define tile layers with working URLs
   const tileLayers: Record<string, TileLayerConfig> = {
@@ -379,25 +545,10 @@ export const MapView = () => {
   .on('markgeocode', function (e: any) {
         const latlng = e.geocode.center;
         map.setView(latlng, 16);
-        if (!startPoint) {
-          setStartPoint(latlng);
-          const marker = L.marker(latlng, { icon: startIcon })
-            .addTo(map)
-            .bindPopup('Start Point')
-            .openPopup();
-          markersRef.current.push(marker);
-        } else if (!endPoint) {
-          setEndPoint(latlng);
-          const marker = L.marker(latlng, { icon: endIcon })
-            .addTo(map)
-            .bindPopup('End Point')
-            .openPopup();
-          markersRef.current.push(marker);
-        }
       })
       .addTo(map);
 
-    // 2. SECOND: Add routing button control
+    // 2. SECOND: Add routing button control (MODIFIED to show modal)
     const RoutingBtn = L.Control.extend({
       options: {
         position: 'topleft'
@@ -405,7 +556,7 @@ export const MapView = () => {
       onAdd: function () {
         const btn = L.DomUtil.create('button', 'leaflet-control-custom');
         
-        btn.style.background = routeMode ? '#27ae60' : '#451ae0ff';
+        btn.style.background = '#451ae0ff';
         btn.style.border = '2px solid #190fd8ff';
         btn.style.width = '170px';
         btn.style.height = '37px';
@@ -425,12 +576,12 @@ export const MapView = () => {
         const text = L.DomUtil.create('span', '', btn);
         text.innerText = 'Plan Route';
         text.style.fontSize = '14px';
-        text.style.color = routeMode ? '#fefefeff' : '#ffffffff';
+        text.style.color = '#ffffffff';
         text.style.fontWeight = 'bold';
 
         btn.onclick = (e: Event) => {
           e.stopPropagation();
-          setRouteMode((prev) => !prev);
+          setShowRoutePlannerModal(true);
           setIsTerrainMode(false);
         };
 
@@ -475,26 +626,17 @@ export const MapView = () => {
         icon.style.filter = 'brightness(0) invert(1)';
         
         btn.appendChild(icon);
-        btn.title = 'Use My Location as Start';
+        btn.title = 'Use My Location';
 
         btn.onclick = (e: Event) => {
           e.stopPropagation();
-          if (!routeMode) setRouteMode(true);
-          if (!startPoint) {
-            if (navigator.geolocation) {
-              navigator.geolocation.getCurrentPosition((pos) => {
-                const latlng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                setStartPoint(latlng);
-                const marker = L.marker(latlng, { icon: startIcon })
-                  .addTo(map)
-                  .bindPopup('My Location (Start)')
-                  .openPopup();
-                markersRef.current.push(marker);
-                map.setView([latlng.lat, latlng.lng], 15);
-              });
-            } else {
-              alert('Geolocation not supported');
-            }
+          if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition((pos) => {
+              const latlng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+              map.setView([latlng.lat, latlng.lng], 15);
+            });
+          } else {
+            alert('Geolocation not supported');
           }
         };
         
@@ -633,29 +775,12 @@ export const MapView = () => {
     layersRef.current[mapLayer].addTo(mapRef.current);
   }, [mapLayer]);
 
-  // Map click handlers
+  // Map click handlers (only for terrain mode now)
   useEffect(() => {
     if (!mapRef.current) return;
 
     const handleMapClick = async (e: L.LeafletMouseEvent) => {
-      if (routeMode) {
-        // Routing logic
-        if (!startPoint) {
-          setStartPoint(e.latlng);
-          const marker = L.marker(e.latlng, { icon: startIcon })
-            .addTo(mapRef.current!)
-            .bindPopup('Start Point')
-            .openPopup();
-          markersRef.current.push(marker);
-        } else if (!endPoint) {
-          setEndPoint(e.latlng);
-          const marker = L.marker(e.latlng, { icon: endIcon })
-            .addTo(mapRef.current!)
-            .bindPopup('End Point')
-            .openPopup();
-          markersRef.current.push(marker);
-        }
-      } else if (isTerrainMode) {
+      if (isTerrainMode) {
         // Terrain analysis
         const { lat, lng } = e.latlng;
         const elevationData = await getElevationData(lat, lng);
@@ -688,11 +813,11 @@ export const MapView = () => {
     return () => {
       mapRef.current!.off('click', handleMapClick);
     };
-  }, [routeMode, startPoint, endPoint, isTerrainMode]);
+  }, [isTerrainMode]);
 
   // Routing logic
   useEffect(() => {
-    if (startPoint && endPoint && mapRef.current) {
+    if (startPoint && endPoint && mapRef.current && routeMode) {
       if (routingControlRef.current) {
         routingControlRef.current.remove();
         routingControlRef.current = null;
@@ -714,7 +839,7 @@ export const MapView = () => {
         routeWhileDragging: false,
         showAlternatives: false,
         lineOptions: {
-          styles: [{ color: '#0078ff', opacity: 0.3, weight: 5 }]
+          styles: [{ color: '#0078ff', opacity: 0.8, weight: 5 }]
         },
         createMarker: () => null,
         collapsible: true,
@@ -730,15 +855,15 @@ export const MapView = () => {
           setRouteDetails({
             distance: (summary.totalDistance / 1000).toFixed(1) + ' km',
             time: Math.round(summary.totalTime / 60) + ' min',
-            startName: 'Start Point',
-            endName: 'End Point',
+            startName: selectedStartLocation?.display_name || 'Start Point',
+            endName: selectedEndLocation?.display_name || 'End Point',
             instructions: instructions.map((inst: any) => inst.text)
           });
           setShowRouteModal(true);
         }
       });
     }
-  }, [startPoint, endPoint, travelMode]);
+  }, [startPoint, endPoint, travelMode, routeMode, selectedStartLocation, selectedEndLocation]);
 
   // Get layer display name
   const getLayerDisplayName = (layer: string): string => {
@@ -757,6 +882,15 @@ export const MapView = () => {
     setEndPoint(null);
     setRouteDetails(null);
     setShowRouteModal(false);
+    setRouteMode(false);
+    setStartLocationInput('');
+    setEndLocationInput('');
+    setSelectedStartLocation(null);
+    setSelectedEndLocation(null);
+    setStartSuggestions([]);
+    setEndSuggestions([]);
+    setShowStartSuggestions(false);
+    setShowEndSuggestions(false);
     markersRef.current.forEach(marker => {
       if (mapRef.current && mapRef.current.hasLayer(marker)) {
         mapRef.current.removeLayer(marker);
@@ -835,9 +969,7 @@ export const MapView = () => {
             borderRadius: '4px',
             flexGrow: 1
           }}>
-            {!startPoint && <p style={{ margin: 0 }}>Click on the map or use <b>My Location</b> to set START point</p>}
-            {startPoint && !endPoint && <p style={{ margin: 0 }}>Click on the map to set END point</p>}
-            {startPoint && endPoint && <p style={{ margin: 0 }}>Route calculated!</p>}
+            <p style={{ margin: 0 }}>Route planned from {selectedStartLocation?.display_name} to {selectedEndLocation?.display_name}</p>
           </div>
         )}
         
@@ -851,6 +983,7 @@ export const MapView = () => {
             gap: '3px',
             flexGrow: 1
           }}>
+            <p style={{ margin: 0 }}>Click on the map to analyze terrain elevation</p>
           </div>
         )}
 
@@ -940,6 +1073,393 @@ export const MapView = () => {
         )}
       </div>
 
+      {/* Route Planner Modal */}
+      {showRoutePlannerModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 10000
+        }}>
+          <div style={{
+            background: 'white',
+            borderRadius: '12px',
+            padding: '0',
+            width: '400px',
+            maxWidth: '90vw',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+            overflow: 'hidden'
+          }}>
+            {/* Header */}
+            <div style={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: 'white',
+              padding: '20px',
+              position: 'relative',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
+            }}>
+              <div style={{ fontSize: '24px' }}>🗺️</div>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold' }}>Route Planner</h2>
+              <button
+                onClick={() => setShowRoutePlannerModal(false)}
+                style={{
+                  position: 'absolute',
+                  top: '15px',
+                  right: '15px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'white',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  padding: '0',
+                  width: '30px',
+                  height: '30px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '50%',
+                  opacity: 0.8
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+                onMouseOut={(e) => e.currentTarget.style.background = 'none'}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Content */}
+            <div style={{ padding: '24px' }}>
+              {/* From Input */}
+              <div style={{ marginBottom: '20px', position: 'relative' }}>
+                <label style={{ 
+                  display: 'block', 
+                  marginBottom: '8px', 
+                  fontWeight: 'bold', 
+                  color: '#333',
+                  fontSize: '14px'
+                }}>
+                  From
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <div style={{
+                    position: 'absolute',
+                    left: '12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    width: '12px',
+                    height: '12px',
+                    background: '#22c55e',
+                    borderRadius: '50%',
+                    zIndex: 1
+                  }}></div>
+                  <input
+                    type="text"
+                    value={startLocationInput}
+                    onChange={(e) => setStartLocationInput(e.target.value)}
+                    placeholder="Choose starting point"
+                    style={{
+                      width: '100%',
+                      padding: '12px 12px 12px 32px',
+                      border: '2px solid #e5e7eb',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                    onFocus={() => setShowStartSuggestions(startSuggestions.length > 0)}
+                  />
+                  <button
+                    onClick={useCurrentLocationAsStart}
+                    style={{
+                      position: 'absolute',
+                      right: '8px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: '#667eea',
+                      border: 'none',
+                      color: 'white',
+                      padding: '6px 8px',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    📍 Current
+                  </button>
+                </div>
+                
+                {/* Start Location Suggestions */}
+                {showStartSuggestions && startSuggestions.length > 0 && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    background: 'white',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    maxHeight: '200px',
+                    overflowY: 'auto',
+                    zIndex: 1000
+                  }}>
+                    {startSuggestions.map((suggestion, index) => (
+                      <div
+                        key={index}
+                        onClick={() => handleSelectStartLocation(suggestion)}
+                        style={{
+                          padding: '12px',
+                          borderBottom: index < startSuggestions.length - 1 ? '1px solid #f3f4f6' : 'none',
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          color: '#374151'
+                        }}
+                        onMouseOver={(e) => e.currentTarget.style.background = '#f9fafb'}
+                        onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                      >
+                        📍 {suggestion.display_name}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Swap Button */}
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'center', 
+                marginBottom: '20px' 
+              }}>
+                <button
+                  onClick={() => {
+                    // Swap locations
+                    const tempStart = selectedStartLocation;
+                    const tempStartInput = startLocationInput;
+                    const tempStartPoint = startPoint;
+                    
+                    setSelectedStartLocation(selectedEndLocation);
+                    setStartLocationInput(endLocationInput);
+                    setStartPoint(endPoint);
+                    
+                    setSelectedEndLocation(tempStart);
+                    setEndLocationInput(tempStartInput);
+                    setEndPoint(tempStartPoint);
+                  }}
+                  style={{
+                    background: '#f3f4f6',
+                    border: '2px solid #e5e7eb',
+                    borderRadius: '50%',
+                    width: '40px',
+                    height: '40px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    fontSize: '18px'
+                  }}
+                >
+                  ⇅
+                </button>
+              </div>
+
+              {/* To Input */}
+              <div style={{ marginBottom: '24px', position: 'relative' }}>
+                <label style={{ 
+                  display: 'block', 
+                  marginBottom: '8px', 
+                  fontWeight: 'bold', 
+                  color: '#333',
+                  fontSize: '14px'
+                }}>
+                  To
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <div style={{
+                    position: 'absolute',
+                    left: '12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    width: '12px',
+                    height: '12px',
+                    background: '#ef4444',
+                    borderRadius: '50%',
+                    zIndex: 1
+                  }}></div>
+                  <input
+                    type="text"
+                    value={endLocationInput}
+                    onChange={(e) => setEndLocationInput(e.target.value)}
+                    placeholder="Choose destination"
+                    style={{
+                      width: '100%',
+                      padding: '12px 12px 12px 32px',
+                      border: '2px solid #e5e7eb',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                    onFocus={() => setShowEndSuggestions(endSuggestions.length > 0)}
+                  />
+                </div>
+                
+                {/* End Location Suggestions */}
+                {showEndSuggestions && endSuggestions.length > 0 && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    background: 'white',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    maxHeight: '200px',
+                    overflowY: 'auto',
+                    zIndex: 1000
+                  }}>
+                    {endSuggestions.map((suggestion, index) => (
+                      <div
+                        key={index}
+                        onClick={() => handleSelectEndLocation(suggestion)}
+                        style={{
+                          padding: '12px',
+                          borderBottom: index < endSuggestions.length - 1 ? '1px solid #f3f4f6' : 'none',
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          color: '#374151'
+                        }}
+                        onMouseOver={(e) => e.currentTarget.style.background = '#f9fafb'}
+                        onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                      >
+                        📍 {suggestion.display_name}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Find Route Button */}
+              <button
+                onClick={handleFindRoute}
+                disabled={!selectedStartLocation || !selectedEndLocation}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  background: (!selectedStartLocation || !selectedEndLocation) ? '#d1d5db' : '#667eea',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  cursor: (!selectedStartLocation || !selectedEndLocation) ? 'not-allowed' : 'pointer',
+                  marginBottom: '20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px'
+                }}
+              >
+                <span>⚡</span> Find Route
+              </button>
+
+              {/* Quick Options */}
+              <div>
+                <h4 style={{ 
+                  margin: '0 0 12px 0', 
+                  fontSize: '14px', 
+                  fontWeight: 'bold', 
+                  color: '#374151' 
+                }}>
+                  Quick Options:
+                </h4>
+                
+                <div style={{ 
+                  display: 'flex', 
+                  gap: '8px', 
+                  marginBottom: '12px',
+                  flexWrap: 'wrap'
+                }}>
+                  <button
+                    onClick={() => setRouteOptions(prev => ({ ...prev, avoidFloods: !prev.avoidFloods }))}
+                    style={{
+                      padding: '6px 12px',
+                      background: routeOptions.avoidFloods ? '#667eea' : '#f3f4f6',
+                      color: routeOptions.avoidFloods ? 'white' : '#374151',
+                      border: 'none',
+                      borderRadius: '16px',
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Avoid Floods
+                  </button>
+                  
+                  <button
+                    onClick={() => setRouteOptions(prev => ({ ...prev, highGround: !prev.highGround }))}
+                    style={{
+                      padding: '6px 12px',
+                      background: routeOptions.highGround ? '#667eea' : '#f3f4f6',
+                      color: routeOptions.highGround ? 'white' : '#374151',
+                      border: 'none',
+                      borderRadius: '16px',
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    High Ground
+                  </button>
+                </div>
+                
+                <div style={{ 
+                  display: 'flex', 
+                  gap: '8px',
+                  flexWrap: 'wrap'
+                }}>
+                  <button
+                    onClick={() => setRouteOptions(prev => ({ ...prev, fastest: !prev.fastest, safest: false }))}
+                    style={{
+                      padding: '6px 12px',
+                      background: routeOptions.fastest ? '#22c55e' : '#f3f4f6',
+                      color: routeOptions.fastest ? 'white' : '#374151',
+                      border: 'none',
+                      borderRadius: '16px',
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Fastest
+                  </button>
+                  
+                  <button
+                    onClick={() => setRouteOptions(prev => ({ ...prev, safest: !prev.safest, fastest: false }))}
+                    style={{
+                      padding: '6px 12px',
+                      background: routeOptions.safest ? '#22c55e' : '#f3f4f6',
+                      color: routeOptions.safest ? 'white' : '#374151',
+                      border: 'none',
+                      borderRadius: '16px',
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Safest
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Map Instructions */}
       <div style={{
         background: '#f8f9fa',
@@ -951,14 +1471,14 @@ export const MapView = () => {
         <h3 style={{ margin: '0 0 10px 0', color: '#495057' }}>Map Controls:</h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', fontSize: '0.9em' }}>
           <div><strong>🔍 Search:</strong> Find locations</div>
-          <div><strong>📍 Route Mode:</strong> Plan routes</div>
-          <div><strong>👤 My Location:</strong> Use current location</div>
+          <div><strong>📍 Route Mode:</strong> Plan routes with modal</div>
+          <div><strong>👤 My Location:</strong> Center on current location</div>
           <div><strong>🌈 Terrain Colors:</strong> Smooth elevation overlay</div>
           <div><strong>🗻 Terrain Mode:</strong> Analyze elevation</div>
         </div>
       </div>
 
-      {/* Terrain Data Modal */}
+ {/* Terrain Data Modal */}
       {showTerrainData && terrainData && (
         <div style={{
           backgroundColor: 'white',
