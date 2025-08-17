@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from 'react';
+import { MapView } from "../components/MapView"; // Your new MapView component
 import { NavigationBar } from "../components/NavigationBar";
-import { InteractiveMap } from "../components/InteractiveMap";
+// Remove the InteractiveMap import since we're replacing it
+// import { InteractiveMap } from "../components/InteractiveMap"; 
 import { RouteSearchTool } from "../components/RouteSearchTool";
 import { WeatherDashboard } from "../components/WeatherDashboard";
 import { AlertBanner } from "../components/AlertBanner";
@@ -59,9 +61,12 @@ const Index = () => {
               <WeatherDashboard />
             </div>
 
-            {/* Main Map Area */}
+            {/* Main Map Area - REPLACED InteractiveMap with MapView */}
             <div className="lg:col-span-4">
-              <InteractiveMap selectedRoute={selectedRoute} />
+              {/* Your MapView component instead of InteractiveMap */}
+              <div className="h-full w-full">
+                <MapView />
+              </div>
             </div>
           </div>
         </div>
