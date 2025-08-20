@@ -2,8 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { MapView } from "../components/MapView"; // Your new MapView component
 import { NavigationBar } from "../components/NavigationBar";
 import { AlertBanner } from "../components/AlertBanner";
-import { FooterActions } from "../components/FooterActions";
-import { RouteModal } from "../components/RouteModal";
 import { ReportModal } from "../components/ReportModal";
 import { EmergencyModal } from "../components/EmergencyModal";
 
@@ -36,26 +34,21 @@ const Index = () => {
             <div className="lg:col-span-4">
               {/* Your MapView component instead of InteractiveMap */}
               <div className="h-full w-full">
-                <MapView />
+             <MapView onModalOpen={setActiveModal} />
               </div>
             </div>
           </div>
         </div>
       </main>
 
-      {/* Footer Actions */}
-      <FooterActions onModalOpen={setActiveModal} />
-
       {/* Modals */}
-      {activeModal === "route" && (
-        <RouteModal onClose={() => setActiveModal(null)} />
-      )}
       {activeModal === "report" && (
         <ReportModal onClose={() => setActiveModal(null)} />
       )}
       {activeModal === "emergency" && (
         <EmergencyModal onClose={() => setActiveModal(null)} />
       )}
+
     </div>
   );
 };
