@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useEffect } from 'react';
 import { NavigationBar } from "../components/NavigationBar";
 import { AddFavoriteModal } from "../components/AddFavoriteModal";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,6 +16,9 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
 const MyRoutes = () => {
+   useEffect(() => {
+    document.body.style.overflow = 'auto';
+  }, []);
   const [activeTab, setActiveTab] = useState("history");
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddFavoriteOpen, setIsAddFavoriteOpen] = useState(false);

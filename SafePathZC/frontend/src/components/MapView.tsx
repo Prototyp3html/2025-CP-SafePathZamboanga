@@ -6,6 +6,7 @@ import 'leaflet-control-geocoder/dist/Control.Geocoder.css';
 import 'leaflet-routing-machine';
 import '../App.css';
 import { RouteModal } from './RouteModal';
+import { AlertBanner } from './AlertBanner';
 
 
 interface LatLng {
@@ -603,100 +604,210 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     });
     map.addControl(zoomControl);
 
-    // 4. FOURTH: Add "Use My Location" button
-    const MyLocBtn = L.Control.extend({
-      options: {
-        position: 'topleft'
-      },
-      onAdd: function () {
-        const btn = L.DomUtil.create('button', 'leaflet-bar leaflet-control leaflet-control-custom');
-        
-        btn.style.background = '#451ae0ff';
-        btn.style.width = '40px';
-        btn.style.height = '40px';
-        btn.style.borderRadius = '50%';
-        btn.style.cursor = 'pointer';
-        btn.style.border = '2px solid #190fd8ff';
-        btn.style.display = 'flex';
-        btn.style.alignItems = 'center';
-        btn.style.justifyContent = 'center';
-        btn.style.padding = '0';
-        btn.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
-        btn.style.marginTop = '10px';
-        
-        
-        const icon = document.createElement('img');
-        icon.src = '/icons/location.png';
-        icon.style.width = '24px';
-        icon.style.height = '24px';
-        icon.style.filter = 'brightness(0) invert(1)';
-        
-        btn.appendChild(icon);
-        btn.title = 'Use My Location';
-
-        btn.onclick = (e: Event) => {
-          e.stopPropagation();
-          if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition((pos) => {
-              const latlng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-              map.setView([latlng.lat, latlng.lng], 15);
-            });
-          } else {
-            alert('Geolocation not supported');
-          }
-        };
-        
-        return btn;
+    
+// 4. FOURTH: Add collapsible menu button
+const CollapsibleMenuBtn = L.Control.extend({
+  options: {
+    position: 'topleft'
+  },
+  onAdd: function () {
+    const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+    
+    // Main toggle button
+    const toggleBtn = L.DomUtil.create('button', 'leaflet-control-custom', container);
+    toggleBtn.style.cssText = `
+      background: #451ae0ff;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid #190fd8ff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      margin-bottom: 5px;
+    `;
+    
+    const toggleIcon = document.createElement('span');
+    toggleIcon.innerText = '⋯'; // Three dots icon
+    toggleIcon.style.cssText = `
+      color: white;
+      font-size: 20px;
+      font-weight: bold;
+      transform: rotate(90deg);
+    `;
+    toggleBtn.appendChild(toggleIcon);
+    toggleBtn.title = 'More Options';
+    
+    // Menu container
+    const menuContainer = L.DomUtil.create('div', '', container);
+    menuContainer.style.cssText = `
+      display: none;
+      flex-direction: column;
+      gap: 5px;
+      opacity: 0;
+      transform: translateY(-10px);
+      transition: all 0.3s ease;
+    `;
+    
+    let isMenuOpen = false;
+    
+    // 1. Location button
+    const locationBtn = L.DomUtil.create('button', 'leaflet-control-custom', menuContainer);
+    locationBtn.style.cssText = `
+      background: #451ae0ff;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid #190fd8ff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    `;
+    
+    const locationIcon = document.createElement('img');
+    locationIcon.src = '/icons/location.png';
+    locationIcon.style.cssText = `
+      width: 24px;
+      height: 24px;
+      filter: brightness(0) invert(1);
+    `;
+    locationBtn.appendChild(locationIcon);
+    locationBtn.title = 'Use My Location';
+    
+    // 2. Terrain analysis button
+    const terrainBtn = L.DomUtil.create('button', 'leaflet-control-custom', menuContainer);
+    terrainBtn.style.cssText = `
+      background: #451ae0ff;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid #190fd8ff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    `;
+    
+    const terrainIcon = document.createElement('img');
+    terrainIcon.src = '/icons/terrain.png';
+    terrainIcon.style.cssText = `
+      width: 24px;
+      height: 24px;
+      filter: brightness(0) invert(1);
+    `;
+    terrainBtn.appendChild(terrainIcon);
+    terrainBtn.title = 'Terrain Analysis';
+    
+    // 3. Map view toggle button
+    const mapViewBtn = L.DomUtil.create('button', 'leaflet-control-custom', menuContainer);
+    mapViewBtn.style.cssText = `
+      background: #451ae0ff;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid #190fd8ff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    `;
+    
+    const mapViewIcon = document.createElement('img');
+    mapViewIcon.src = '/icons/globe.png'; // Use your chosen icon here
+    mapViewIcon.style.cssText = `
+      width: 24px;
+      height: 24px;
+    `;
+    mapViewBtn.appendChild(mapViewIcon);
+    mapViewBtn.title = 'Toggle Map View';
+    
+    // Toggle menu function
+    const toggleMenu = () => {
+      isMenuOpen = !isMenuOpen;
+      
+      if (isMenuOpen) {
+        menuContainer.style.display = 'flex';
+        setTimeout(() => {
+          menuContainer.style.opacity = '1';
+          menuContainer.style.transform = 'translateY(0)';
+        }, 10);
+        toggleIcon.style.transform = 'rotate(90deg) scale(1.1)';
+        toggleBtn.style.background = '#5a2ef0ff';
+      } else {
+        menuContainer.style.opacity = '0';
+        menuContainer.style.transform = 'translateY(-10px)';
+        setTimeout(() => {
+          menuContainer.style.display = 'none';
+        }, 300);
+        toggleIcon.style.transform = 'rotate(90deg) scale(1)';
+        toggleBtn.style.background = '#451ae0ff';
       }
-    });
-    const myLocBtn = new MyLocBtn({ position: 'topleft' });
-    map.addControl(myLocBtn);
-
-    // 5. FIFTH: Add terrain analysis button
-    const TerrainBtn = L.Control.extend({
-      options: {
-        position: 'topleft'
-      },
-      onAdd: function () {
-        const btn = L.DomUtil.create('button', 'leaflet-bar leaflet-control leaflet-control-custom');
-        
-        btn.style.cssText = `
-          background: #451ae0ff;
-          width: 40px;
-          height: 40px;
-          border-radius: 50%;
-          cursor: pointer;
-          border: 2px solid #190fd8ff;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 0;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-          margin-top: 10px;
-        `;
-        
-         const icon = document.createElement('img');
-        icon.src = '/icons/terrain.png';
-        icon.style.width = '24px';
-        icon.style.height = '24px';
-        icon.style.filter = 'brightness(0) invert(1)';
-        
-        btn.appendChild(icon);
-        btn.title = 'Terrain Analysis'
-
-        btn.onclick = (e: Event) => {
-          e.stopPropagation();
-          setIsTerrainMode((prev) => !prev);
-          setRouteMode(false);
-        };
-        
-        return btn;
+    };
+    
+    // Event handlers
+    toggleBtn.onclick = (e: Event) => {
+      e.stopPropagation();
+      toggleMenu();
+    };
+    
+    // Location button functionality
+    locationBtn.onclick = (e: Event) => {
+      e.stopPropagation();
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition((pos) => {
+          const latlng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          mapRef.current?.setView([latlng.lat, latlng.lng], 15);
+        });
+      } else {
+        alert('Geolocation not supported');
       }
-    });
-    const terrainBtn = new TerrainBtn({ position: 'topleft' });
-    map.addControl(terrainBtn);
+    };
+    
+    // Terrain button functionality
+    terrainBtn.onclick = (e: Event) => {
+      e.stopPropagation();
+      setIsTerrainMode((prev) => !prev);
+      setRouteMode(false);
+    };
+    
+    // Map view toggle functionality
+    let currentLayerIndex = 0;
+    const layers = ['street', 'satellite', 'topo'];
+    
+    mapViewBtn.onclick = (e: Event) => {
+      e.stopPropagation();
+      currentLayerIndex = (currentLayerIndex + 1) % layers.length;
+      const nextLayer = layers[currentLayerIndex];
+      setMapLayer(nextLayer);
+      
+      const titles = {
+        street: 'Street Map',
+        satellite: 'Satellite View',
+        topo: 'Topographic View'
+      };
+      mapViewBtn.title = titles[nextLayer] || nextLayer;
+    };
+    
+    return container;
+  }
+});
 
-    // 6. SIXTH: Add terrain overlay toggle button
+const collapsibleMenuBtn = new CollapsibleMenuBtn({ position: 'topleft' });
+map.addControl(collapsibleMenuBtn);
+    
+
+
+    // 5. SIXTH: Add terrain overlay toggle button
     const TerrainOverlayBtn = L.Control.extend({
       options: {
         position: 'topright'
@@ -725,6 +836,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     gap: 8px;
     width: 100%;
   `;
+
   
   // Add mountain icon
   const icon = document.createElement('img');
@@ -916,56 +1028,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
   return (
     <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '10px', display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-          <label>Travel Mode:</label>
-          <select
-            value={travelMode}
-            onChange={e => setTravelMode(e.target.value)}
-            style={{ padding: '4px 8px', borderRadius: '4px' }}
-          >
-            <option value="car">Car</option>
-            <option value="motorcycle">Motorcycle</option>
-            <option value="foot">Walking</option>
-          </select>
-        </div>
-        
-        <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-          <label>Map View:</label>
-          <select
-            value={mapLayer}
-            onChange={e => setMapLayer(e.target.value)}
-            style={{ padding: '4px 8px', borderRadius: '4px' }}
-          >
-            <option value="street">Street Map</option>
-            <option value="terrain">Terrain</option>
-            <option value="satellite">Satellite</option>
-            <option value="topo">Topographic</option>
-          </select>
-        </div>
-
-        <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-          <label>
-            <input
-              type="checkbox"
-              checked={showTerrainOverlay}
-              onChange={e => setShowTerrainOverlay(e.target.checked)}
-              style={{ marginRight: '5px' }}
-            />
-            Terrain Colors
-          </label>
-        </div>
-
-        <div style={{
-          background: '#f0f8ff',
-          padding: '4px 8px',
-          borderRadius: '4px',
-          fontSize: '0.9em',
-          color: '#2c3e50'
-        }}>
-          Current: {getLayerDisplayName(mapLayer)}
-        </div>
-      </div>
+     
 
       <div style={{ marginBottom: '15px', display: 'flex', gap: '10px', alignItems: 'center' }}>
         {routeMode && (
@@ -1011,80 +1074,56 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         )}
       </div>
 
-     <div style={{ position: 'relative' }}>
-        <div
-          id="map"
-          style={{
-            height: '500px',
-            width: '100%',
-            borderRadius: '10px',
-            boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
-            marginBottom: '20px'
-          }}
-        ></div>
 
-        {/* Action Buttons */}
-        {onModalOpen && (
-          <div style={{
-            position: 'absolute',
-            top: '70px',
-            right: '10px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px',
-            zIndex: 1000
-          }}>
-            <button
-              onClick={() => onModalOpen('report')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                background: '#1e40af',
-                color: 'white',
-                padding: '12px 16px',
-                borderRadius: '8px',
-                minWidth: '140px',
-                height: '50px',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '600',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              <span>💬</span>
-              <span>Report Issue</span>
-            </button>
+  <div style={{ position: 'relative' }}>
+        {/* Alert Banner - positioned at the top of the map container */}
+        <div style={{   
+          position: 'fixed', 
+          top: 0, 
+          left: 0, 
+          right: 0, 
+          zIndex: 9999,
+          borderRadius: '1px 1px 0 0',
+          backgroundColor: '#d7913cff',
+          overflow: 'hidden',
+          color: '#000000'
+        }}>
+          <AlertBanner />
+        </div>
 
-            <button
-              onClick={() => onModalOpen('emergency')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                background: '#dc2626',
-                color: 'white',
-                padding: '12px 16px',
-                borderRadius: '8px',
-                minWidth: '140px',
-                height: '50px',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '600',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              <span>📞</span>
-              <span>Emergency</span>
-            </button>
-          </div>
-        )}
+       <div style={{ position: 'relative', marginTop: '60px' }}>
+  <div
+    id="map"
+    style={{
+      height: '500px',
+      width: '100%',
+      borderRadius: '10px',
+      boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
+      marginBottom: '20px'
+    }}
+  ></div>
+</div>
+{/* Action Buttons */}
+{onModalOpen && (
+  <div className="action-buttons-container">
+    <button
+      onClick={() => onModalOpen('report')}
+      className="action-button report-button"
+    >
+      <span>💬</span>
+      <span>Report Issue</span>
+    </button>
+
+    <button
+      onClick={() => onModalOpen('emergency')}
+      className="action-button emergency-button"
+    >
+      <span>📞</span>
+      <span>Emergency</span>
+    </button>
+  </div>
+)}
+
 
         {/* Elevation Legend - ONLY shows when showTerrainOverlay is true */}
         {showTerrainOverlay && (
@@ -1142,24 +1181,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         )}
       </div>
 
-      {/* Map Instructions */}
-      <div style={{
-        background: '#f8f9fa',
-        padding: '15px',
-        borderRadius: '8px',
-        marginBottom: '20px',
-        border: '1px solid #e9ecef'
-      }}>
-        <h3 style={{ margin: '0 0 10px 0', color: '#495057' }}>Map Controls:</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', fontSize: '0.9em' }}>
-          <div><strong>🔍 Search:</strong> Find locations</div>
-          <div><strong>📍 Route Mode:</strong> Plan routes with modal</div>
-          <div><strong>👤 My Location:</strong> Center on current location</div>
-          <div><strong>🌈 Terrain Colors:</strong> Smooth elevation overlay</div>
-          <div><strong>🗻 Terrain Mode:</strong> Analyze elevation</div>
-        </div>
-      </div>
-
+     
       {/* Add the RouteModal here */}
       {showRoutePlannerModal && (
         <RouteModal

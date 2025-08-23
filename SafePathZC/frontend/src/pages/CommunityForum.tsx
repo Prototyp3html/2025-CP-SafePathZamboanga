@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useEffect } from 'react';
 import { NavigationBar } from "../components/NavigationBar";
 import { CreatePostModal } from "../components/CreatePostModal";
 import { PostRepliesModal } from "../components/PostRepliesModal";
@@ -23,6 +24,9 @@ import {
 import { Badge } from "../components/ui/badge";
 
 const CommunityForum = () => {
+  useEffect(() => {
+    document.body.style.overflow = 'auto';
+  }, []);
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);

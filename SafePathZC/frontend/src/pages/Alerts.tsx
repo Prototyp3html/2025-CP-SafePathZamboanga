@@ -11,6 +11,9 @@ import { AlertSettingsModal } from '../components/AlertSettingsModal';
 import { AlertDetailsModal } from '../components/AlertDetailsModal';
 
 const Alerts = () => {
+  useEffect(() => {
+    document.body.style.overflow = 'auto';
+  }, []);
   const [activeTab, setActiveTab] = useState('warnings');
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);

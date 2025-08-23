@@ -1,4 +1,6 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { useLocation } from 'react-router-dom';
+import { useEffect } from 'react';
 import Index from "./pages/Index";
 import MyRoutes from "./pages/MyRoutes";
 import Alerts from "./pages/Alerts";
@@ -7,6 +9,8 @@ import Settings from "./pages/Settings";
 import Profile from "./pages/Profile";
 
 function App() {
+
+  
   return (
     <Router>
       <Routes>
@@ -21,5 +25,7 @@ function App() {
     </Router>
   );
 }
+
+
 
 export default App;

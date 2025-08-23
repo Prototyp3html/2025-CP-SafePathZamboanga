@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { MapView } from "../components/MapView"; // Your new MapView component
 import { NavigationBar } from "../components/NavigationBar";
-import { AlertBanner } from "../components/AlertBanner";
 import { ReportModal } from "../components/ReportModal";
 import { EmergencyModal } from "../components/EmergencyModal";
 
@@ -10,6 +9,14 @@ const Index = () => {
     "route" | "report" | "emergency" | null
   >(null);
   const [selectedRoute, setSelectedRoute] = useState<string>("");
+
+   useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    
+    return () => {
+      document.body.style.overflow = 'auto';
+    };
+  }, []);
 
   const handleRouteSelect = (route: string) => {
     setSelectedRoute(route);
@@ -20,8 +27,6 @@ const Index = () => {
     <div className="min-h-screen bg-gray-50 font-sans">
       <NavigationBar />
 
-      {/* Alert Banner */}
-      <AlertBanner />
 
       <main className="pt-16">
         {/* Main Content Grid */}
