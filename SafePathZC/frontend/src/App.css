@@ -47,9 +47,9 @@
 }
 
 .leaflet-control-zoom a {
-  background-color: rgb(255, 255, 255) !important;  /* Blue background */
-  color: rgb(19, 148, 207) !important;  /* White text/symbol */
-  border: 2px solid rgb(255, 255, 255) !important;  /* Blue border */
+  background-color: rgb(255, 255, 255) !important; /* Blue background */
+  color: rgb(19, 148, 207) !important; /* White text/symbol */
+  border: 2px solid rgb(255, 255, 255) !important; /* Blue border */
 }
 
 .logo {
@@ -91,33 +91,33 @@
 /* Add these animations to your CSS file (App.css or your main CSS file) */
 
 @keyframes fadeIn {
-  from { 
-    opacity: 0; 
+  from {
+    opacity: 0;
   }
-  to { 
-    opacity: 1; 
+  to {
+    opacity: 1;
   }
 }
 
 @keyframes slideInLeft {
-  from { 
-    transform: translateX(-100%); 
+  from {
+    transform: translateX(-100%);
     opacity: 0;
   }
-  to { 
-    transform: translateX(0); 
+  to {
+    transform: translateX(0);
     opacity: 1;
   }
 }
 
 .action-buttons-container {
   position: fixed;
-  top: 54vh;
+  top: 60vh;
   right: -0.7vw;
   transform: translateY(-50%);
   display: flex;
   flex-direction: column;
-  gap: 30px;
+  gap: 15px;
   z-index: 1000;
 }
 
@@ -152,7 +152,30 @@
   margin-top: 2px;
 }
 
+.weather-button {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+  margin-top: 2px;
+}
+
 .action-button:hover {
   transform: translateX(-5px);
   transition: transform 0.2s ease;
+}
+
+/* Responsive design for mobile devices */
+@media (max-width: 768px) {
+  .action-buttons-container {
+    top: 65vh;
+    right: 2px;
+    gap: 10px;
+  }
+
+  .action-button {
+    width: 35px;
+    min-height: 100px;
+    padding: 15px 10px;
+    font-size: 12px;
+  }
 }
