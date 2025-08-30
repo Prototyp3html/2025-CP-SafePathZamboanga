@@ -31,14 +31,12 @@ export const AddFavoriteModal = ({ isOpen, onClose, onAddFavorite }: AddFavorite
     }
 
     const newFavorite = {
-      id: Date.now(),
       name: formData.name,
-      from: formData.from,
-      to: formData.to,
+      from_location: formData.from,
+      to_location: formData.to,
       frequency: formData.frequency,
-      avgDuration: 'N/A',
-      lastUsed: 'Never',
-      riskLevel: formData.riskLevel
+      avg_duration: '15 mins', // Default duration
+      risk_level: formData.riskLevel
     };
 
     onAddFavorite(newFavorite);

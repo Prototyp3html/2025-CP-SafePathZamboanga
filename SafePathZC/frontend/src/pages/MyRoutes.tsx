@@ -1,159 +1,336 @@
-import { useState } from "react";
-import { useEffect } from 'react';
-import { NavigationBar } from "../components/NavigationBar";
-import { AddFavoriteModal } from "../components/AddFavoriteModal";
+import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { toast } from "sonner";
+import { Clock, MapPin, Star, Trash2, Repeat, Plus, Search, Calendar, BarChart3, Loader2, RefreshCw } from "lucide-react";
+import { NavigationBar } from "@/components/NavigationBar";
+import { AddFavoriteModal } from "@/components/AddFavoriteModal";
+import { useToast } from "@/hooks/use-toast";
+
+// API Types
+interface RouteHistory {
+  id: number;
+  from_location: string;
+  to_location: string;
+  date: string;
+  duration: string;
+  distance: string;
+  status: string;
+  weather_condition?: string;
+}
+
+interface FavoriteRoute {
+  id: number;
+  name: string;
+  from_location: string;
+  to_location: string;
+  frequency: string;
+  avg_duration: string;
+  last_used: string;
+  risk_level: string;
+}
+
+interface SearchHistory {
+  id: number;
+  query: string;
+  timestamp: string;
+  results_count: number;
+}
+
+interface AnalyticsSummary {
+  total_routes: number;
+  completed_routes: number;
+  completion_rate: number;
+  favorite_routes: number;
+  recent_searches: number;
+}
+
+const API_BASE_URL = "http://localhost:8000/api";
 
 const MyRoutes = () => {
-   useEffect(() => {
+  useEffect(() => {
     document.body.style.overflow = 'auto';
   }, []);
-  const [activeTab, setActiveTab] = useState("history");
-  const [searchTerm, setSearchTerm] = useState("");
+
+  const [searchQuery, setSearchQuery] = useState("");
   const [isAddFavoriteOpen, setIsAddFavoriteOpen] = useState(false);
+  const [routeHistory, setRouteHistory] = useState<RouteHistory[]>([]);
+  const [favoriteRoutes, setFavoriteRoutes] = useState<FavoriteRoute[]>([]);
+  const [recentSearches, setRecentSearches] = useState<SearchHistory[]>([]);
+  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const { toast } = useToast();
 
-  const [routeHistory, setRouteHistory] = useState([
-    {
-      id: 1,
-      from: "WMSU Main Campus",
-      to: "Ayala Mall Zamboanga",
-      date: "2024-06-25",
-      time: "08:30 AM",
-      duration: "25 mins",
-      distance: "8.5 km",
-      status: "completed",
-      weatherCondition: "Light Rain",
-    },
-    {
-      id: 2,
-      from: "Tetuan Junction",
-      to: "Veterans Avenue",
-      date: "2024-06-24",
-      time: "02:15 PM",
-      duration: "18 mins",
-      distance: "6.2 km",
-      status: "completed",
-      weatherCondition: "Heavy Rain",
-    },
-    {
-      id: 3,
-      from: "Canelar Road",
-      to: "Downtown Zamboanga",
-      date: "2024-06-23",
-      time: "07:45 AM",
-      duration: "32 mins",
-      distance: "12.1 km",
-      status: "interrupted",
-      weatherCondition: "Moderate Rain",
-    },
-  ]);
-
-  const [favoriteRoutes, setFavoriteRoutes] = useState([
-    {
-      id: 1,
-      name: "Home to Work",
-      from: "Barangay Tetuan",
-      to: "WMSU Campus",
-      frequency: "Daily",
-      avgDuration: "22 mins",
-      lastUsed: "2024-06-25",
-      riskLevel: "low",
-    },
-    {
-      id: 2,
-      name: "Shopping Trip",
-      from: "Downtown",
-      to: "Ayala Mall",
-      frequency: "Weekly",
-      avgDuration: "15 mins",
-      lastUsed: "2024-06-24",
-      riskLevel: "moderate",
-    },
-    {
-      id: 3,
-      name: "Airport Route",
-      from: "City Center",
-      to: "Zamboanga Airport",
-      frequency: "Monthly",
-      avgDuration: "45 mins",
-      lastUsed: "2024-06-20",
-      riskLevel: "high",
-    },
-  ]);
-
-  const [recentSearches, setRecentSearches] = useState([
-    {
-      id: 1,
-      query: "Canelar Road to Veterans Avenue",
-      timestamp: "2 hours ago",
-      results: 3,
-    },
-    {
-      id: 2,
-      query: "WMSU to Ayala Mall",
-      timestamp: "5 hours ago",
-      results: 2,
-    },
-    {
-      id: 3,
-      query: "Tetuan Junction alternatives",
-      timestamp: "1 day ago",
-      results: 4,
-    },
-    {
-      id: 4,
-      query: "Flood-safe routes downtown",
-      timestamp: "2 days ago",
-      results: 6,
-    },
-  ]);
-
-  const handleRepeatRoute = (route: any) => {
-    toast.success(`Repeating route: ${route.from} to ${route.to}`);
-    console.log("Repeating route:", route);
+  // Fetch data from API
+  const fetchRouteHistory = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/routes/history?limit=20`);
+      if (!response.ok) throw new Error('Failed to fetch route history');
+      const data = await response.json();
+      setRouteHistory(data);
+    } catch (err) {
+      console.error('Error fetching route history:', err);
+      setError('Failed to load route history');
+    }
   };
 
-  const handleSaveRoute = (route: any) => {
-    toast.success("Route saved to favorites!");
-    console.log("Saving route:", route);
+  const fetchFavoriteRoutes = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/routes/favorites`);
+      if (!response.ok) throw new Error('Failed to fetch favorite routes');
+      const data = await response.json();
+      setFavoriteRoutes(data);
+    } catch (err) {
+      console.error('Error fetching favorite routes:', err);
+      setError('Failed to load favorite routes');
+    }
   };
 
-  const handleDeleteFavorite = (routeId: number) => {
-    setFavoriteRoutes((prev) => prev.filter((route) => route.id !== routeId));
-    toast.success("Favorite route removed");
+  const fetchSearchHistory = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/search/history?limit=10`);
+      if (!response.ok) throw new Error('Failed to fetch search history');
+      const data = await response.json();
+      setRecentSearches(data);
+    } catch (err) {
+      console.error('Error fetching search history:', err);
+      setError('Failed to load search history');
+    }
   };
 
-  const handleClearSearches = () => {
-    setRecentSearches([]);
-    toast.success("Search history cleared");
+  const fetchAnalytics = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/analytics/routes-summary`);
+      if (!response.ok) throw new Error('Failed to fetch analytics');
+      const data = await response.json();
+      setAnalytics(data);
+    } catch (err) {
+      console.error('Error fetching analytics:', err);
+    }
   };
 
-  const handleExportHistory = () => {
-    toast.success("Route history exported successfully");
-    console.log("Exporting route history");
+  const loadAllData = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      await Promise.all([
+        fetchRouteHistory(),
+        fetchFavoriteRoutes(), 
+        fetchSearchHistory(),
+        fetchAnalytics()
+      ]);
+    } catch (err) {
+      console.error('Error loading data:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleAddFavorite = (newFavorite: any) => {
-    setFavoriteRoutes((prev) => [...prev, newFavorite]);
+  const refreshData = async () => {
+    setRefreshing(true);
+    await loadAllData();
+    setRefreshing(false);
+    toast({
+      title: "Data refreshed",
+      description: "All route data has been updated.",
+    });
   };
 
+  useEffect(() => {
+    loadAllData();
+  }, []);
+  // API Actions
+  const deleteRouteHistory = async (routeId: number) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/routes/history/${routeId}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error('Failed to delete route');
+      
+      setRouteHistory(prev => prev.filter(route => route.id !== routeId));
+      toast({
+        title: "Route deleted",
+        description: "Route has been removed from your history.",
+      });
+    } catch (err) {
+      console.error('Error deleting route:', err);
+      toast({
+        title: "Error",
+        description: "Failed to delete route. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const deleteFavoriteRoute = async (routeId: number) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/routes/favorites/${routeId}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error('Failed to delete favorite route');
+      
+      setFavoriteRoutes(prev => prev.filter(route => route.id !== routeId));
+      toast({
+        title: "Favorite removed",
+        description: "Route has been removed from your favorites.",
+      });
+    } catch (err) {
+      console.error('Error deleting favorite route:', err);
+      toast({
+        title: "Error", 
+        description: "Failed to remove favorite. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const repeatRoute = async (route: RouteHistory) => {
+    try {
+      const routeData = {
+        from_location: route.from_location,
+        to_location: route.to_location,
+        duration: route.duration,
+        distance: route.distance,
+        status: "completed",
+        weather_condition: "Current"
+      };
+
+      const response = await fetch(`${API_BASE_URL}/routes/history`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(routeData),
+      });
+
+      if (!response.ok) throw new Error('Failed to repeat route');
+      
+      await fetchRouteHistory(); // Refresh the list
+      toast({
+        title: "Route repeated",
+        description: `Navigation started from ${route.from_location} to ${route.to_location}`,
+      });
+    } catch (err) {
+      console.error('Error repeating route:', err);
+      toast({
+        title: "Error",
+        description: "Failed to repeat route. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const saveAsFavorite = async (route: RouteHistory) => {
+    try {
+      const favoriteData = {
+        name: `${route.from_location} to ${route.to_location}`,
+        from_location: route.from_location,
+        to_location: route.to_location,
+        avg_duration: route.duration,
+        frequency: "Weekly",
+        risk_level: "low"
+      };
+
+      const response = await fetch(`${API_BASE_URL}/routes/favorites`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(favoriteData),
+      });
+
+      if (!response.ok) throw new Error('Failed to save as favorite');
+      
+      await fetchFavoriteRoutes(); // Refresh the list
+      toast({
+        title: "Added to favorites",
+        description: `Route saved as "${favoriteData.name}"`,
+      });
+    } catch (err) {
+      console.error('Error saving as favorite:', err);
+      toast({
+        title: "Error",
+        description: "Failed to save as favorite. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const clearSearchHistory = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/search/history`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error('Failed to clear search history');
+      
+      setRecentSearches([]);
+      toast({
+        title: "Search history cleared",
+        description: "All search history has been removed.",
+      });
+    } catch (err) {
+      console.error('Error clearing search history:', err);
+      toast({
+        title: "Error",
+        description: "Failed to clear search history. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleAddFavorite = async (newFavorite: any) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/routes/favorites`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(newFavorite),
+      });
+
+      if (!response.ok) throw new Error('Failed to add favorite');
+      
+      await fetchFavoriteRoutes(); // Refresh the list
+      toast({
+        title: "Favorite added",
+        description: `"${newFavorite.name}" has been added to your favorites.`,
+      });
+    } catch (err) {
+      console.error('Error adding favorite:', err);
+      toast({
+        title: "Error",
+        description: "Failed to add favorite. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Format date for display
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  };
+
+  const formatLastUsed = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString();
+  };
+
+  // Status and risk color functions
   const getStatusColor = (status: string) => {
     switch (status) {
       case "completed":
-        return "bg-safe-green";
+        return "bg-green-500";
       case "interrupted":
-        return "bg-alert-orange";
+        return "bg-orange-500";
       default:
         return "bg-gray-500";
     }
@@ -162,273 +339,343 @@ const MyRoutes = () => {
   const getRiskColor = (risk: string) => {
     switch (risk) {
       case "low":
-        return "bg-safe-green";
+        return "bg-green-500";
       case "moderate":
-        return "bg-caution-yellow";
+        return "bg-yellow-500";
       case "high":
-        return "bg-alert-red";
+        return "bg-red-500";
       default:
         return "bg-gray-500";
     }
   };
 
+  // Filter functions
   const filteredHistory = routeHistory.filter(
     (route) =>
-      route.from.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      route.to.toLowerCase().includes(searchTerm.toLowerCase())
+      route.from_location.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      route.to_location.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const filteredFavorites = favoriteRoutes.filter(
     (route) =>
-      route.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      route.from.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      route.to.toLowerCase().includes(searchTerm.toLowerCase())
+      route.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      route.from_location.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      route.to_location.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <NavigationBar />
+        <main className="pt-20 container mx-auto px-4 py-8">
+          <div className="flex items-center justify-center min-h-[400px]">
+            <div className="text-center">
+              <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
+              <p className="text-lg text-gray-600">Loading your routes...</p>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
       <NavigationBar />
 
       <main className="pt-20 container mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-wmsu-blue mb-2">My Routes</h1>
-          <p className="text-gray-600">
-            Manage your route history, favorites, and recent searches
-          </p>
+        <div className="mb-8 flex justify-between items-start">
+          <div>
+            <h1 className="text-3xl font-bold text-blue-900 mb-2">My Routes</h1>
+            <p className="text-gray-600">
+              Manage your route history, favorites, and recent searches
+            </p>
+          </div>
+          <Button
+            onClick={refreshData}
+            disabled={refreshing}
+            variant="outline"
+            size="sm"
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
         </div>
+
+        {/* Analytics Summary */}
+        {analytics && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium">Total Routes</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{analytics.total_routes}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium">Completion Rate</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{analytics.completion_rate}%</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium">Favorites</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{analytics.favorite_routes}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium">Recent Searches</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{analytics.recent_searches}</div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Search Bar */}
         <div className="mb-6">
-          <Input
-            placeholder="Search routes..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="max-w-md"
-          />
+          <div className="relative">
+            <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Search routes..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-8">
-            <TabsTrigger value="history" className="text-base">
-              History ({filteredHistory.length})
-            </TabsTrigger>
-            <TabsTrigger value="favorites" className="text-base">
-              Favorites ({filteredFavorites.length})
-            </TabsTrigger>
-            <TabsTrigger value="recent" className="text-base">
-              Recent ({recentSearches.length})
-            </TabsTrigger>
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
+            {error}
+          </div>
+        )}
+
+        <Tabs defaultValue="history" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="history">Route History</TabsTrigger>
+            <TabsTrigger value="favorites">Favorites</TabsTrigger>
+            <TabsTrigger value="searches">Recent Searches</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="history" className="space-y-6">
+          {/* Route History Tab */}
+          <TabsContent value="history" className="space-y-4">
             <div className="flex justify-between items-center">
-              <h2 className="text-xl font-semibold text-gray-800">
-                Route History
-              </h2>
-              <Button variant="outline" onClick={handleExportHistory}>
-                <i className="fas fa-download mr-2"></i>
-                Export History
-              </Button>
+              <h2 className="text-xl font-semibold">Route History</h2>
             </div>
 
             <div className="grid gap-4">
-              {filteredHistory.map((route) => (
-                <Card
-                  key={route.id}
-                  className="hover:shadow-lg transition-shadow"
-                >
-                  <CardHeader className="pb-3">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-lg">
-                          {route.from} → {route.to}
-                        </CardTitle>
-                        <CardDescription className="flex items-center mt-1">
-                          <i className="fas fa-calendar mr-2"></i>
-                          {route.date} at {route.time}
-                        </CardDescription>
+              {filteredHistory.length === 0 ? (
+                <Card>
+                  <CardContent className="text-center py-12">
+                    <MapPin className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                    <p className="text-lg text-gray-600 mb-2">No routes found</p>
+                    <p className="text-gray-500">
+                      {searchQuery ? "Try adjusting your search" : "Your route history will appear here"}
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                filteredHistory.map((route) => (
+                  <Card key={route.id} className="hover:shadow-md transition-shadow">
+                    <CardContent className="pt-6">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <MapPin className="h-4 w-4 text-blue-600" />
+                            <span className="font-medium">{route.from_location}</span>
+                            <span className="text-gray-500">→</span>
+                            <span className="font-medium">{route.to_location}</span>
+                          </div>
+                          <div className="flex items-center gap-4 text-sm text-gray-600">
+                            <div className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              {formatDate(route.date)}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {route.duration}
+                            </div>
+                            <span>{route.distance}</span>
+                            {route.weather_condition && (
+                              <Badge variant="outline">{route.weather_condition}</Badge>
+                            )}
+                          </div>
+                        </div>
+                        <Badge className={getStatusColor(route.status)}>
+                          {route.status}
+                        </Badge>
                       </div>
-                      <Badge
-                        className={`${getStatusColor(route.status)} text-white`}
-                      >
-                        {route.status}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <span className="text-gray-500">Duration:</span>
-                        <p className="font-semibold">{route.duration}</p>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Distance:</span>
-                        <p className="font-semibold">{route.distance}</p>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Weather:</span>
-                        <p className="font-semibold">
-                          {route.weatherCondition}
-                        </p>
-                      </div>
-                      <div className="flex space-x-2">
+
+                      <div className="flex gap-2">
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleRepeatRoute(route)}
+                          onClick={() => repeatRoute(route)}
                         >
-                          <i className="fas fa-redo mr-1"></i>
+                          <Repeat className="h-3 w-3 mr-1" />
                           Repeat
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleSaveRoute(route)}
+                          onClick={() => saveAsFavorite(route)}
                         >
-                          <i className="fas fa-heart mr-1"></i>
+                          <Star className="h-3 w-3 mr-1" />
                           Save
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => deleteRouteHistory(route.id)}
+                        >
+                          <Trash2 className="h-3 w-3 mr-1" />
+                          Delete
+                        </Button>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                ))
+              )}
             </div>
           </TabsContent>
 
-          <TabsContent value="favorites" className="space-y-6">
+          {/* Favorites Tab */}
+          <TabsContent value="favorites" className="space-y-4">
             <div className="flex justify-between items-center">
-              <h2 className="text-xl font-semibold text-gray-800">
-                Favorite Routes
-              </h2>
+              <h2 className="text-xl font-semibold">Favorite Routes</h2>
               <Button onClick={() => setIsAddFavoriteOpen(true)}>
-                <i className="fas fa-plus mr-2"></i>
+                <Plus className="h-4 w-4 mr-2" />
                 Add Favorite
               </Button>
             </div>
 
             <div className="grid gap-4">
-              {filteredFavorites.map((route) => (
-                <Card
-                  key={route.id}
-                  className="hover:shadow-lg transition-shadow"
-                >
-                  <CardHeader>
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-lg flex items-center">
-                          <i className="fas fa-heart text-red-500 mr-2"></i>
-                          {route.name}
-                        </CardTitle>
-                        <CardDescription className="mt-1">
-                          {route.from} → {route.to}
-                        </CardDescription>
+              {filteredFavorites.length === 0 ? (
+                <Card>
+                  <CardContent className="text-center py-12">
+                    <Star className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                    <p className="text-lg text-gray-600 mb-2">No favorite routes</p>
+                    <p className="text-gray-500">
+                      {searchQuery ? "Try adjusting your search" : "Add your frequently used routes as favorites"}
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                filteredFavorites.map((route) => (
+                  <Card key={route.id} className="hover:shadow-md transition-shadow">
+                    <CardContent className="pt-6">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex-1">
+                          <h3 className="font-medium text-lg mb-2">{route.name}</h3>
+                          <div className="flex items-center gap-2 mb-2">
+                            <MapPin className="h-4 w-4 text-blue-600" />
+                            <span>{route.from_location}</span>
+                            <span className="text-gray-500">→</span>
+                            <span>{route.to_location}</span>
+                          </div>
+                          <div className="flex items-center gap-4 text-sm text-gray-600">
+                            <span>Used {route.frequency}</span>
+                            <div className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              Avg: {route.avg_duration}
+                            </div>
+                            <span>Last: {formatLastUsed(route.last_used)}</span>
+                          </div>
+                        </div>
+                        <Badge className={getRiskColor(route.risk_level)}>
+                          {route.risk_level} risk
+                        </Badge>
                       </div>
-                      <Badge
-                        className={`${getRiskColor(
-                          route.riskLevel
-                        )} text-white`}
-                      >
-                        {route.riskLevel} risk
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
-                      <div>
-                        <span className="text-gray-500">Frequency:</span>
-                        <p className="font-semibold">{route.frequency}</p>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Avg Duration:</span>
-                        <p className="font-semibold">{route.avgDuration}</p>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Last Used:</span>
-                        <p className="font-semibold">{route.lastUsed}</p>
-                      </div>
-                      <div className="flex space-x-2">
-                        <Button
-                          size="sm"
-                          onClick={() => toast.success("Navigation started!")}
-                        >
-                          <i className="fas fa-route mr-1"></i>
-                          Navigate
+
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={() => {
+                          // Convert favorite to history format for repeat
+                          const historyRoute = {
+                            id: route.id,
+                            from_location: route.from_location,
+                            to_location: route.to_location,
+                            duration: route.avg_duration,
+                            distance: "N/A",
+                            date: new Date().toISOString(),
+                            status: "completed"
+                          };
+                          repeatRoute(historyRoute);
+                        }}>
+                          <Repeat className="h-3 w-3 mr-1" />
+                          Use Route
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleDeleteFavorite(route.id)}
+                          onClick={() => deleteFavoriteRoute(route.id)}
                         >
-                          <i className="fas fa-trash mr-1"></i>
-                          Delete
+                          <Trash2 className="h-3 w-3 mr-1" />
+                          Remove
                         </Button>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                ))
+              )}
             </div>
           </TabsContent>
 
-          <TabsContent value="recent" className="space-y-6">
+          {/* Recent Searches Tab */}
+          <TabsContent value="searches" className="space-y-4">
             <div className="flex justify-between items-center">
-              <h2 className="text-xl font-semibold text-gray-800">
-                Recent Searches
-              </h2>
-              <Button variant="outline" onClick={handleClearSearches}>
-                <i className="fas fa-trash mr-2"></i>
+              <h2 className="text-xl font-semibold">Recent Searches</h2>
+              <Button
+                variant="outline"
+                onClick={clearSearchHistory}
+                disabled={recentSearches.length === 0}
+              >
                 Clear All
               </Button>
             </div>
 
-            <div className="grid gap-3">
-              {recentSearches.map((search) => (
-                <Card
-                  key={search.id}
-                  className="hover:shadow-md transition-shadow"
-                >
-                  <CardContent className="py-4">
-                    <div className="flex justify-between items-center">
-                      <div className="flex-1">
-                        <h3 className="font-medium text-gray-800">
-                          {search.query}
-                        </h3>
-                        <p className="text-sm text-gray-500 mt-1">
-                          {search.timestamp} • {search.results} results found
-                        </p>
-                      </div>
-                      <div className="flex space-x-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => toast.info("Searching again...")}
-                        >
-                          <i className="fas fa-search mr-1"></i>
-                          Search Again
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setRecentSearches((prev) =>
-                              prev.filter((s) => s.id !== search.id)
-                            );
-                            toast.success("Search removed");
-                          }}
-                        >
-                          <i className="fas fa-times mr-1"></i>
-                          Remove
-                        </Button>
-                      </div>
-                    </div>
+            <div className="grid gap-4">
+              {recentSearches.length === 0 ? (
+                <Card>
+                  <CardContent className="text-center py-12">
+                    <Search className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                    <p className="text-lg text-gray-600 mb-2">No recent searches</p>
+                    <p className="text-gray-500">Your search history will appear here</p>
                   </CardContent>
                 </Card>
-              ))}
+              ) : (
+                recentSearches.map((search) => (
+                  <Card key={search.id} className="hover:shadow-md transition-shadow">
+                    <CardContent className="pt-6">
+                      <div className="flex justify-between items-center">
+                        <div className="flex-1">
+                          <p className="font-medium mb-1">{search.query}</p>
+                          <div className="flex items-center gap-4 text-sm text-gray-600">
+                            <span>{formatDate(search.timestamp)}</span>
+                            <Badge variant="outline">{search.results_count} results</Badge>
+                          </div>
+                        </div>
+                        <Button size="sm" variant="outline">
+                          Search Again
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
             </div>
           </TabsContent>
         </Tabs>
 
+        {/* Add Favorite Modal */}
         <AddFavoriteModal
           isOpen={isAddFavoriteOpen}
           onClose={() => setIsAddFavoriteOpen(false)}
@@ -440,3 +687,4 @@ const MyRoutes = () => {
 };
 
 export default MyRoutes;
+
