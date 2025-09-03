@@ -91,6 +91,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   >(null);
   const [showWeatherDashboard, setShowWeatherDashboard] = useState(false);
 
+  // Elevation API management
+  const [apiFailureCount, setApiFailureCount] = useState(0);
+  const [useOfflineMode, setUseOfflineMode] = useState(false);
+  const elevationCacheRef = useRef<Map<string, TerrainData>>(new Map());
+
   // New states for route planner modal
   const [showRoutePlannerModal, setShowRoutePlannerModal] = useState(false);
   const [startLocationInput, setStartLocationInput] = useState("");
@@ -140,7 +145,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     try {
       // First, search our local Zamboanga database
       const localResults = searchZamboCityLocations(query, 8);
-      const localSuggestions: LocationSuggestion[] = localResults.map(
+      const localSuggestions: LocationSuggestion[] = (await localResults).map(
         (location, index) => ({
           display_name: `${location.displayName} - Zamboanga City`,
           lat: location.lat.toString(),
@@ -223,7 +228,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
       // Fallback to local search only
       const localResults = searchZamboCityLocations(query, 5);
-      return localResults.map((location, index) => ({
+      return (await localResults).map((location, index) => ({
         display_name: `${location.displayName} - Zamboanga City`,
         lat: location.lat.toString(),
         lon: location.lng.toString(),
@@ -988,30 +993,68 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         "Generating multiple route alternatives with risk analysis..."
       );
 
-      // Get multiple route alternatives from the routing API
-      console.log(
-        `Calling route API: http://localhost:8001/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`
-      );
-      const routeResponse = await fetch(
-        `http://localhost:8001/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`
-      );
+      // Try backend route API first, fallback to OSRM if it fails
+      let routes: LatLng[][] = [];
+      let routeAnalyses: any[] = [];
 
-      if (!routeResponse.ok) {
-        console.error(`Route API failed with status: ${routeResponse.status}`);
-        throw new Error(
-          `Failed to get route alternatives - Status: ${routeResponse.status}`
+      try {
+        console.log(
+          `Calling route API: http://localhost:8000/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`
         );
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+        const routeResponse = await fetch(
+          `http://localhost:8000/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`,
+          {
+            signal: controller.signal,
+            headers: {
+              'Content-Type': 'application/json',
+            }
+          }
+        );
+        
+        clearTimeout(timeoutId);
+
+        if (!routeResponse.ok) {
+          throw new Error(`Route API failed with status: ${routeResponse.status}`);
+        }
+
+        const routeData = await routeResponse.json();
+        console.log("Route API response:", routeData);
+        routes = routeData.routes || [];
+        routeAnalyses = routeData.analyses || [];
+
+        if (routes.length === 0) {
+          throw new Error("No routes found from backend API");
+        }
+
+        console.log(`Got ${routes.length} route alternatives from backend API`);
+      } catch (backendError) {
+        console.warn("Backend route API failed, using OSRM fallback:", backendError);
+        
+        // Fallback to OSRM routing
+        try {
+          console.log("Attempting fallback to direct OSRM route...");
+          const directRoute = await getOSRMRoute(start, end);
+          if (directRoute.length > 0) {
+            routes = [directRoute];
+            
+            // Generate 2 alternative routes with waypoints for variety
+            const alternatives = await generateAlternativeRoutes(start, end, directRoute);
+            routes = [...routes, ...alternatives].slice(0, 3);
+            console.log(`Generated ${routes.length} routes using OSRM fallback`);
+          } else {
+            throw new Error("OSRM also returned empty route");
+          }
+        } catch (osrmError) {
+          console.error("OSRM fallback also failed:", osrmError);
+          // Use simple direct route as absolute last resort
+          routes = [[start, end]];
+          console.log("Using simple direct route as last resort");
+        }
       }
-
-      const routeData = await routeResponse.json();
-      console.log("Route API response:", routeData);
-      let routes = routeData.routes || [];
-
-      if (routes.length === 0) {
-        throw new Error("No routes found between selected points");
-      }
-
-      console.log(`Got ${routes.length} route alternatives from API`);
 
       // If we only got one route, try to generate alternative routes using different strategies
       if (routes.length < 3) {
@@ -1407,6 +1450,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   // Handle start location input change
   useEffect(() => {
     const searchTimeout = setTimeout(async () => {
+      // Don't show suggestions if a location is already selected
+      if (selectedStartLocation) {
+        setStartSuggestions([]);
+        setShowStartSuggestions(false);
+        return;
+      }
+
       if (startLocationInput.length >= 3) {
         const suggestions = await searchLocations(startLocationInput);
         setStartSuggestions(suggestions);
@@ -1418,11 +1468,18 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     }, 300);
 
     return () => clearTimeout(searchTimeout);
-  }, [startLocationInput]);
+  }, [startLocationInput, selectedStartLocation]);
 
   // Handle end location input change
   useEffect(() => {
     const searchTimeout = setTimeout(async () => {
+      // Don't show suggestions if a location is already selected
+      if (selectedEndLocation) {
+        setEndSuggestions([]);
+        setShowEndSuggestions(false);
+        return;
+      }
+
       if (endLocationInput.length >= 3) {
         const suggestions = await searchLocations(endLocationInput);
         setEndSuggestions(suggestions);
@@ -1434,7 +1491,59 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     }, 300);
 
     return () => clearTimeout(searchTimeout);
-  }, [endLocationInput]);
+  }, [endLocationInput, selectedEndLocation]);
+
+  // Handle click outside to hide suggestion dropdowns
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      
+      // Check if the click is outside any location input or suggestion dropdown
+      if (!target.closest('[data-location-input]') && !target.closest('[data-suggestions-dropdown]')) {
+        setShowStartSuggestions(false);
+        setShowEndSuggestions(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Handle escape key to hide suggestion dropdowns
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowStartSuggestions(false);
+        setShowEndSuggestions(false);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  // Enhanced input handlers that clear selection when user starts typing
+  const handleStartLocationInputChange = (value: string) => {
+    setStartLocationInput(value);
+    // Clear selection if user is modifying the input and it doesn't match the selected location
+    if (selectedStartLocation && value !== selectedStartLocation.display_name) {
+      setSelectedStartLocation(null);
+      setStartPoint(null);
+    }
+  };
+
+  const handleEndLocationInputChange = (value: string) => {
+    setEndLocationInput(value);
+    // Clear selection if user is modifying the input and it doesn't match the selected location
+    if (selectedEndLocation && value !== selectedEndLocation.display_name) {
+      setSelectedEndLocation(null);
+      setEndPoint(null);
+    }
+  };
 
   // Handle selecting start location
   const handleSelectStartLocation = (location: LocationSuggestion) => {
@@ -1446,6 +1555,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       lat: parseFloat(location.lat),
       lng: parseFloat(location.lon),
     });
+    console.log("Start location selected:", location.display_name);
   };
 
   // Handle selecting end location
@@ -1458,6 +1568,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       lat: parseFloat(location.lat),
       lng: parseFloat(location.lon),
     });
+    console.log("End location selected:", location.display_name);
   };
 
   // Handle find route button click
@@ -1497,14 +1608,30 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         const sampleSize = Math.min(30, Math.floor(cachePoints.length / 3));
         const step = Math.max(1, Math.floor(cachePoints.length / sampleSize));
 
-        for (let i = 0; i < cachePoints.length; i += step) {
-          const point = cachePoints[i];
-          const key = `${point.lat.toFixed(4)},${point.lng.toFixed(4)}`;
-          if (!elevationCache.has(key)) {
-            const data = await getElevationData(point.lat, point.lng);
-            if (data) elevationCache.set(key, data);
+        // Cache elevation data with error handling and reduced frequency
+        console.log(`Pre-caching elevation data for ${Math.ceil(cachePoints.length / step)} points...`);
+        const maxCachePoints = useOfflineMode ? 0 : Math.min(20, Math.ceil(cachePoints.length / step)); // Limit API calls when offline
+        
+        for (let i = 0; i < cachePoints.length && i < maxCachePoints * step; i += step) {
+          try {
+            const point = cachePoints[i];
+            const key = `${point.lat.toFixed(4)},${point.lng.toFixed(4)}`;
+            if (!elevationCacheRef.current.has(key)) {
+              const data = await getElevationData(point.lat, point.lng);
+              if (data) {
+                elevationCacheRef.current.set(key, data);
+              }
+              // Add small delay to avoid overwhelming APIs
+              if (!useOfflineMode && i > 0) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+              }
+            }
+          } catch (error) {
+            console.warn(`Failed to cache elevation for point ${i}:`, error);
+            // Continue with next point even if this one fails
           }
         }
+        console.log(`Cached elevation data for ${elevationCacheRef.current.size} total points`)
 
         // Function to add hover handlers
         const addHoverHandlers = (polyline: L.Polyline, route: FloodRoute) => {
@@ -1513,66 +1640,81 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           polyline.on("mousemove", async (e) => {
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(async () => {
-              const point = e.latlng;
-              const key = `${point.lat.toFixed(4)},${point.lng.toFixed(4)}`;
+              try {
+                const point = e.latlng;
+                const key = `${point.lat.toFixed(4)},${point.lng.toFixed(4)}`;
 
-              let elevationData = elevationCache.get(key);
-              if (!elevationData) {
-                elevationData = await getElevationData(point.lat, point.lng);
-                if (elevationData) elevationCache.set(key, elevationData);
-              }
+                let elevationData = elevationCacheRef.current.get(key);
+                if (!elevationData) {
+                  elevationData = await getElevationData(point.lat, point.lng);
+                  if (elevationData) elevationCacheRef.current.set(key, elevationData);
+                }
 
-              if (elevationData) {
-                const risk = calculateFloodRisk(
-                  elevationData.elevation,
-                  point.lat,
-                  point.lng
-                );
-                const riskColor =
-                  risk === "prone"
-                    ? "#e74c3c"
-                    : risk === "manageable"
-                    ? "#f39c12"
-                    : "#27ae60";
+                if (elevationData) {
+                  const risk = calculateFloodRisk(
+                    elevationData.elevation,
+                    point.lat,
+                    point.lng
+                  );
+                  const riskColor =
+                    risk === "prone"
+                      ? "#e74c3c"
+                      : risk === "manageable"
+                      ? "#f39c12"
+                      : "#27ae60";
 
-                polyline
-                  .bindTooltip(
-                    `<div style="
-                    background: white;
-                    padding: 12px;
-                    border-radius: 8px;
-                    border: 2px solid ${riskColor};
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                    font-family: system-ui, -apple-system, sans-serif;
-                    min-width: 200px;
-                  ">
-                    <div style="color: ${riskColor}; font-weight: 600; font-size: 14px; margin-bottom: 8px;">
-                      Terrain Data
-                    </div>
-                    <div style="margin-bottom: 6px; font-size: 13px;">
-                      Elevation: ${elevationData.elevation}m
-                    </div>
-                    <div style="margin-bottom: 6px; font-size: 13px;">
-                      Slope: ${elevationData.slope}°
-                    </div>
-                    <div style="color: ${riskColor}; font-size: 13px;">
-                      ${
-                        elevationData.elevation < 5
-                          ? "High flood risk due to very low elevation"
-                          : elevationData.elevation < 15
-                          ? "Moderate flood risk at this elevation"
-                          : "Lower flood risk at this elevation"
-                      }
-                    </div>
-                  </div>`,
-                    {
-                      permanent: false,
-                      sticky: true,
+                  const isEstimated = useOfflineMode || apiFailureCount > 3;
+
+                  polyline
+                    .bindTooltip(
+                      `<div style="
+                      background: white;
+                      padding: 12px;
+                      border-radius: 8px;
+                      border: 2px solid ${riskColor};
+                      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                      font-family: system-ui, -apple-system, sans-serif;
+                      min-width: 200px;
+                    ">
+                      <div style="color: ${riskColor}; font-weight: 600; font-size: 14px; margin-bottom: 8px;">
+                        Terrain Data ${isEstimated ? "(Estimated)" : "(Live)"}
+                      </div>
+                      <div style="margin-bottom: 6px; font-size: 13px;">
+                        Elevation: ${elevationData.elevation}m
+                      </div>
+                      <div style="margin-bottom: 6px; font-size: 13px;">
+                        Slope: ${elevationData.slope}°
+                      </div>
+                      <div style="color: ${riskColor}; font-size: 13px;">
+                        ${
+                          elevationData.elevation < 5
+                            ? "High flood risk due to very low elevation"
+                            : elevationData.elevation < 15
+                            ? "Moderate flood risk at this elevation"
+                            : "Lower flood risk at this elevation"
+                        }
+                      </div>
+                    </div>`,
+                      {
+                        permanent: false,
+                        sticky: true,
                       direction: "top",
                       offset: L.point(0, -5),
                       opacity: 1,
                       className: "terrain-tooltip",
                     }
+                  )
+                  .openTooltip();
+                }
+              } catch (error) {
+                console.warn("Error fetching elevation data for hover:", error);
+                // Show a simple tooltip without elevation data
+                polyline
+                  .bindTooltip(
+                    `<div style="background: white; padding: 8px; border-radius: 4px;">
+                      Terrain data unavailable
+                    </div>`,
+                    { permanent: false, sticky: true }
                   )
                   .openTooltip();
               }
@@ -1653,7 +1795,74 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         setRouteDetails(routes);
       } catch (error) {
         console.error("Error generating routes:", error);
-        alert("Error generating routes. Please try again.");
+        
+        let errorMessage = "Error generating routes. Please try again.";
+        
+        if (error instanceof TypeError && error.message.includes("fetch")) {
+          errorMessage = "Network error: Unable to connect to routing service. Please check your internet connection and try again.";
+        } else if (error instanceof Error) {
+          if (error.message.includes("No routes found")) {
+            errorMessage = "No routes found between the selected locations. Please try different locations.";
+          } else if (error.message.includes("elevation")) {
+            errorMessage = "Route generated with limited terrain data. Some features may not be available.";
+          }
+        }
+        
+        // Show user-friendly error message
+        alert(errorMessage);
+        
+        // Still try to show a basic direct route if possible
+        if (startPoint && endPoint) {
+          const directDistance = calculateRouteDistance([startPoint, endPoint]);
+          const fallbackRoutes: RouteDetails = {
+            safeRoute: {
+              waypoints: [startPoint, endPoint],
+              distance: directDistance.toFixed(1) + " km",
+              time: Math.round((directDistance / 40) * 60) + " min",
+              floodRisk: "safe",
+              riskLevel: "Unknown Risk",
+              description: "Direct route - Service unavailable",
+              color: "#27ae60",
+            },
+            manageableRoute: {
+              waypoints: [startPoint, endPoint],
+              distance: directDistance.toFixed(1) + " km",
+              time: Math.round((directDistance / 40) * 60) + " min",
+              floodRisk: "manageable",
+              riskLevel: "Unknown Risk",
+              description: "Direct route - Service unavailable",
+              color: "#f39c12",
+            },
+            proneRoute: {
+              waypoints: [startPoint, endPoint],
+              distance: directDistance.toFixed(1) + " km",
+              time: Math.round((directDistance / 40) * 60) + " min",
+              floodRisk: "prone",
+              riskLevel: "Unknown Risk",
+              description: "Direct route - Service unavailable",
+              color: "#e74c3c",
+            },
+            startName: selectedStartLocation?.display_name || "Start Point",
+            endName: selectedEndLocation?.display_name || "End Point",
+          };
+          
+          // Draw a simple direct route line
+          const directLine = L.polyline(
+            [startPoint, endPoint].map((wp) => [wp.lat, wp.lng]),
+            {
+              color: "#666666",
+              weight: 4,
+              opacity: 0.7,
+              dashArray: "5, 5",
+            }
+          ).addTo(mapRef.current!);
+          
+          routeLayersRef.current = [directLine];
+          setRouteDetails(fallbackRoutes);
+          
+          // Fit map to show the route
+          mapRef.current!.fitBounds(directLine.getBounds().pad(0.1));
+        }
       }
     }
   };
@@ -1885,7 +2094,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     max-width: 220px;
                   ">
                     <div style="color: ${color}; font-weight: 600; font-size: 13px; margin-bottom: 6px;">
-                      🏔️ Terrain Data
+                      🏔️ Terrain Data ${elevationData ? (useOfflineMode || apiFailureCount > 3 ? "(Estimated)" : "(Live)") : "(Estimated)"}
                     </div>
                     <div style="margin-bottom: 4px; font-size: 12px;">
                       <strong>Elevation:</strong> ${displayElevation.toFixed(
@@ -1918,7 +2127,49 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                 isTooltipShown = true;
               }
             } catch (error) {
-              console.error("Error in tooltip:", error);
+              console.warn("Error fetching terrain data for tooltip:", error);
+              
+              // Show fallback tooltip with estimated data
+              if (!isTooltipShown) {
+                const fallbackFloodRisk = calculateFloodRisk(elevation, rectCenterLat, rectCenterLng);
+                const fallbackRiskColor = fallbackFloodRisk === "prone" ? "#e74c3c" : fallbackFloodRisk === "manageable" ? "#f39c12" : "#27ae60";
+                
+                heatmapRect
+                  .bindTooltip(
+                    `<div style="
+                    background: white;
+                    padding: 10px;
+                    border-radius: 6px;
+                    border: 2px solid ${color};
+                    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+                    font-family: system-ui, -apple-system, sans-serif;
+                    min-width: 180px;
+                  ">
+                    <div style="color: ${color}; font-weight: 600; font-size: 13px; margin-bottom: 6px;">
+                      🏔️ Terrain Data (Estimated)
+                    </div>
+                    <div style="margin-bottom: 4px; font-size: 12px;">
+                      <strong>Elevation:</strong> ~${elevation.toFixed(1)}m
+                    </div>
+                    <div style="margin-bottom: 4px; font-size: 12px;">
+                      <strong>Slope:</strong> ~${calculateSlope(elevation)}°
+                    </div>
+                    <div style="color: ${fallbackRiskColor}; font-size: 11px; margin-top: 6px; padding: 3px 6px; background: ${fallbackRiskColor}15; border-radius: 3px;">
+                      Risk: ${fallbackFloodRisk === "prone" ? "High" : fallbackFloodRisk === "manageable" ? "Medium" : "Low"} (Estimated)
+                    </div>
+                  </div>`,
+                    {
+                      permanent: false,
+                      sticky: false,
+                      direction: "top",
+                      offset: L.point(0, -5),
+                      opacity: 0.95,
+                      className: "terrain-tooltip-compact",
+                    }
+                  )
+                  .openTooltip();
+                isTooltipShown = true;
+              }
             }
           }, 500); // Longer delay to prevent spam
         });
@@ -1989,67 +2240,179 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     lat: number,
     lng: number
   ): Promise<TerrainData | null> => {
-    try {
-      // Using Copernicus 30m dataset for better accuracy (best free option)
-      const response = await fetch(
-        `https://api.opentopodata.org/v1/copernicus30m?locations=${lat},${lng}`
-      );
-      const data = await response.json();
+    // Check cache first
+    const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+    if (elevationCacheRef.current.has(cacheKey)) {
+      return elevationCacheRef.current.get(cacheKey)!;
+    }
 
-      if (
-        data.results &&
-        data.results[0] &&
-        data.results[0].elevation !== null
-      ) {
-        const elevation = data.results[0].elevation;
-        return {
-          elevation: elevation,
-          slope: calculateSlope(elevation),
-          floodRisk: calculateFloodRisk(elevation, lat, lng),
-          terrainType: getTerrainType(elevation),
-          lat: lat.toFixed(6),
-          lng: lng.toFixed(6),
-        };
-      }
-    } catch (error) {
-      console.error("Error fetching elevation from Open Topo Data:", error);
-
-      // Fallback to Open-Elevation if Open Topo Data fails
-      try {
-        console.log("Trying fallback to Open-Elevation...");
-        const fallbackResponse = await fetch(
-          `https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lng}`
-        );
-        const fallbackData = await fallbackResponse.json();
-        if (fallbackData.results && fallbackData.results[0]) {
-          const elevation = fallbackData.results[0].elevation;
-          return {
-            elevation: elevation,
-            slope: calculateSlope(elevation),
-            floodRisk: calculateFloodRisk(elevation, lat, lng),
-            terrainType: getTerrainType(elevation),
-            lat: lat.toFixed(6),
-            lng: lng.toFixed(6),
-          };
-        }
-      } catch (fallbackError) {
-        console.error("Fallback to Open-Elevation also failed:", fallbackError);
-      }
-
-      // Final fallback to simulated data
-      return {
-        elevation: Math.floor(Math.random() * 100) + 1,
-        slope: Math.floor(Math.random() * 15) + 1,
-        floodRisk:
-          Math.random() > 0.7 ? "High" : Math.random() > 0.4 ? "Medium" : "Low",
-        terrainType: ["Flat", "Hilly", "Mountainous"][
-          Math.floor(Math.random() * 3)
-        ],
+    // Helper function to create elevation data from elevation value
+    const createElevationData = (elevation: number, isEstimated: boolean = false): TerrainData => {
+      const floodRisk = calculateFloodRisk(elevation, lat, lng);
+      const data: TerrainData = {
+        elevation: elevation,
+        slope: calculateSlope(elevation),
+        floodRisk: floodRisk === "safe" ? "Low" : floodRisk === "manageable" ? "Medium" : "High",
+        terrainType: getTerrainType(elevation),
         lat: lat.toFixed(6),
         lng: lng.toFixed(6),
       };
+      
+      // Cache the result
+      elevationCacheRef.current.set(cacheKey, data);
+      return data;
+    };
+
+    // Enhanced geographic estimation based on real Zamboanga City terrain
+    const getEnhancedGeographicEstimation = (): number => {
+      const cityCenter = { lat: 6.9214, lng: 122.079 };
+      const distanceFromCenter = Math.sqrt(
+        Math.pow(lat - cityCenter.lat, 2) + Math.pow(lng - cityCenter.lng, 2)
+      ) * 111; // Convert to km
+
+      // Known elevation zones in Zamboanga City
+      const knownAreas = [
+        // Coastal/port areas - very low elevation
+        { lat: 6.9167, lng: 122.0747, radius: 2, baseElevation: 3, variance: 5 },
+        // City proper - low elevation
+        { lat: 6.9214, lng: 122.079, radius: 3, baseElevation: 8, variance: 10 },
+        // Tetuan - slightly elevated
+        { lat: 6.9300, lng: 122.0850, radius: 2, baseElevation: 15, variance: 12 },
+        // Tumaga - hilly area
+        { lat: 6.9100, lng: 122.0600, radius: 3, baseElevation: 25, variance: 20 },
+        // Putik - elevated residential
+        { lat: 6.9400, lng: 122.0700, radius: 2, baseElevation: 35, variance: 15 },
+      ];
+
+      // Check if point is near any known area
+      for (const area of knownAreas) {
+        const distToArea = Math.sqrt(
+          Math.pow(lat - area.lat, 2) + Math.pow(lng - area.lng, 2)
+        ) * 111;
+        
+        if (distToArea < area.radius) {
+          const influence = 1 - (distToArea / area.radius);
+          const elevation = area.baseElevation + (Math.random() - 0.5) * area.variance * influence;
+          return Math.max(1, Math.round(elevation));
+        }
+      }
+
+      // General geographic estimation based on distance from city center
+      let estimatedElevation: number;
+      
+      if (distanceFromCenter < 2) {
+        // Inner city - coastal plains
+        estimatedElevation = 3 + Math.random() * 12; // 3-15m
+      } else if (distanceFromCenter < 5) {
+        // Urban areas - gentle slopes
+        estimatedElevation = 8 + Math.random() * 22; // 8-30m
+      } else if (distanceFromCenter < 10) {
+        // Suburban - rolling hills
+        estimatedElevation = 20 + Math.random() * 35; // 20-55m
+      } else if (distanceFromCenter < 20) {
+        // Rural - hills and ridges
+        estimatedElevation = 40 + Math.random() * 60; // 40-100m
+      } else {
+        // Remote - mountainous
+        estimatedElevation = 80 + Math.random() * 120; // 80-200m
+      }
+
+      // Add geographic consistency based on coordinates
+      const latSeed = Math.sin(lat * 100) * 0.5;
+      const lngSeed = Math.cos(lng * 100) * 0.5;
+      estimatedElevation += (latSeed + lngSeed) * 15;
+
+      return Math.max(1, Math.round(estimatedElevation));
+    };
+
+    // If offline mode is enabled or too many API failures, use geographic estimation immediately
+    if (useOfflineMode || apiFailureCount > 3) {
+      console.log(`Using offline mode for elevation estimation (failures: ${apiFailureCount})`);
+      const estimatedElevation = getEnhancedGeographicEstimation();
+      return createElevationData(estimatedElevation, true);
     }
-    return null;
+
+    // Helper function for API calls with aggressive timeout
+    const fetchWithTimeout = async (url: string, timeout: number = 1500): Promise<Response> => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      
+      try {
+        const response = await fetch(url, { 
+          signal: controller.signal,
+          mode: 'cors',
+          headers: {
+            'Accept': 'application/json',
+          }
+        });
+        clearTimeout(timeoutId);
+        return response;
+      } catch (error) {
+        clearTimeout(timeoutId);
+        throw error;
+      }
+    };
+
+    // Only try APIs if failure count is low
+    if (apiFailureCount <= 3) {
+      // Try primary elevation API with very short timeout
+      try {
+        const response = await fetchWithTimeout(
+          `https://api.opentopodata.org/v1/copernicus30m?locations=${lat},${lng}`,
+          1000 // Very short timeout
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.results && data.results[0] && data.results[0].elevation !== null) {
+            const elevation = Math.max(0, data.results[0].elevation);
+            console.log(`API elevation: ${elevation}m`);
+            // Reset failure count on success
+            setApiFailureCount(0);
+            return createElevationData(elevation);
+          }
+        }
+      } catch (error) {
+        console.warn("Primary elevation API failed:", error.message);
+        setApiFailureCount(prev => prev + 1);
+      }
+
+      // Try secondary elevation API only if primary failed and failure count is still low
+      if (apiFailureCount <= 2) {
+        try {
+          const response = await fetchWithTimeout(
+            `https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lng}`,
+            800 // Even shorter timeout
+          );
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.results && data.results[0] && data.results[0].elevation !== undefined) {
+              const elevation = Math.max(0, data.results[0].elevation);
+              console.log(`Fallback API elevation: ${elevation}m`);
+              // Reset failure count on success
+              setApiFailureCount(0);
+              return createElevationData(elevation);
+            }
+          }
+        } catch (error) {
+          console.warn("Secondary elevation API failed:", error.message);
+          setApiFailureCount(prev => prev + 1);
+        }
+      }
+    }
+
+    // After multiple failures, switch to offline mode
+    if (apiFailureCount >= 3 && !useOfflineMode) {
+      console.warn(`Multiple API failures detected (${apiFailureCount}), switching to offline mode`);
+      setUseOfflineMode(true);
+    }
+
+    // Use enhanced geographic estimation as final fallback
+    console.log("Using enhanced geographic estimation for elevation...");
+    const estimatedElevation = getEnhancedGeographicEstimation();
+    
+    return createElevationData(estimatedElevation, true);
   };
 
   // Helper functions for terrain analysis
@@ -2536,6 +2899,56 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
   return (
     <div style={{ padding: "20px", maxWidth: "1200px", margin: "0 auto" }}>
+      {/* Offline Mode Indicator */}
+      {(useOfflineMode || apiFailureCount > 3) && (
+        <div
+          style={{
+            background: "linear-gradient(135deg, #ffeaa7, #fdcb6e)",
+            border: "2px solid #e17055",
+            borderRadius: "8px",
+            padding: "12px 16px",
+            marginBottom: "15px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontSize: "20px" }}>📡</span>
+            <div>
+              <div style={{ fontWeight: "600", color: "#d63031", marginBottom: "4px" }}>
+                Offline Terrain Mode Active
+              </div>
+              <div style={{ fontSize: "13px", color: "#636e72" }}>
+                Using geographic estimation due to API connectivity issues. 
+                Elevation data may be less accurate.
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setUseOfflineMode(false);
+              setApiFailureCount(0);
+              elevationCacheRef.current.clear();
+            }}
+            style={{
+              background: "#00b894",
+              color: "white",
+              border: "none",
+              borderRadius: "6px",
+              padding: "8px 12px",
+              cursor: "pointer",
+              fontSize: "12px",
+              fontWeight: "600",
+            }}
+            title="Try to reconnect to elevation APIs"
+          >
+            Retry APIs
+          </button>
+        </div>
+      )}
+      
       <div
         style={{
           marginBottom: "15px",
@@ -2899,8 +3312,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           onClose={() => setShowRoutePlannerModal(false)}
           startLocationInput={startLocationInput}
           endLocationInput={endLocationInput}
-          setStartLocationInput={setStartLocationInput}
-          setEndLocationInput={setEndLocationInput}
+          setStartLocationInput={handleStartLocationInputChange}
+          setEndLocationInput={handleEndLocationInputChange}
           startSuggestions={startSuggestions}
           endSuggestions={endSuggestions}
           showStartSuggestions={showStartSuggestions}

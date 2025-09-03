@@ -176,6 +176,7 @@ export const RouteModal = ({
                 value={startLocationInput}
                 onChange={(e) => setStartLocationInput(e.target.value)}
                 placeholder="Choose starting point"
+                data-location-input="start"
                 style={{
                   width: "100%",
                   padding: "12px 12px 12px 32px",
@@ -212,6 +213,7 @@ export const RouteModal = ({
             {/* Start Location Suggestions */}
             {showStartSuggestions && startSuggestions.length > 0 && (
               <div
+                data-suggestions-dropdown="start"
                 style={{
                   position: "absolute",
                   top: "100%",
@@ -323,6 +325,7 @@ export const RouteModal = ({
                 value={endLocationInput}
                 onChange={(e) => setEndLocationInput(e.target.value)}
                 placeholder="Choose destination"
+                data-location-input="end"
                 style={{
                   width: "100%",
                   padding: "12px 12px 12px 32px",
@@ -339,6 +342,7 @@ export const RouteModal = ({
             {/* End Location Suggestions */}
             {showEndSuggestions && endSuggestions.length > 0 && (
               <div
+                data-suggestions-dropdown="end"
                 style={{
                   position: "absolute",
                   top: "100%",
