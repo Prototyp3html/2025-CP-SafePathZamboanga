@@ -1,10 +1,28 @@
 import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Clock, MapPin, Star, Trash2, Repeat, Plus, Search, Calendar, BarChart3, Loader2, RefreshCw } from "lucide-react";
+import {
+  Clock,
+  MapPin,
+  Star,
+  Trash2,
+  Repeat,
+  Plus,
+  Search,
+  Calendar,
+  BarChart3,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
 import { NavigationBar } from "@/components/NavigationBar";
 import { AddFavoriteModal } from "@/components/AddFavoriteModal";
 import { useToast } from "@/hooks/use-toast";
@@ -47,11 +65,11 @@ interface AnalyticsSummary {
   recent_searches: number;
 }
 
-const API_BASE_URL = "http://localhost:8000/api";
+const API_BASE_URL = "http://localhost:8001/api";
 
 const MyRoutes = () => {
   useEffect(() => {
-    document.body.style.overflow = 'auto';
+    document.body.style.overflow = "auto";
   }, []);
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -69,63 +87,63 @@ const MyRoutes = () => {
   const fetchRouteHistory = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/routes/history?limit=20`);
-      if (!response.ok) throw new Error('Failed to fetch route history');
+      if (!response.ok) throw new Error("Failed to fetch route history");
       const data = await response.json();
       setRouteHistory(data);
     } catch (err) {
-      console.error('Error fetching route history:', err);
-      setError('Failed to load route history');
+      console.error("Error fetching route history:", err);
+      setError("Failed to load route history");
     }
   };
 
   const fetchFavoriteRoutes = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/routes/favorites`);
-      if (!response.ok) throw new Error('Failed to fetch favorite routes');
+      if (!response.ok) throw new Error("Failed to fetch favorite routes");
       const data = await response.json();
       setFavoriteRoutes(data);
     } catch (err) {
-      console.error('Error fetching favorite routes:', err);
-      setError('Failed to load favorite routes');
+      console.error("Error fetching favorite routes:", err);
+      setError("Failed to load favorite routes");
     }
   };
 
   const fetchSearchHistory = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/search/history?limit=10`);
-      if (!response.ok) throw new Error('Failed to fetch search history');
+      if (!response.ok) throw new Error("Failed to fetch search history");
       const data = await response.json();
       setRecentSearches(data);
     } catch (err) {
-      console.error('Error fetching search history:', err);
-      setError('Failed to load search history');
+      console.error("Error fetching search history:", err);
+      setError("Failed to load search history");
     }
   };
 
   const fetchAnalytics = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/analytics/routes-summary`);
-      if (!response.ok) throw new Error('Failed to fetch analytics');
+      if (!response.ok) throw new Error("Failed to fetch analytics");
       const data = await response.json();
       setAnalytics(data);
     } catch (err) {
-      console.error('Error fetching analytics:', err);
+      console.error("Error fetching analytics:", err);
     }
   };
 
   const loadAllData = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       await Promise.all([
         fetchRouteHistory(),
-        fetchFavoriteRoutes(), 
+        fetchFavoriteRoutes(),
         fetchSearchHistory(),
-        fetchAnalytics()
+        fetchAnalytics(),
       ]);
     } catch (err) {
-      console.error('Error loading data:', err);
+      console.error("Error loading data:", err);
     } finally {
       setLoading(false);
     }
@@ -147,18 +165,21 @@ const MyRoutes = () => {
   // API Actions
   const deleteRouteHistory = async (routeId: number) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/routes/history/${routeId}`, {
-        method: 'DELETE',
-      });
-      if (!response.ok) throw new Error('Failed to delete route');
-      
-      setRouteHistory(prev => prev.filter(route => route.id !== routeId));
+      const response = await fetch(
+        `${API_BASE_URL}/routes/history/${routeId}`,
+        {
+          method: "DELETE",
+        }
+      );
+      if (!response.ok) throw new Error("Failed to delete route");
+
+      setRouteHistory((prev) => prev.filter((route) => route.id !== routeId));
       toast({
         title: "Route deleted",
         description: "Route has been removed from your history.",
       });
     } catch (err) {
-      console.error('Error deleting route:', err);
+      console.error("Error deleting route:", err);
       toast({
         title: "Error",
         description: "Failed to delete route. Please try again.",
@@ -169,20 +190,23 @@ const MyRoutes = () => {
 
   const deleteFavoriteRoute = async (routeId: number) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/routes/favorites/${routeId}`, {
-        method: 'DELETE',
-      });
-      if (!response.ok) throw new Error('Failed to delete favorite route');
-      
-      setFavoriteRoutes(prev => prev.filter(route => route.id !== routeId));
+      const response = await fetch(
+        `${API_BASE_URL}/routes/favorites/${routeId}`,
+        {
+          method: "DELETE",
+        }
+      );
+      if (!response.ok) throw new Error("Failed to delete favorite route");
+
+      setFavoriteRoutes((prev) => prev.filter((route) => route.id !== routeId));
       toast({
         title: "Favorite removed",
         description: "Route has been removed from your favorites.",
       });
     } catch (err) {
-      console.error('Error deleting favorite route:', err);
+      console.error("Error deleting favorite route:", err);
       toast({
-        title: "Error", 
+        title: "Error",
         description: "Failed to remove favorite. Please try again.",
         variant: "destructive",
       });
@@ -197,26 +221,26 @@ const MyRoutes = () => {
         duration: route.duration,
         distance: route.distance,
         status: "completed",
-        weather_condition: "Current"
+        weather_condition: "Current",
       };
 
       const response = await fetch(`${API_BASE_URL}/routes/history`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(routeData),
       });
 
-      if (!response.ok) throw new Error('Failed to repeat route');
-      
+      if (!response.ok) throw new Error("Failed to repeat route");
+
       await fetchRouteHistory(); // Refresh the list
       toast({
         title: "Route repeated",
         description: `Navigation started from ${route.from_location} to ${route.to_location}`,
       });
     } catch (err) {
-      console.error('Error repeating route:', err);
+      console.error("Error repeating route:", err);
       toast({
         title: "Error",
         description: "Failed to repeat route. Please try again.",
@@ -233,26 +257,26 @@ const MyRoutes = () => {
         to_location: route.to_location,
         avg_duration: route.duration,
         frequency: "Weekly",
-        risk_level: "low"
+        risk_level: "low",
       };
 
       const response = await fetch(`${API_BASE_URL}/routes/favorites`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(favoriteData),
       });
 
-      if (!response.ok) throw new Error('Failed to save as favorite');
-      
+      if (!response.ok) throw new Error("Failed to save as favorite");
+
       await fetchFavoriteRoutes(); // Refresh the list
       toast({
         title: "Added to favorites",
         description: `Route saved as "${favoriteData.name}"`,
       });
     } catch (err) {
-      console.error('Error saving as favorite:', err);
+      console.error("Error saving as favorite:", err);
       toast({
         title: "Error",
         description: "Failed to save as favorite. Please try again.",
@@ -264,17 +288,17 @@ const MyRoutes = () => {
   const clearSearchHistory = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/search/history`, {
-        method: 'DELETE',
+        method: "DELETE",
       });
-      if (!response.ok) throw new Error('Failed to clear search history');
-      
+      if (!response.ok) throw new Error("Failed to clear search history");
+
       setRecentSearches([]);
       toast({
         title: "Search history cleared",
         description: "All search history has been removed.",
       });
     } catch (err) {
-      console.error('Error clearing search history:', err);
+      console.error("Error clearing search history:", err);
       toast({
         title: "Error",
         description: "Failed to clear search history. Please try again.",
@@ -286,22 +310,22 @@ const MyRoutes = () => {
   const handleAddFavorite = async (newFavorite: any) => {
     try {
       const response = await fetch(`${API_BASE_URL}/routes/favorites`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(newFavorite),
       });
 
-      if (!response.ok) throw new Error('Failed to add favorite');
-      
+      if (!response.ok) throw new Error("Failed to add favorite");
+
       await fetchFavoriteRoutes(); // Refresh the list
       toast({
         title: "Favorite added",
         description: `"${newFavorite.name}" has been added to your favorites.`,
       });
     } catch (err) {
-      console.error('Error adding favorite:', err);
+      console.error("Error adding favorite:", err);
       toast({
         title: "Error",
         description: "Failed to add favorite. Please try again.",
@@ -313,10 +337,14 @@ const MyRoutes = () => {
   // Format date for display
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
+    return (
+      date.toLocaleDateString() +
+      " " +
+      date.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    );
   };
 
   const formatLastUsed = (dateString: string) => {
@@ -397,7 +425,9 @@ const MyRoutes = () => {
             variant="outline"
             size="sm"
           >
-            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw
+              className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`}
+            />
             Refresh
           </Button>
         </div>
@@ -407,18 +437,26 @@ const MyRoutes = () => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium">Total Routes</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  Total Routes
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{analytics.total_routes}</div>
+                <div className="text-2xl font-bold">
+                  {analytics.total_routes}
+                </div>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium">Completion Rate</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  Completion Rate
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{analytics.completion_rate}%</div>
+                <div className="text-2xl font-bold">
+                  {analytics.completion_rate}%
+                </div>
               </CardContent>
             </Card>
             <Card>
@@ -426,15 +464,21 @@ const MyRoutes = () => {
                 <CardTitle className="text-sm font-medium">Favorites</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{analytics.favorite_routes}</div>
+                <div className="text-2xl font-bold">
+                  {analytics.favorite_routes}
+                </div>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium">Recent Searches</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  Recent Searches
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{analytics.recent_searches}</div>
+                <div className="text-2xl font-bold">
+                  {analytics.recent_searches}
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -477,23 +521,34 @@ const MyRoutes = () => {
                 <Card>
                   <CardContent className="text-center py-12">
                     <MapPin className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                    <p className="text-lg text-gray-600 mb-2">No routes found</p>
+                    <p className="text-lg text-gray-600 mb-2">
+                      No routes found
+                    </p>
                     <p className="text-gray-500">
-                      {searchQuery ? "Try adjusting your search" : "Your route history will appear here"}
+                      {searchQuery
+                        ? "Try adjusting your search"
+                        : "Your route history will appear here"}
                     </p>
                   </CardContent>
                 </Card>
               ) : (
                 filteredHistory.map((route) => (
-                  <Card key={route.id} className="hover:shadow-md transition-shadow">
+                  <Card
+                    key={route.id}
+                    className="hover:shadow-md transition-shadow"
+                  >
                     <CardContent className="pt-6">
                       <div className="flex justify-between items-start mb-4">
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
                             <MapPin className="h-4 w-4 text-blue-600" />
-                            <span className="font-medium">{route.from_location}</span>
+                            <span className="font-medium">
+                              {route.from_location}
+                            </span>
                             <span className="text-gray-500">→</span>
-                            <span className="font-medium">{route.to_location}</span>
+                            <span className="font-medium">
+                              {route.to_location}
+                            </span>
                           </div>
                           <div className="flex items-center gap-4 text-sm text-gray-600">
                             <div className="flex items-center gap-1">
@@ -506,7 +561,9 @@ const MyRoutes = () => {
                             </div>
                             <span>{route.distance}</span>
                             {route.weather_condition && (
-                              <Badge variant="outline">{route.weather_condition}</Badge>
+                              <Badge variant="outline">
+                                {route.weather_condition}
+                              </Badge>
                             )}
                           </div>
                         </div>
@@ -563,19 +620,28 @@ const MyRoutes = () => {
                 <Card>
                   <CardContent className="text-center py-12">
                     <Star className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                    <p className="text-lg text-gray-600 mb-2">No favorite routes</p>
+                    <p className="text-lg text-gray-600 mb-2">
+                      No favorite routes
+                    </p>
                     <p className="text-gray-500">
-                      {searchQuery ? "Try adjusting your search" : "Add your frequently used routes as favorites"}
+                      {searchQuery
+                        ? "Try adjusting your search"
+                        : "Add your frequently used routes as favorites"}
                     </p>
                   </CardContent>
                 </Card>
               ) : (
                 filteredFavorites.map((route) => (
-                  <Card key={route.id} className="hover:shadow-md transition-shadow">
+                  <Card
+                    key={route.id}
+                    className="hover:shadow-md transition-shadow"
+                  >
                     <CardContent className="pt-6">
                       <div className="flex justify-between items-start mb-4">
                         <div className="flex-1">
-                          <h3 className="font-medium text-lg mb-2">{route.name}</h3>
+                          <h3 className="font-medium text-lg mb-2">
+                            {route.name}
+                          </h3>
                           <div className="flex items-center gap-2 mb-2">
                             <MapPin className="h-4 w-4 text-blue-600" />
                             <span>{route.from_location}</span>
@@ -597,19 +663,22 @@ const MyRoutes = () => {
                       </div>
 
                       <div className="flex gap-2">
-                        <Button size="sm" onClick={() => {
-                          // Convert favorite to history format for repeat
-                          const historyRoute = {
-                            id: route.id,
-                            from_location: route.from_location,
-                            to_location: route.to_location,
-                            duration: route.avg_duration,
-                            distance: "N/A",
-                            date: new Date().toISOString(),
-                            status: "completed"
-                          };
-                          repeatRoute(historyRoute);
-                        }}>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            // Convert favorite to history format for repeat
+                            const historyRoute = {
+                              id: route.id,
+                              from_location: route.from_location,
+                              to_location: route.to_location,
+                              duration: route.avg_duration,
+                              distance: "N/A",
+                              date: new Date().toISOString(),
+                              status: "completed",
+                            };
+                            repeatRoute(historyRoute);
+                          }}
+                        >
                           <Repeat className="h-3 w-3 mr-1" />
                           Use Route
                         </Button>
@@ -647,20 +716,29 @@ const MyRoutes = () => {
                 <Card>
                   <CardContent className="text-center py-12">
                     <Search className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                    <p className="text-lg text-gray-600 mb-2">No recent searches</p>
-                    <p className="text-gray-500">Your search history will appear here</p>
+                    <p className="text-lg text-gray-600 mb-2">
+                      No recent searches
+                    </p>
+                    <p className="text-gray-500">
+                      Your search history will appear here
+                    </p>
                   </CardContent>
                 </Card>
               ) : (
                 recentSearches.map((search) => (
-                  <Card key={search.id} className="hover:shadow-md transition-shadow">
+                  <Card
+                    key={search.id}
+                    className="hover:shadow-md transition-shadow"
+                  >
                     <CardContent className="pt-6">
                       <div className="flex justify-between items-center">
                         <div className="flex-1">
                           <p className="font-medium mb-1">{search.query}</p>
                           <div className="flex items-center gap-4 text-sm text-gray-600">
                             <span>{formatDate(search.timestamp)}</span>
-                            <Badge variant="outline">{search.results_count} results</Badge>
+                            <Badge variant="outline">
+                              {search.results_count} results
+                            </Badge>
                           </div>
                         </div>
                         <Button size="sm" variant="outline">
@@ -687,4 +765,3 @@ const MyRoutes = () => {
 };
 
 export default MyRoutes;
-

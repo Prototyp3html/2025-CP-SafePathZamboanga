@@ -1,10 +1,21 @@
-
-import { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 
 interface AddFavoriteModalProps {
@@ -13,20 +24,24 @@ interface AddFavoriteModalProps {
   onAddFavorite: (favorite: any) => void;
 }
 
-export const AddFavoriteModal = ({ isOpen, onClose, onAddFavorite }: AddFavoriteModalProps) => {
+export const AddFavoriteModal = ({
+  isOpen,
+  onClose,
+  onAddFavorite,
+}: AddFavoriteModalProps) => {
   const [formData, setFormData] = useState({
-    name: '',
-    from: '',
-    to: '',
-    frequency: 'Daily',
-    riskLevel: 'low'
+    name: "",
+    from: "",
+    to: "",
+    frequency: "Daily",
+    riskLevel: "low",
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.name || !formData.from || !formData.to) {
-      toast.error('Please fill in all required fields');
+      toast.error("Please fill in all required fields");
       return;
     }
 
@@ -35,20 +50,20 @@ export const AddFavoriteModal = ({ isOpen, onClose, onAddFavorite }: AddFavorite
       from_location: formData.from,
       to_location: formData.to,
       frequency: formData.frequency,
-      avg_duration: '15 mins', // Default duration
-      risk_level: formData.riskLevel
+      avg_duration: "15 mins", // Default duration
+      risk_level: formData.riskLevel,
     };
 
     onAddFavorite(newFavorite);
-    toast.success('Favorite route added successfully!');
+    toast.success("Favorite route added successfully!");
 
     // Reset form
     setFormData({
-      name: '',
-      from: '',
-      to: '',
-      frequency: 'Daily',
-      riskLevel: 'low'
+      name: "",
+      from: "",
+      to: "",
+      frequency: "Daily",
+      riskLevel: "low",
     });
 
     onClose();
@@ -68,7 +83,9 @@ export const AddFavoriteModal = ({ isOpen, onClose, onAddFavorite }: AddFavorite
               id="name"
               placeholder="e.g., Home to Work"
               value={formData.name}
-              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, name: e.target.value }))
+              }
             />
           </div>
 
@@ -78,7 +95,9 @@ export const AddFavoriteModal = ({ isOpen, onClose, onAddFavorite }: AddFavorite
               id="from"
               placeholder="Starting location"
               value={formData.from}
-              onChange={(e) => setFormData(prev => ({ ...prev, from: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, from: e.target.value }))
+              }
             />
           </div>
 
@@ -88,13 +107,20 @@ export const AddFavoriteModal = ({ isOpen, onClose, onAddFavorite }: AddFavorite
               id="to"
               placeholder="Destination"
               value={formData.to}
-              onChange={(e) => setFormData(prev => ({ ...prev, to: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, to: e.target.value }))
+              }
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="frequency">Frequency</Label>
-            <Select value={formData.frequency} onValueChange={(value) => setFormData(prev => ({ ...prev, frequency: value }))}>
+            <Select
+              value={formData.frequency}
+              onValueChange={(value) =>
+                setFormData((prev) => ({ ...prev, frequency: value }))
+              }
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -109,7 +135,12 @@ export const AddFavoriteModal = ({ isOpen, onClose, onAddFavorite }: AddFavorite
 
           <div className="space-y-2">
             <Label htmlFor="riskLevel">Risk Level</Label>
-            <Select value={formData.riskLevel} onValueChange={(value) => setFormData(prev => ({ ...prev, riskLevel: value }))}>
+            <Select
+              value={formData.riskLevel}
+              onValueChange={(value) =>
+                setFormData((prev) => ({ ...prev, riskLevel: value }))
+              }
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -125,9 +156,7 @@ export const AddFavoriteModal = ({ isOpen, onClose, onAddFavorite }: AddFavorite
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit">
-              Add Favorite
-            </Button>
+            <Button type="submit">Add Favorite</Button>
           </div>
         </form>
       </DialogContent>

@@ -68,6 +68,16 @@ export const NavigationBar = () => {
             Community
           </Link>
           <Link
+            to="/risk-analysis"
+            className={`px-4 py-1 text-sm font-medium rounded transition-all duration-200 ${
+              isActive("/risk-analysis")
+                ? "bg-blue-700 text-white shadow-sm"
+                : "text-white hover:bg-blue-500 hover:bg-opacity-40"
+            }`}
+          >
+            🛡️ Risk Analysis
+          </Link>
+          <Link
             to="/settings"
             className={`px-4 py-1 text-sm font-medium rounded transition-all duration-200 ${
               isActive("/settings")

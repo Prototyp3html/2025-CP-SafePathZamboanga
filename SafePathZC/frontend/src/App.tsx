@@ -1,16 +1,15 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import { useLocation } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useLocation } from "react-router-dom";
+import { useEffect } from "react";
 import Index from "./pages/Index";
 import MyRoutes from "./pages/MyRoutes";
 import Alerts from "./pages/Alerts";
 import Community from "./pages/CommunityForum";
 import Settings from "./pages/Settings";
 import Profile from "./pages/Profile";
+import RiskAnalysis from "./pages/RiskAnalysis";
 
 function App() {
-
-  
   return (
     <Router>
       <Routes>
@@ -21,11 +20,10 @@ function App() {
         <Route path="/community" element={<Community />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/risk-analysis" element={<RiskAnalysis />} />
       </Routes>
     </Router>
   );
 }
-
-
 
 export default App;
