@@ -280,6 +280,11 @@ def get_db():
     finally:
         db.close()
 
+# Root endpoint for health check
+@app.get("/")
+async def root():
+    return {"message": "SafePathZC Routes API is running", "status": "healthy", "version": "1.0.0"}
+
 # Enhanced Routing and Risk Analysis Endpoints
 
 # Helper functions for OSRM routing
