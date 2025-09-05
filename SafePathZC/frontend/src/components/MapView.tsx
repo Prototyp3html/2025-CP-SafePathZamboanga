@@ -45,6 +45,13 @@ interface RouteDetails {
   endName: string;
 }
 
+// New interface for handling multiple dynamic routes
+interface MultiRouteDetails {
+  routes: FloodRoute[];
+  startName: string;
+  endName: string;
+}
+
 interface TerrainData {
   elevation: number;
   slope: number;
@@ -89,6 +96,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const [selectedRoute, setSelectedRoute] = useState<
     "safe" | "manageable" | "prone" | null
   >(null);
+  const [selectedRouteIndex, setSelectedRouteIndex] = useState<number>(0); // For multi-route system
   const [showWeatherDashboard, setShowWeatherDashboard] = useState(false);
 
   // Elevation API management
@@ -120,6 +128,55 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const terrainPopupRef = useRef<L.CircleMarker | null>(null);
   const terrainOverlayRef = useRef<L.LayerGroup | null>(null);
   const routeLayersRef = useRef<L.Polyline[]>([]);
+
+  // Route persistence functions
+  const saveRouteData = (routeData: any) => {
+    try {
+      const persistedData = {
+        routeDetails: routeData,
+        startPoint,
+        endPoint,
+        selectedStartLocation,
+        selectedEndLocation,
+        startLocationInput,
+        endLocationInput,
+        routeMode: true,
+        timestamp: Date.now(),
+      };
+      localStorage.setItem("safePathRouteData", JSON.stringify(persistedData));
+      console.log("Route data saved to localStorage");
+    } catch (error) {
+      console.error("Failed to save route data:", error);
+    }
+  };
+
+  const loadRouteData = () => {
+    try {
+      const saved = localStorage.getItem("safePathRouteData");
+      if (saved) {
+        const data = JSON.parse(saved);
+        // Check if data is not too old (max 24 hours)
+        if (Date.now() - data.timestamp < 24 * 60 * 60 * 1000) {
+          return data;
+        } else {
+          // Remove old data
+          localStorage.removeItem("safePathRouteData");
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load route data:", error);
+    }
+    return null;
+  };
+
+  const clearPersistedRouteData = () => {
+    try {
+      localStorage.removeItem("safePathRouteData");
+      console.log("Persisted route data cleared");
+    } catch (error) {
+      console.error("Failed to clear persisted route data:", error);
+    }
+  };
 
   // Custom icons using local assets
   const startIcon = L.icon({
@@ -827,7 +884,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     };
 
     // Check if route actually starts and ends at the right points
-    const threshold = 0.001; // About 100m tolerance
+    const threshold = 0.002; // Increased to ~200m tolerance for better endpoint handling
     const startsCorrectly =
       Math.abs(route[0].lat - start.lat) < threshold &&
       Math.abs(route[0].lng - start.lng) < threshold;
@@ -835,15 +892,29 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       Math.abs(route[route.length - 1].lat - end.lat) < threshold &&
       Math.abs(route[route.length - 1].lng - end.lng) < threshold;
 
+    console.log(
+      `Route validation - Starts correctly: ${startsCorrectly}, Ends correctly: ${endsCorrectly}`
+    );
+    console.log(
+      `Route start: (${route[0].lat}, ${route[0].lng}) vs target: (${start.lat}, ${start.lng})`
+    );
+    console.log(
+      `Route end: (${route[route.length - 1].lat}, ${
+        route[route.length - 1].lng
+      }) vs target: (${end.lat}, ${end.lng})`
+    );
+
     const fixedRoute = [...route];
 
     // Force correct start point
     if (!startsCorrectly) {
+      console.log("Fixing start point");
       fixedRoute[0] = start;
     }
 
     // Force correct end point
     if (!endsCorrectly) {
+      console.log("Fixing end point");
       fixedRoute[fixedRoute.length - 1] = end;
     }
 
@@ -941,10 +1012,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           const response = await fetch(
             `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${waypoint.lng},${waypoint.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`,
             {
-              method: 'GET',
+              method: "GET",
               headers: {
-                'Accept': 'application/json',
-              }
+                Accept: "application/json",
+              },
             }
           );
 
@@ -967,8 +1038,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
       // If OSRM alternatives fail, generate simple offset routes
       if (alternatives.length === 0) {
-        console.log("OSRM alternatives failed, generating simple offset routes...");
-        
+        console.log(
+          "OSRM alternatives failed, generating simple offset routes..."
+        );
+
         for (let i = 0; i < 2; i++) {
           const offset = waypointOffsets[i];
           const waypoint = {
@@ -1014,26 +1087,28 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
       try {
         console.log(
-          `Calling route API: http://localhost:8000/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`
+          `Calling route API: http://localhost:8001/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`
         );
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
 
         const routeResponse = await fetch(
-          `http://localhost:8000/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`,
+          `http://localhost:8001/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`,
           {
             signal: controller.signal,
             headers: {
-              'Content-Type': 'application/json',
-            }
+              "Content-Type": "application/json",
+            },
           }
         );
-        
+
         clearTimeout(timeoutId);
 
         if (!routeResponse.ok) {
-          throw new Error(`Route API failed with status: ${routeResponse.status}`);
+          throw new Error(
+            `Route API failed with status: ${routeResponse.status}`
+          );
         }
 
         const routeData = await routeResponse.json();
@@ -1047,19 +1122,28 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
         console.log(`Got ${routes.length} route alternatives from backend API`);
       } catch (backendError) {
-        console.warn("Backend route API failed, using OSRM fallback:", backendError);
-        
+        console.warn(
+          "Backend route API failed, using OSRM fallback:",
+          backendError
+        );
+
         // Fallback to OSRM routing
         try {
           console.log("Attempting fallback to direct OSRM route...");
           const directRoute = await getOSRMRoute(start, end);
           if (directRoute.length > 0) {
             routes = [directRoute];
-            
+
             // Generate 2 alternative routes with waypoints for variety
-            const alternatives = await generateAlternativeRoutes(start, end, directRoute);
+            const alternatives = await generateAlternativeRoutes(
+              start,
+              end,
+              directRoute
+            );
             routes = [...routes, ...alternatives].slice(0, 3);
-            console.log(`Generated ${routes.length} routes using OSRM fallback`);
+            console.log(
+              `Generated ${routes.length} routes using OSRM fallback`
+            );
           } else {
             throw new Error("OSRM also returned empty route");
           }
@@ -1099,7 +1183,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               routeCoordinates = route.geometry.coordinates;
             } else if (Array.isArray(route) && route.length > 0) {
               // Handle array of coordinate objects
-              routeCoordinates = route.map((point: any) => [point.lng, point.lat]);
+              routeCoordinates = route.map((point: any) => [
+                point.lng,
+                point.lat,
+              ]);
             } else {
               throw new Error(`Invalid route structure for route ${index + 1}`);
             }
@@ -1109,7 +1196,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             const routeDuration = route.duration || 600; // 10 minutes default
 
             // Calculate basic risk score as fallback
-            const estimatedRisk = Math.min(8.5, 3.5 + index * 1.3 + routeDistance / 15000);
+            const estimatedRisk = Math.min(
+              8.5,
+              3.5 + index * 1.3 + routeDistance / 15000
+            );
 
             return {
               id: index + 1,
@@ -1124,7 +1214,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               originalRoute: route,
             };
           } catch (error) {
-            console.warn(`Failed to process route ${index + 1}, using fallback:`, error);
+            console.warn(
+              `Failed to process route ${index + 1}, using fallback:`,
+              error
+            );
 
             // Create a basic fallback route
             const fallbackRoute = index === 0 ? routes[0] : [start, end];
@@ -1133,10 +1226,16 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
             return {
               id: index + 1,
-              waypoints: Array.isArray(fallbackRoute) 
+              waypoints: Array.isArray(fallbackRoute)
                 ? fallbackRoute.map((point: any) => ({
-                    lat: typeof point.lat === 'number' ? point.lat : point[1] || start.lat,
-                    lng: typeof point.lng === 'number' ? point.lng : point[0] || start.lng,
+                    lat:
+                      typeof point.lat === "number"
+                        ? point.lat
+                        : point[1] || start.lat,
+                    lng:
+                      typeof point.lng === "number"
+                        ? point.lng
+                        : point[0] || start.lng,
                   }))
                 : [start, end],
               distance: fallbackDistance.toFixed(1),
@@ -1149,15 +1248,18 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         })
       );
 
-      console.log(`Processed ${processedRoutes.length} routes, sorting by risk...`);
+      console.log(
+        `Processed ${processedRoutes.length} routes, sorting by risk...`
+      );
 
       // Filter out any invalid routes and ensure all have riskScore
-      const validRoutes = processedRoutes.filter(route => 
-        route && 
-        typeof route.riskScore === 'number' && 
-        !isNaN(route.riskScore) &&
-        route.waypoints && 
-        route.waypoints.length >= 2
+      const validRoutes = processedRoutes.filter(
+        (route) =>
+          route &&
+          typeof route.riskScore === "number" &&
+          !isNaN(route.riskScore) &&
+          route.waypoints &&
+          route.waypoints.length >= 2
       );
 
       if (validRoutes.length === 0) {
@@ -1166,37 +1268,54 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
       // Sort routes by risk score (lowest to highest - safest first)
       const sortedRoutes = validRoutes.sort((a, b) => {
-        const riskA = typeof a.riskScore === 'number' ? a.riskScore : 5.0;
-        const riskB = typeof b.riskScore === 'number' ? b.riskScore : 5.0;
+        const riskA = typeof a.riskScore === "number" ? a.riskScore : 5.0;
+        const riskB = typeof b.riskScore === "number" ? b.riskScore : 5.0;
         return riskA - riskB;
       });
 
-      // Ensure we have at least 3 routes by duplicating if necessary
-      while (sortedRoutes.length < 3) {
-        const lastRoute = sortedRoutes[sortedRoutes.length - 1];
-        const duplicatedRoute = {
-          ...lastRoute,
-          id: sortedRoutes.length + 1,
-          riskScore: lastRoute.riskScore + 1.0 + Math.random() * 0.5,
-          warnings: [...(lastRoute.warnings || []), "Duplicated route for variety"]
-        };
-        sortedRoutes.push(duplicatedRoute);
-      }
+      // Limit to maximum 3 routes and ensure distinct risk levels
+      const finalRoutes = [];
 
-      // Ensure we have distinct risk levels by spreading them out if needed
-      for (let i = 1; i < sortedRoutes.length; i++) {
-        const currentRisk = sortedRoutes[i].riskScore;
-        const previousRisk = sortedRoutes[i - 1].riskScore;
-        
-        if (currentRisk - previousRisk < 0.8) {
-          sortedRoutes[i].riskScore = previousRisk + 0.8 + Math.random() * 0.4;
+      if (sortedRoutes.length > 0) {
+        // Always add the safest route
+        finalRoutes.push(sortedRoutes[0]);
+
+        // Add middle route if we have enough routes
+        if (sortedRoutes.length >= 2) {
+          const midIndex = Math.floor(sortedRoutes.length / 2);
+          const midRoute = sortedRoutes[midIndex];
+          // Only add if significantly different from safe route
+          if (midRoute.riskScore - sortedRoutes[0].riskScore >= 0.8) {
+            finalRoutes.push(midRoute);
+          }
+        }
+
+        // Add highest risk route if we have enough routes
+        if (sortedRoutes.length >= 3) {
+          const lastRoute = sortedRoutes[sortedRoutes.length - 1];
+          // Only add if significantly different from previous routes
+          if (
+            lastRoute.riskScore -
+              finalRoutes[finalRoutes.length - 1].riskScore >=
+            0.8
+          ) {
+            finalRoutes.push(lastRoute);
+          }
         }
       }
 
-      // Assign the three main routes for display
-      const safeRoute = sortedRoutes[0];
-      const midRoute = sortedRoutes[Math.min(1, sortedRoutes.length - 1)];
-      const riskRoute = sortedRoutes[Math.max(2, sortedRoutes.length - 1)];
+      // Ensure we have at least one route
+      if (finalRoutes.length === 0) {
+        throw new Error("No valid routes generated");
+      }
+
+      // Assign the routes for display (use finalRoutes instead of sortedRoutes)
+      const safeRoute = finalRoutes[0];
+      const midRoute = finalRoutes.length > 1 ? finalRoutes[1] : finalRoutes[0];
+      const riskRoute =
+        finalRoutes.length > 2
+          ? finalRoutes[2]
+          : finalRoutes[finalRoutes.length - 1];
 
       // Helper function to determine safety level and color - force first route to be safe
       const getSafetyInfo = (score: number, routeIndex: number = -1) => {
@@ -1208,8 +1327,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         if (score <= 4.0)
           return { level: "Low Risk", risk: "safe", color: "#27ae60" };
         if (score <= 6.5)
-          return { level: "Medium Risk", risk: "manageable", color: "#f39c12" };
-        return { level: "High Risk", risk: "prone", color: "#e74c3c" };
+          return { level: "Medium Risk", risk: "manageable", color: "#ff8c00" }; // Orange for medium risk
+        return { level: "High Risk", risk: "prone", color: "#e74c3c" }; // Red for high risk
       };
 
       const safeInfo = getSafetyInfo(safeRoute.riskScore, 0); // Force first route to be safe
@@ -1217,14 +1336,47 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       const riskInfo = getSafetyInfo(riskRoute.riskScore, 2);
 
       console.log(
-        `Final routes - Safe: ${safeRoute.riskScore.toFixed(
-          1
-        )}, Mid: ${midRoute.riskScore.toFixed(
-          1
-        )}, Risk: ${riskRoute.riskScore.toFixed(1)}`
+        `Final routes - Safe: ${safeRoute.riskScore.toFixed(1)}${
+          finalRoutes.length > 1
+            ? `, Mid: ${midRoute.riskScore.toFixed(1)}`
+            : ""
+        }${
+          finalRoutes.length > 2
+            ? `, Risk: ${riskRoute.riskScore.toFixed(1)}`
+            : ""
+        }`
       );
 
-      // Create the route details using enhanced data
+      // Create the route details using enhanced data - ONLY VALID ROUTES for new system
+      const allRouteDetails: MultiRouteDetails = {
+        routes: finalRoutes.map((route, index) => {
+          const safetyInfo = getSafetyInfo(route.riskScore, index);
+          return {
+            waypoints: route.waypoints,
+            distance: route.distance + " km",
+            time: route.duration + " min",
+            floodRisk: safetyInfo.risk as any,
+            riskLevel: safetyInfo.level,
+            description: `${safetyInfo.level} (Score: ${route.riskScore.toFixed(
+              1
+            )}) - ${
+              route.warnings.length > 0
+                ? route.warnings[0]
+                : index === 0
+                ? "Recommended safe route"
+                : "Alternative route option"
+            }`,
+            color: safetyInfo.color,
+          };
+        }),
+        startName: selectedStartLocation?.display_name || "Start Point",
+        endName: selectedEndLocation?.display_name || "End Point",
+      };
+
+      // Store both formats - use new format for route drawing
+      (window as any).allRouteDetails = allRouteDetails;
+
+      // Create the route details using enhanced data (legacy 3-route format)
       const routeDetails: RouteDetails = {
         safeRoute: {
           waypoints: safeRoute.waypoints,
@@ -1361,7 +1513,452 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     }
   };
 
-  // Draw route on map
+  // Draw multiple routes dynamically (gap-fixing system)
+  const drawMultipleRoutes = (multiRouteDetails: MultiRouteDetails) => {
+    if (!mapRef.current) return;
+
+    // Clear existing route layers
+    routeLayersRef.current.forEach((layer) => {
+      if (mapRef.current && mapRef.current.hasLayer(layer)) {
+        mapRef.current.removeLayer(layer);
+      }
+    });
+    routeLayersRef.current = [];
+
+    const routes = multiRouteDetails.routes;
+    if (routes.length === 0) return;
+
+    // Simple Route Visualization - Draw complete routes with proper layering
+    const createSmartRouteVisualization = (routes: FloodRoute[]) => {
+      const routeSegments: L.Polyline[] = [];
+
+      if (routes.length === 0) return routeSegments;
+
+      // Draw alternative routes FIRST (underneath)
+      for (let i = routes.length - 1; i >= 1; i--) {
+        const route = routes[i];
+        const isSelected =
+          selectedRoute === route.floodRisk || selectedRouteIndex === i;
+
+        if (route.waypoints && route.waypoints.length >= 2) {
+          console.log(
+            `Drawing route ${i} (${route.riskLevel}) with ${route.waypoints.length} points`
+          );
+
+          const alternativePolyline = L.polyline(
+            route.waypoints.map((wp) => [wp.lat, wp.lng]),
+            {
+              color: route.color,
+              weight: isSelected ? 6 : 4,
+              opacity: 0.7,
+              className: `route-alternative-${i}`,
+              dashArray: i === 1 ? "10, 5" : i === 2 ? "15, 5" : "20, 5",
+              lineCap: "round",
+              lineJoin: "round",
+            }
+          ).addTo(mapRef.current!);
+
+          addRouteInteractivity(alternativePolyline, route);
+          routeSegments.push(alternativePolyline);
+        }
+      }
+
+      // Draw safe route LAST (on top)
+      const safeRoute = routes[0];
+      if (safeRoute && safeRoute.waypoints && safeRoute.waypoints.length >= 2) {
+        console.log(
+          `Drawing safe route with ${safeRoute.waypoints.length} points`
+        );
+
+        const safePolyline = L.polyline(
+          safeRoute.waypoints.map((wp) => [wp.lat, wp.lng]),
+          {
+            color: safeRoute.color,
+            weight: 5,
+            opacity: 0.9,
+            className: "route-safe",
+          }
+        ).addTo(mapRef.current!);
+
+        addRouteInteractivity(safePolyline, safeRoute);
+        routeSegments.push(safePolyline);
+      }
+
+      return routeSegments;
+    };
+
+    // Use the smart route visualization to prevent gaps
+    const smartRouteSegments = createSmartRouteVisualization(routes);
+    routeLayersRef.current = smartRouteSegments;
+
+    // Fit map to show all routes
+    if (routeLayersRef.current.length > 0) {
+      const group = new L.FeatureGroup(routeLayersRef.current);
+      mapRef.current!.fitBounds(group.getBounds().pad(0.1));
+    }
+  };
+
+  // Helper function to add interactivity to route polylines
+  const addRouteInteractivity = (polyline: L.Polyline, route: FloodRoute) => {
+    let debounceTimer: NodeJS.Timeout;
+
+    polyline.on("mousemove", async (e) => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(async () => {
+        const point = e.latlng;
+
+        try {
+          const elevationData = await getElevationData(point.lat, point.lng);
+
+          if (elevationData) {
+            const risk = calculateFloodRisk(
+              elevationData.elevation,
+              point.lat,
+              point.lng
+            );
+            const riskColor =
+              risk === "prone"
+                ? "#e74c3c"
+                : risk === "manageable"
+                ? "#f39c12"
+                : "#27ae60";
+
+            polyline
+              .bindTooltip(
+                `<div style="
+                background: white;
+                padding: 12px;
+                border-radius: 8px;
+                border: 2px solid ${riskColor};
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                font-family: system-ui, -apple-system, sans-serif;
+                min-width: 200px;
+              ">
+                <div style="color: ${route.color}; font-weight: 600; font-size: 14px; margin-bottom: 8px;">
+                  ${route.riskLevel} Route
+                </div>
+                <div style="margin-bottom: 6px; font-size: 13px;">
+                  Distance: ${route.distance} • Time: ${route.time}
+                </div>
+                <div style="margin-bottom: 6px; font-size: 13px;">
+                  Elevation: ${elevationData.elevation}m
+                </div>
+                <div style="color: ${riskColor}; font-size: 13px;">
+                  ${route.description}
+                </div>
+              </div>`,
+                {
+                  permanent: false,
+                  sticky: true,
+                  direction: "top",
+                  offset: L.point(0, -5),
+                  opacity: 1,
+                  className: "terrain-tooltip",
+                }
+              )
+              .openTooltip();
+          }
+        } catch (error) {
+          // Fallback tooltip without elevation
+          polyline
+            .bindTooltip(
+              `<div style="background: white; padding: 8px; border-radius: 4px;">
+                ${route.riskLevel} Route - ${route.distance} • ${route.time}
+              </div>`,
+              { permanent: false, sticky: true }
+            )
+            .openTooltip();
+        }
+      }, 50);
+    });
+
+    polyline.on("mouseout", () => {
+      clearTimeout(debounceTimer);
+      polyline.closeTooltip();
+    });
+  };
+
+  // Draw all routes with smart divergence-based display
+  const drawAllRoutes = (routeDetails: RouteDetails) => {
+    if (!mapRef.current) return;
+
+    // Clear existing route layers
+    routeLayersRef.current.forEach((layer) => {
+      if (mapRef.current && mapRef.current.hasLayer(layer)) {
+        mapRef.current.removeLayer(layer);
+      }
+    });
+    routeLayersRef.current = [];
+
+    // Helper function to find where routes diverge significantly from the safe route
+    const findDivergencePoints = (
+      safeRoute: LatLng[],
+      compareRoute: LatLng[],
+      threshold: number = 0.002
+    ) => {
+      let divergenceStart = -1;
+      let significantDivergenceCount = 0;
+
+      // Find first significant divergence point
+      for (
+        let i = 0;
+        i < Math.min(safeRoute.length, compareRoute.length);
+        i++
+      ) {
+        const distance = Math.sqrt(
+          Math.pow(safeRoute[i].lat - compareRoute[i].lat, 2) +
+            Math.pow(safeRoute[i].lng - compareRoute[i].lng, 2)
+        );
+
+        if (distance > threshold) {
+          if (divergenceStart === -1) {
+            divergenceStart = Math.max(0, i - 2); // Start showing 2 points before divergence
+          }
+          significantDivergenceCount++;
+        }
+      }
+
+      // If routes diverge significantly (more than 3 points different), show the alternative
+      // But always show the full alternative route to the destination
+      if (significantDivergenceCount < 3) {
+        return { shouldShow: false, divergenceStart: -1 };
+      }
+
+      return {
+        shouldShow: true,
+        divergenceStart: Math.max(0, divergenceStart),
+      };
+    };
+
+    // Get smart route segments
+    const routes = [
+      {
+        route: routeDetails.safeRoute,
+        waypoints: routeDetails.safeRoute.waypoints, // Show full safe route
+        priority: 1,
+        style: {
+          color: routeDetails.safeRoute.color,
+          weight: 6,
+          opacity: 0.9,
+          dashArray: undefined,
+          zIndex: 300,
+        },
+      },
+      {
+        route: routeDetails.manageableRoute,
+        waypoints: (() => {
+          const { shouldShow, divergenceStart } = findDivergencePoints(
+            routeDetails.safeRoute.waypoints,
+            routeDetails.manageableRoute.waypoints
+          );
+
+          if (!shouldShow) {
+            // Routes never diverge significantly, don't show this route
+            return [];
+          }
+
+          // Show the full alternative route from divergence to destination
+          return routeDetails.manageableRoute.waypoints.slice(divergenceStart);
+        })(),
+        priority: 2,
+        style: {
+          color: routeDetails.manageableRoute.color,
+          weight: 5,
+          opacity: 0.8,
+          dashArray: "8, 4",
+          zIndex: 200,
+        },
+      },
+      {
+        route: routeDetails.proneRoute,
+        waypoints: (() => {
+          const { shouldShow, divergenceStart } = findDivergencePoints(
+            routeDetails.safeRoute.waypoints,
+            routeDetails.proneRoute.waypoints
+          );
+
+          if (!shouldShow) {
+            // Routes never diverge significantly, don't show this route
+            return [];
+          }
+
+          // Show the full alternative route from divergence to destination
+          return routeDetails.proneRoute.waypoints.slice(divergenceStart);
+        })(),
+        priority: 3,
+        style: {
+          color: routeDetails.proneRoute.color,
+          weight: 4,
+          opacity: 0.7,
+          dashArray: "12, 8",
+          zIndex: 100,
+        },
+      },
+    ];
+
+    // Draw routes in reverse priority order so safe route appears on top
+    routes.sort((a, b) => b.priority - a.priority);
+
+    routes.forEach((routeInfo) => {
+      if (routeInfo.waypoints.length < 2) return; // Skip routes with insufficient points
+
+      const polyline = L.polyline(
+        routeInfo.waypoints.map((wp) => [wp.lat, wp.lng]),
+        routeInfo.style
+      ).addTo(mapRef.current!);
+
+      // Add interactive features
+      let debounceTimer: NodeJS.Timeout;
+      polyline.on("mousemove", async (e) => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(async () => {
+          const point = e.latlng;
+          const elevationData = await getElevationData(point.lat, point.lng);
+
+          if (elevationData) {
+            const risk = calculateFloodRisk(
+              elevationData.elevation,
+              point.lat,
+              point.lng
+            );
+            const riskColor =
+              risk === "prone"
+                ? "#e74c3c"
+                : risk === "manageable"
+                ? "#f39c12"
+                : "#27ae60";
+
+            polyline
+              .bindTooltip(
+                `<div style="
+                background: white;
+                padding: 12px;
+                border-radius: 8px;
+                border: 2px solid ${riskColor};
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                font-family: system-ui, -apple-system, sans-serif;
+                min-width: 200px;
+              ">
+                <div style="color: ${routeInfo.route.color}; font-weight: 600; font-size: 14px; margin-bottom: 8px;">
+                  ${routeInfo.route.riskLevel} Route
+                </div>
+                <div style="margin-bottom: 6px; font-size: 13px;">
+                  Distance: ${routeInfo.route.distance} • Time: ${routeInfo.route.time}
+                </div>
+                <div style="margin-bottom: 6px; font-size: 13px;">
+                  Elevation: ${elevationData.elevation}m
+                </div>
+                <div style="color: ${riskColor}; font-size: 13px;">
+                  ${routeInfo.route.description}
+                </div>
+              </div>`,
+                {
+                  permanent: false,
+                  sticky: true,
+                  direction: "top",
+                  offset: L.point(0, -5),
+                  opacity: 1,
+                  className: "terrain-tooltip",
+                }
+              )
+              .openTooltip();
+          }
+        }, 50);
+      });
+
+      polyline.on("mouseout", () => {
+        clearTimeout(debounceTimer);
+        polyline.closeTooltip();
+      });
+
+      // Add click handler for route selection
+      polyline.on("click", () => {
+        setSelectedRoute(
+          routeInfo.route.floodRisk as "safe" | "manageable" | "prone"
+        );
+
+        // Highlight selected route
+        routeLayersRef.current.forEach((layer) => {
+          if (layer === polyline) {
+            layer.setStyle({
+              weight: routeInfo.style.weight + 2,
+              opacity: 1.0,
+            });
+          } else {
+            const originalStyle = layer.options as any;
+            layer.setStyle({
+              weight: Math.max(2, originalStyle.weight - 1),
+              opacity: originalStyle.opacity * 0.6,
+            });
+          }
+        });
+      });
+
+      routeLayersRef.current.push(polyline);
+    });
+
+    // Add route divergence indicators (small dots where alternative routes branch off)
+    const manageableDivergence = findDivergencePoints(
+      routeDetails.safeRoute.waypoints,
+      routeDetails.manageableRoute.waypoints
+    );
+    const proneDivergence = findDivergencePoints(
+      routeDetails.safeRoute.waypoints,
+      routeDetails.proneRoute.waypoints
+    );
+
+    // Add small markers at divergence points
+    if (manageableDivergence.divergenceStart > 0) {
+      const divergencePoint =
+        routeDetails.safeRoute.waypoints[manageableDivergence.divergenceStart];
+      const marker = L.circleMarker(
+        [divergencePoint.lat, divergencePoint.lng],
+        {
+          color: routeDetails.manageableRoute.color,
+          fillColor: routeDetails.manageableRoute.color,
+          radius: 4,
+          weight: 2,
+          opacity: 0.8,
+          fillOpacity: 0.6,
+        }
+      )
+        .addTo(mapRef.current!)
+        .bindTooltip("Alternative route starts here", { permanent: false });
+
+      routeLayersRef.current.push(marker as any);
+    }
+
+    if (
+      proneDivergence.divergenceStart > 0 &&
+      proneDivergence.divergenceStart !== manageableDivergence.divergenceStart
+    ) {
+      const divergencePoint =
+        routeDetails.safeRoute.waypoints[proneDivergence.divergenceStart];
+      const marker = L.circleMarker(
+        [divergencePoint.lat, divergencePoint.lng],
+        {
+          color: routeDetails.proneRoute.color,
+          fillColor: routeDetails.proneRoute.color,
+          radius: 4,
+          weight: 2,
+          opacity: 0.8,
+          fillOpacity: 0.6,
+        }
+      )
+        .addTo(mapRef.current!)
+        .bindTooltip("High-risk route starts here", { permanent: false });
+
+      routeLayersRef.current.push(marker as any);
+    }
+
+    // Fit map to show all routes
+    if (routeLayersRef.current.length > 0) {
+      const group = new L.FeatureGroup(routeLayersRef.current);
+      mapRef.current!.fitBounds(group.getBounds().pad(0.1));
+    }
+  };
+
+  // Draw route on map (single route - keep for backward compatibility)
   const drawRoute = (route: FloodRoute) => {
     if (!mapRef.current) return;
 
@@ -1510,34 +2107,215 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
-      
+
       // Check if the click is outside any location input or suggestion dropdown
-      if (!target.closest('[data-location-input]') && !target.closest('[data-suggestions-dropdown]')) {
+      if (
+        !target.closest("[data-location-input]") &&
+        !target.closest("[data-suggestions-dropdown]")
+      ) {
         setShowStartSuggestions(false);
         setShowEndSuggestions(false);
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
 
   // Handle escape key to hide suggestion dropdowns
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         setShowStartSuggestions(false);
         setShowEndSuggestions(false);
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
+
+  // Route persistence - restore route data on component mount
+  useEffect(() => {
+    const restoreRouteData = async () => {
+      // Check for search request from MyRoutes
+      const searchRequest = localStorage.getItem("safePathSearchRequest");
+      if (searchRequest) {
+        try {
+          const request = JSON.parse(searchRequest);
+          console.log("Processing search request from MyRoutes:", request);
+
+          // Clear the request
+          localStorage.removeItem("safePathSearchRequest");
+
+          // Set search mode and trigger search
+          setStartLocationInput(request.query);
+
+          // Small delay to ensure input is updated
+          setTimeout(() => {
+            // Auto-trigger search
+            const handleAutoSearch = async () => {
+              try {
+                const results = await searchLocations(request.query);
+                if (results.length > 0) {
+                  const location = results[0];
+                  setSelectedStartLocation(location);
+                  setStartPoint({
+                    lat: parseFloat(location.lat),
+                    lng: parseFloat(location.lon),
+                  });
+
+                  // Center map on found location
+                  if (mapRef.current) {
+                    mapRef.current.setView(
+                      [parseFloat(location.lat), parseFloat(location.lon)],
+                      15
+                    );
+                  }
+                }
+              } catch (error) {
+                console.error("Error processing search request:", error);
+              }
+            };
+
+            handleAutoSearch();
+          }, 500);
+
+          return; // Don't restore saved data if we have a search request
+        } catch (error) {
+          console.error("Failed to process search request:", error);
+          localStorage.removeItem("safePathSearchRequest");
+        }
+      }
+
+      // Check for route request from MyRoutes
+      const routeRequest = localStorage.getItem("safePathRouteRequest");
+      if (routeRequest) {
+        try {
+          const request = JSON.parse(routeRequest);
+          console.log("Processing route request from MyRoutes:", request);
+
+          // Clear the request
+          localStorage.removeItem("safePathRouteRequest");
+
+          // Set the locations and trigger route finding
+          setStartLocationInput(request.startLocationInput);
+          setEndLocationInput(request.endLocationInput);
+          setRouteMode(true);
+
+          // Small delay to ensure inputs are updated
+          setTimeout(() => {
+            // Auto-trigger route finding
+            const handleAutoRoute = async () => {
+              try {
+                // Search for start location
+                const startResults = await searchLocations(
+                  request.startLocationInput
+                );
+                if (startResults.length > 0) {
+                  const startLocation = startResults[0];
+                  setSelectedStartLocation(startLocation);
+                  setStartPoint({
+                    lat: parseFloat(startLocation.lat),
+                    lng: parseFloat(startLocation.lon),
+                  });
+
+                  // Search for end location
+                  const endResults = await searchLocations(
+                    request.endLocationInput
+                  );
+                  if (endResults.length > 0) {
+                    const endLocation = endResults[0];
+                    setSelectedEndLocation(endLocation);
+                    setEndPoint({
+                      lat: parseFloat(endLocation.lat),
+                      lng: parseFloat(endLocation.lon),
+                    });
+
+                    // Trigger route finding
+                    await handleFindRoute();
+                  }
+                }
+              } catch (error) {
+                console.error("Error processing route request:", error);
+              }
+            };
+
+            handleAutoRoute();
+          }, 500);
+
+          return; // Don't restore saved data if we have a route request
+        } catch (error) {
+          console.error("Failed to process route request:", error);
+          localStorage.removeItem("safePathRouteRequest");
+        }
+      }
+
+      const savedData = loadRouteData();
+      if (savedData && mapRef.current) {
+        console.log("Restoring saved route data...");
+
+        // Restore state
+        setStartPoint(savedData.startPoint);
+        setEndPoint(savedData.endPoint);
+        setSelectedStartLocation(savedData.selectedStartLocation);
+        setSelectedEndLocation(savedData.selectedEndLocation);
+        setStartLocationInput(savedData.startLocationInput || "");
+        setEndLocationInput(savedData.endLocationInput || "");
+        setRouteMode(savedData.routeMode || false);
+
+        // Restore route details if available
+        if (savedData.routeDetails) {
+          setRouteDetails(savedData.routeDetails);
+
+          // If we have multiRouteDetails in window object, restore routes
+          if ((window as any).allRouteDetails) {
+            const multiRoutes = (window as any)
+              .allRouteDetails as MultiRouteDetails;
+            drawMultipleRoutes(multiRoutes);
+          }
+        }
+
+        // Add markers if we have points
+        if (savedData.startPoint && savedData.endPoint) {
+          const startMarker = L.marker(
+            [savedData.startPoint.lat, savedData.startPoint.lng],
+            {
+              icon: startIcon,
+            }
+          )
+            .addTo(mapRef.current)
+            .bindPopup(
+              "Start: " +
+                (savedData.selectedStartLocation?.display_name || "Start Point")
+            );
+
+          const endMarker = L.marker(
+            [savedData.endPoint.lat, savedData.endPoint.lng],
+            {
+              icon: endIcon,
+            }
+          )
+            .addTo(mapRef.current)
+            .bindPopup(
+              "End: " +
+                (savedData.selectedEndLocation?.display_name || "End Point")
+            );
+
+          markersRef.current.push(startMarker, endMarker);
+        }
+      }
+    };
+
+    // Only restore if the map is ready
+    if (mapRef.current) {
+      restoreRouteData();
+    }
+  }, [mapRef.current]); // Depend on map being ready
 
   // Enhanced input handlers that clear selection when user starts typing
   const handleStartLocationInputChange = (value: string) => {
@@ -1590,6 +2368,21 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       setShowRoutePlannerModal(false);
       setRouteMode(true);
 
+      // Clear previous routes and markers FIRST but keep location data
+      routeLayersRef.current.forEach((layer) => {
+        if (mapRef.current && mapRef.current.hasLayer(layer)) {
+          mapRef.current.removeLayer(layer);
+        }
+      });
+      routeLayersRef.current = [];
+
+      markersRef.current.forEach((marker) => {
+        if (mapRef.current && mapRef.current.hasLayer(marker)) {
+          mapRef.current.removeLayer(marker);
+        }
+      });
+      markersRef.current = [];
+
       // Add markers for start and end points
       if (mapRef.current) {
         const startMarker = L.marker([startPoint!.lat, startPoint!.lng], {
@@ -1622,10 +2415,20 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         const step = Math.max(1, Math.floor(cachePoints.length / sampleSize));
 
         // Cache elevation data with error handling and reduced frequency
-        console.log(`Pre-caching elevation data for ${Math.ceil(cachePoints.length / step)} points...`);
-        const maxCachePoints = useOfflineMode ? 0 : Math.min(5, Math.ceil(cachePoints.length / step)); // Much more limited API calls
-        
-        for (let i = 0; i < cachePoints.length && i < maxCachePoints * step; i += step) {
+        console.log(
+          `Pre-caching elevation data for ${Math.ceil(
+            cachePoints.length / step
+          )} points...`
+        );
+        const maxCachePoints = useOfflineMode
+          ? 0
+          : Math.min(5, Math.ceil(cachePoints.length / step)); // Much more limited API calls
+
+        for (
+          let i = 0;
+          i < cachePoints.length && i < maxCachePoints * step;
+          i += step
+        ) {
           try {
             const point = cachePoints[i];
             const key = `${point.lat.toFixed(4)},${point.lng.toFixed(4)}`;
@@ -1636,7 +2439,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               }
               // Add longer delay to avoid overwhelming APIs
               if (!useOfflineMode && i > 0) {
-                await new Promise(resolve => setTimeout(resolve, 500)); // Increased delay
+                await new Promise((resolve) => setTimeout(resolve, 500)); // Increased delay
               }
             }
           } catch (error) {
@@ -1644,7 +2447,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             // Continue with next point even if this one fails
           }
         }
-        console.log(`Cached elevation data for ${elevationCacheRef.current.size} total points`)
+        console.log(
+          `Cached elevation data for ${elevationCacheRef.current.size} total points`
+        );
 
         // Function to add hover handlers
         const addHoverHandlers = (polyline: L.Polyline, route: FloodRoute) => {
@@ -1660,7 +2465,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                 let elevationData = elevationCacheRef.current.get(key);
                 if (!elevationData) {
                   elevationData = await getElevationData(point.lat, point.lng);
-                  if (elevationData) elevationCacheRef.current.set(key, elevationData);
+                  if (elevationData)
+                    elevationCacheRef.current.set(key, elevationData);
                 }
 
                 if (elevationData) {
@@ -1711,13 +2517,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                       {
                         permanent: false,
                         sticky: true,
-                      direction: "top",
-                      offset: L.point(0, -5),
-                      opacity: 1,
-                      className: "terrain-tooltip",
-                    }
-                  )
-                  .openTooltip();
+                        direction: "top",
+                        offset: L.point(0, -5),
+                        opacity: 1,
+                        className: "terrain-tooltip",
+                      }
+                    )
+                    .openTooltip();
                 }
               } catch (error) {
                 console.warn("Error fetching elevation data for hover:", error);
@@ -1740,90 +2546,47 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           });
         };
 
-        // Draw all routes simultaneously with dynamic colors and distinct styling
-        const routeLayers = [];
+        // Use the new multi-route drawing system with expanded route options
+        const multiRoutes = (window as any)
+          .allRouteDetails as MultiRouteDetails;
+        if (multiRoutes && multiRoutes.routes.length > 0) {
+          console.log(
+            `Drawing ${multiRoutes.routes.length} route alternatives`
+          );
+          drawMultipleRoutes(multiRoutes);
+        } else {
+          // Fallback to old system if new data not available
+          drawAllRoutes(routes);
+        }
 
-        // Safe Route (Green) - Thick line
-        const safeRoute = L.polyline(
-          routes.safeRoute.waypoints.map((wp) => [wp.lat, wp.lng]),
-          {
-            color: routes.safeRoute.color,
-            weight: 6,
-            opacity: 0.85,
-            className: "safe-route",
-          }
-        );
-        safeRoute.bindTooltip(
-          `🛡️ ${routes.safeRoute.riskLevel}<br/>📍 ${routes.safeRoute.distance} • ⏱️ ${routes.safeRoute.time}`,
-          { permanent: true, direction: "top", offset: [0, -10] }
-        );
-        safeRoute.addTo(mapRef.current!);
-        addHoverHandlers(safeRoute, routes.safeRoute);
-        routeLayers.push(safeRoute);
-
-        // Manageable Route (Orange/Yellow) - Medium line
-        const manageableRoute = L.polyline(
-          routes.manageableRoute.waypoints.map((wp) => [wp.lat, wp.lng]),
-          {
-            color: routes.manageableRoute.color,
-            weight: 5,
-            opacity: 0.75,
-            dashArray: "8, 4",
-            className: "manageable-route",
-          }
-        );
-        manageableRoute.bindTooltip(
-          `⚠️ ${routes.manageableRoute.riskLevel}<br/>📍 ${routes.manageableRoute.distance} • ⏱️ ${routes.manageableRoute.time}`,
-          { permanent: true, direction: "bottom", offset: [0, 10] }
-        );
-        manageableRoute.addTo(mapRef.current!);
-        addHoverHandlers(manageableRoute, routes.manageableRoute);
-        routeLayers.push(manageableRoute);
-
-        // High Risk Route (Red) - Thin dashed line
-        const proneRoute = L.polyline(
-          routes.proneRoute.waypoints.map((wp) => [wp.lat, wp.lng]),
-          {
-            color: routes.proneRoute.color,
-            weight: 4,
-            opacity: 0.65,
-            dashArray: "12, 8",
-            className: "prone-route",
-          }
-        );
-        proneRoute.bindTooltip(
-          `⚡ ${routes.proneRoute.riskLevel}<br/>📍 ${routes.proneRoute.distance} • ⏱️ ${routes.proneRoute.time}`,
-          { permanent: true, direction: "center", offset: [0, 0] }
-        );
-        proneRoute.addTo(mapRef.current!);
-        addHoverHandlers(proneRoute, routes.proneRoute);
-        routeLayers.push(proneRoute);
-
-        routeLayersRef.current = routeLayers;
-
-        // Fit map to show all routes
-        const group = new L.FeatureGroup(routeLayersRef.current);
-        mapRef.current!.fitBounds(group.getBounds().pad(0.1));
+        // Set default route selection to safe route
+        setSelectedRoute("safe");
 
         setRouteDetails(routes);
+
+        // Save route data for persistence across page navigation
+        saveRouteData(routes);
       } catch (error) {
         console.error("Error generating routes:", error);
-        
+
         let errorMessage = "Error generating routes. Please try again.";
-        
+
         if (error instanceof TypeError && error.message.includes("fetch")) {
-          errorMessage = "Network error: Unable to connect to routing service. Please check your internet connection and try again.";
+          errorMessage =
+            "Network error: Unable to connect to routing service. Please check your internet connection and try again.";
         } else if (error instanceof Error) {
           if (error.message.includes("No routes found")) {
-            errorMessage = "No routes found between the selected locations. Please try different locations.";
+            errorMessage =
+              "No routes found between the selected locations. Please try different locations.";
           } else if (error.message.includes("elevation")) {
-            errorMessage = "Route generated with limited terrain data. Some features may not be available.";
+            errorMessage =
+              "Route generated with limited terrain data. Some features may not be available.";
           }
         }
-        
+
         // Show user-friendly error message
         alert(errorMessage);
-        
+
         // Still try to show a basic direct route if possible
         if (startPoint && endPoint) {
           const directDistance = calculateRouteDistance([startPoint, endPoint]);
@@ -1858,7 +2621,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             startName: selectedStartLocation?.display_name || "Start Point",
             endName: selectedEndLocation?.display_name || "End Point",
           };
-          
+
           // Draw a simple direct route line
           const directLine = L.polyline(
             [startPoint, endPoint].map((wp) => [wp.lat, wp.lng]),
@@ -1869,10 +2632,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               dashArray: "5, 5",
             }
           ).addTo(mapRef.current!);
-          
+
           routeLayersRef.current = [directLine];
           setRouteDetails(fallbackRoutes);
-          
+
+          // Save fallback route data for persistence
+          saveRouteData(fallbackRoutes);
+
           // Fit map to show the route
           mapRef.current!.fitBounds(directLine.getBounds().pad(0.1));
         }
@@ -1929,10 +2695,30 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   // Handle route selection
   const handleRouteSelection = (routeType: "safe" | "manageable" | "prone") => {
     setSelectedRoute(routeType);
-    if (routeDetails) {
-      const selectedRouteData = routeDetails[routeType + "Route"] as FloodRoute;
-      drawRoute(selectedRouteData);
-    }
+
+    // Highlight the selected route and dim others
+    routeLayersRef.current.forEach((layer) => {
+      const layerOptions = layer.options as any;
+      const isSelectedRoute =
+        (routeType === "safe" && layerOptions.className === "safe-route") ||
+        (routeType === "manageable" &&
+          layerOptions.className === "manageable-route") ||
+        (routeType === "prone" && layerOptions.className === "prone-route");
+
+      if (isSelectedRoute) {
+        // Highlight selected route
+        layer.setStyle({
+          weight: layerOptions.weight + 2,
+          opacity: 1.0,
+        });
+      } else {
+        // Dim other routes
+        layer.setStyle({
+          weight: Math.max(2, layerOptions.weight - 1),
+          opacity: 0.4,
+        });
+      }
+    });
   };
 
   // Define tile layers with working URLs
@@ -2107,7 +2893,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     max-width: 220px;
                   ">
                     <div style="color: ${color}; font-weight: 600; font-size: 13px; margin-bottom: 6px;">
-                      🏔️ Terrain Data ${elevationData ? (useOfflineMode || apiFailureCount > 3 ? "(Estimated)" : "(Live)") : "(Estimated)"}
+                      🏔️ Terrain Data ${
+                        elevationData
+                          ? useOfflineMode || apiFailureCount > 3
+                            ? "(Estimated)"
+                            : "(Live)"
+                          : "(Estimated)"
+                      }
                     </div>
                     <div style="margin-bottom: 4px; font-size: 12px;">
                       <strong>Elevation:</strong> ${displayElevation.toFixed(
@@ -2141,12 +2933,21 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               }
             } catch (error) {
               console.warn("Error fetching terrain data for tooltip:", error);
-              
+
               // Show fallback tooltip with estimated data
               if (!isTooltipShown) {
-                const fallbackFloodRisk = calculateFloodRisk(elevation, rectCenterLat, rectCenterLng);
-                const fallbackRiskColor = fallbackFloodRisk === "prone" ? "#e74c3c" : fallbackFloodRisk === "manageable" ? "#f39c12" : "#27ae60";
-                
+                const fallbackFloodRisk = calculateFloodRisk(
+                  elevation,
+                  rectCenterLat,
+                  rectCenterLng
+                );
+                const fallbackRiskColor =
+                  fallbackFloodRisk === "prone"
+                    ? "#e74c3c"
+                    : fallbackFloodRisk === "manageable"
+                    ? "#f39c12"
+                    : "#27ae60";
+
                 heatmapRect
                   .bindTooltip(
                     `<div style="
@@ -2168,7 +2969,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                       <strong>Slope:</strong> ~${calculateSlope(elevation)}°
                     </div>
                     <div style="color: ${fallbackRiskColor}; font-size: 11px; margin-top: 6px; padding: 3px 6px; background: ${fallbackRiskColor}15; border-radius: 3px;">
-                      Risk: ${fallbackFloodRisk === "prone" ? "High" : fallbackFloodRisk === "manageable" ? "Medium" : "Low"} (Estimated)
+                      Risk: ${
+                        fallbackFloodRisk === "prone"
+                          ? "High"
+                          : fallbackFloodRisk === "manageable"
+                          ? "Medium"
+                          : "Low"
+                      } (Estimated)
                     </div>
                   </div>`,
                     {
@@ -2260,17 +3067,25 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     }
 
     // Helper function to create elevation data from elevation value
-    const createElevationData = (elevation: number, isEstimated: boolean = false): TerrainData => {
+    const createElevationData = (
+      elevation: number,
+      isEstimated: boolean = false
+    ): TerrainData => {
       const floodRisk = calculateFloodRisk(elevation, lat, lng);
       const data: TerrainData = {
         elevation: elevation,
         slope: calculateSlope(elevation),
-        floodRisk: floodRisk === "safe" ? "Low" : floodRisk === "manageable" ? "Medium" : "High",
+        floodRisk:
+          floodRisk === "safe"
+            ? "Low"
+            : floodRisk === "manageable"
+            ? "Medium"
+            : "High",
         terrainType: getTerrainType(elevation),
         lat: lat.toFixed(6),
         lng: lng.toFixed(6),
       };
-      
+
       // Cache the result
       elevationCacheRef.current.set(cacheKey, data);
       return data;
@@ -2279,40 +3094,55 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     // Enhanced geographic estimation based on real Zamboanga City terrain
     const getEnhancedGeographicEstimation = (): number => {
       const cityCenter = { lat: 6.9214, lng: 122.079 };
-      const distanceFromCenter = Math.sqrt(
-        Math.pow(lat - cityCenter.lat, 2) + Math.pow(lng - cityCenter.lng, 2)
-      ) * 111; // Convert to km
+      const distanceFromCenter =
+        Math.sqrt(
+          Math.pow(lat - cityCenter.lat, 2) + Math.pow(lng - cityCenter.lng, 2)
+        ) * 111; // Convert to km
 
       // Known elevation zones in Zamboanga City
       const knownAreas = [
         // Coastal/port areas - very low elevation
-        { lat: 6.9167, lng: 122.0747, radius: 2, baseElevation: 3, variance: 5 },
+        {
+          lat: 6.9167,
+          lng: 122.0747,
+          radius: 2,
+          baseElevation: 3,
+          variance: 5,
+        },
         // City proper - low elevation
-        { lat: 6.9214, lng: 122.079, radius: 3, baseElevation: 8, variance: 10 },
+        {
+          lat: 6.9214,
+          lng: 122.079,
+          radius: 3,
+          baseElevation: 8,
+          variance: 10,
+        },
         // Tetuan - slightly elevated
-        { lat: 6.9300, lng: 122.0850, radius: 2, baseElevation: 15, variance: 12 },
+        { lat: 6.93, lng: 122.085, radius: 2, baseElevation: 15, variance: 12 },
         // Tumaga - hilly area
-        { lat: 6.9100, lng: 122.0600, radius: 3, baseElevation: 25, variance: 20 },
+        { lat: 6.91, lng: 122.06, radius: 3, baseElevation: 25, variance: 20 },
         // Putik - elevated residential
-        { lat: 6.9400, lng: 122.0700, radius: 2, baseElevation: 35, variance: 15 },
+        { lat: 6.94, lng: 122.07, radius: 2, baseElevation: 35, variance: 15 },
       ];
 
       // Check if point is near any known area
       for (const area of knownAreas) {
-        const distToArea = Math.sqrt(
-          Math.pow(lat - area.lat, 2) + Math.pow(lng - area.lng, 2)
-        ) * 111;
-        
+        const distToArea =
+          Math.sqrt(Math.pow(lat - area.lat, 2) + Math.pow(lng - area.lng, 2)) *
+          111;
+
         if (distToArea < area.radius) {
-          const influence = 1 - (distToArea / area.radius);
-          const elevation = area.baseElevation + (Math.random() - 0.5) * area.variance * influence;
+          const influence = 1 - distToArea / area.radius;
+          const elevation =
+            area.baseElevation +
+            (Math.random() - 0.5) * area.variance * influence;
           return Math.max(1, Math.round(elevation));
         }
       }
 
       // General geographic estimation based on distance from city center
       let estimatedElevation: number;
-      
+
       if (distanceFromCenter < 2) {
         // Inner city - coastal plains
         estimatedElevation = 3 + Math.random() * 12; // 3-15m
@@ -2348,76 +3178,90 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     try {
       // Simple fetch with timeout using Promise.race - no abort controllers
       const timeoutMs = 1500; // Reduced timeout for faster fallback
-      
+
       // Try primary API
       try {
         const response = await Promise.race([
-          fetch(`https://api.opentopodata.org/v1/copernicus30m?locations=${lat},${lng}`, {
-            method: 'GET',
-            mode: 'cors',
-            cache: 'default',
-            headers: { 
-              'Accept': 'application/json',
-              'User-Agent': 'SafePathZamboanga/1.0'
+          fetch(
+            `https://api.opentopodata.org/v1/copernicus30m?locations=${lat},${lng}`,
+            {
+              method: "GET",
+              mode: "cors",
+              cache: "default",
+              headers: {
+                Accept: "application/json",
+                "User-Agent": "SafePathZamboanga/1.0",
+              },
             }
-          }),
-          new Promise<never>((_, reject) => 
-            setTimeout(() => reject(new Error('API timeout')), timeoutMs)
-          )
+          ),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("API timeout")), timeoutMs)
+          ),
         ]);
-        
+
         if (response && response.ok) {
           const data = await response.json();
-          if (data?.results?.[0]?.elevation !== null && data?.results?.[0]?.elevation !== undefined) {
+          if (
+            data?.results?.[0]?.elevation !== null &&
+            data?.results?.[0]?.elevation !== undefined
+          ) {
             const elevation = Math.max(0, data.results[0].elevation);
             setApiFailureCount(Math.max(0, apiFailureCount - 1)); // Reduce failure count on success
             return createElevationData(elevation);
           }
         }
       } catch (error) {
-        console.debug('Primary elevation API failed, trying secondary...');
-        setApiFailureCount(prev => Math.min(5, prev + 1));
+        console.debug("Primary elevation API failed, trying secondary...");
+        setApiFailureCount((prev) => Math.min(5, prev + 1));
       }
 
       // Try secondary API only if failure count is still low
       if (apiFailureCount < 2) {
         try {
           const response = await Promise.race([
-            fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lng}`, {
-              method: 'GET',
-              mode: 'cors',
-              cache: 'default',
-              headers: { 
-                'Accept': 'application/json',
-                'User-Agent': 'SafePathZamboanga/1.0'
+            fetch(
+              `https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lng}`,
+              {
+                method: "GET",
+                mode: "cors",
+                cache: "default",
+                headers: {
+                  Accept: "application/json",
+                  "User-Agent": "SafePathZamboanga/1.0",
+                },
               }
-            }),
-            new Promise<never>((_, reject) => 
-              setTimeout(() => reject(new Error('API timeout')), timeoutMs)
-            )
+            ),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("API timeout")), timeoutMs)
+            ),
           ]);
-          
+
           if (response && response.ok) {
             const data = await response.json();
-            if (data?.results?.[0]?.elevation !== undefined && data?.results?.[0]?.elevation !== null) {
+            if (
+              data?.results?.[0]?.elevation !== undefined &&
+              data?.results?.[0]?.elevation !== null
+            ) {
               const elevation = Math.max(0, data.results[0].elevation);
               setApiFailureCount(Math.max(0, apiFailureCount - 1)); // Reduce failure count on success
               return createElevationData(elevation);
             }
           }
         } catch (error) {
-          console.debug('Secondary elevation API also failed, using geographic estimation');
-          setApiFailureCount(prev => Math.min(5, prev + 1));
+          console.debug(
+            "Secondary elevation API also failed, using geographic estimation"
+          );
+          setApiFailureCount((prev) => Math.min(5, prev + 1));
         }
       }
     } catch (error) {
-      console.warn('Elevation API error:', error);
-      setApiFailureCount(prev => Math.min(5, prev + 1));
+      console.warn("Elevation API error:", error);
+      setApiFailureCount((prev) => Math.min(5, prev + 1));
     }
 
     // Switch to offline mode if too many failures
     if (apiFailureCount >= 3 && !useOfflineMode) {
-      console.log('Switching to offline mode due to repeated API failures');
+      console.log("Switching to offline mode due to repeated API failures");
       setUseOfflineMode(true);
     }
 
@@ -2906,6 +3750,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       mapRef.current!.removeLayer(terrainPopupRef.current);
       terrainPopupRef.current = null;
     }
+
+    // Clear persisted route data
+    clearPersistedRouteData();
   };
 
   return (
@@ -2928,11 +3775,17 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <span style={{ fontSize: "20px" }}>📡</span>
             <div>
-              <div style={{ fontWeight: "600", color: "#d63031", marginBottom: "4px" }}>
+              <div
+                style={{
+                  fontWeight: "600",
+                  color: "#d63031",
+                  marginBottom: "4px",
+                }}
+              >
                 Offline Terrain Mode Active
               </div>
               <div style={{ fontSize: "13px", color: "#636e72" }}>
-                Using geographic estimation due to API connectivity issues. 
+                Using geographic estimation due to API connectivity issues.
                 Elevation data may be less accurate.
               </div>
             </div>
@@ -2959,7 +3812,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           </button>
         </div>
       )}
-      
+
       <div
         style={{
           marginBottom: "15px",

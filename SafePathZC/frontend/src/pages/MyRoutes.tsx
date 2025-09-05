@@ -83,6 +83,61 @@ const MyRoutes = () => {
   const [refreshing, setRefreshing] = useState(false);
   const { toast } = useToast();
 
+  // LocalStorage functions for route data
+  const loadCurrentRouteData = () => {
+    try {
+      const saved = localStorage.getItem("safePathRouteData");
+      if (saved) {
+        const data = JSON.parse(saved);
+        // Check if data is not too old (max 24 hours)
+        if (Date.now() - data.timestamp < 24 * 60 * 60 * 1000) {
+          return data;
+        } else {
+          localStorage.removeItem("safePathRouteData");
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load route data:", error);
+    }
+    return null;
+  };
+
+  const saveRouteToHistory = async (routeData: any) => {
+    try {
+      const historyData = {
+        from_location: routeData.startLocationInput || "Unknown Start",
+        to_location: routeData.endLocationInput || "Unknown End",
+        from_lat: routeData.startPoint?.lat,
+        from_lng: routeData.startPoint?.lng,
+        to_lat: routeData.endPoint?.lat,
+        to_lng: routeData.endPoint?.lng,
+        duration: routeData.routeDetails?.safeRoute?.time || "Unknown",
+        distance: routeData.routeDetails?.safeRoute?.distance || "Unknown",
+        status: "completed",
+        weather_condition: "Current",
+        route_type: "safe",
+        waypoints: JSON.stringify(
+          routeData.routeDetails?.safeRoute?.waypoints || []
+        ),
+      };
+
+      const response = await fetch(`${API_BASE_URL}/routes/history`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(historyData),
+      });
+
+      if (response.ok) {
+        await fetchRouteHistory();
+        console.log("Route saved to history");
+      }
+    } catch (error) {
+      console.error("Failed to save route to history:", error);
+    }
+  };
+
   // Fetch data from API
   const fetchRouteHistory = async () => {
     try {
@@ -161,6 +216,12 @@ const MyRoutes = () => {
 
   useEffect(() => {
     loadAllData();
+
+    // Check for current localStorage route and save it to history if exists
+    const currentRoute = loadCurrentRouteData();
+    if (currentRoute && currentRoute.routeDetails) {
+      saveRouteToHistory(currentRoute);
+    }
   }, []);
   // API Actions
   const deleteRouteHistory = async (routeId: number) => {
@@ -215,30 +276,8 @@ const MyRoutes = () => {
 
   const repeatRoute = async (route: RouteHistory) => {
     try {
-      const routeData = {
-        from_location: route.from_location,
-        to_location: route.to_location,
-        duration: route.duration,
-        distance: route.distance,
-        status: "completed",
-        weather_condition: "Current",
-      };
-
-      const response = await fetch(`${API_BASE_URL}/routes/history`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(routeData),
-      });
-
-      if (!response.ok) throw new Error("Failed to repeat route");
-
-      await fetchRouteHistory(); // Refresh the list
-      toast({
-        title: "Route repeated",
-        description: `Navigation started from ${route.from_location} to ${route.to_location}`,
-      });
+      // Navigate to the route instead of just saving to history
+      navigateToRoute(route.from_location, route.to_location);
     } catch (err) {
       console.error("Error repeating route:", err);
       toast({
@@ -332,6 +371,55 @@ const MyRoutes = () => {
         variant: "destructive",
       });
     }
+  };
+
+  const navigateToRoute = (fromLocation: string, toLocation: string) => {
+    // Store route navigation request in localStorage for MapView to pick up
+    const routeRequest = {
+      startLocationInput: fromLocation,
+      endLocationInput: toLocation,
+      navigateFromMyRoutes: true,
+      timestamp: Date.now(),
+    };
+
+    localStorage.setItem("safePathRouteRequest", JSON.stringify(routeRequest));
+
+    // Navigate to home page (which has the map)
+    window.location.href = "/";
+
+    toast({
+      title: "Navigating to route",
+      description: `Calculating route from ${fromLocation} to ${toLocation}`,
+    });
+  };
+
+  const performSearch = (query: string) => {
+    // Save search to recent searches
+    const saveSearch = async () => {
+      try {
+        const searchData = {
+          query: query,
+          results_count: 1,
+        };
+
+        await fetch(`${API_BASE_URL}/search/history`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(searchData),
+        });
+
+        await fetchSearchHistory();
+      } catch (error) {
+        console.error("Failed to save search:", error);
+      }
+    };
+
+    saveSearch();
+
+    // Navigate to home with search query
+    window.location.href = `/?search=${encodeURIComponent(query)}`;
   };
 
   // Format date for display
@@ -741,7 +829,11 @@ const MyRoutes = () => {
                             </Badge>
                           </div>
                         </div>
-                        <Button size="sm" variant="outline">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => performSearch(search.query)}
+                        >
                           Search Again
                         </Button>
                       </div>
