@@ -11,6 +11,8 @@ import requests
 import math
 import json
 import time
+import traceback
+import uvicorn
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -287,38 +289,54 @@ async def root():
 
 # Enhanced Routing and Risk Analysis Endpoints
 
-# Helper functions for OSRM routing
-async def get_osrm_route(start_lng: float, start_lat: float, end_lng: float, end_lat: float, alternatives: bool = False):
-    """Get route from OSRM routing service with robust error handling"""
+# Helper functions for GraphHopper routing
+async def get_graphhopper_route(start_lng: float, start_lat: float, end_lng: float, end_lat: float, alternatives: bool = False):
+    """Get route from GraphHopper routing service with robust error handling"""
     try:
-        base_url = "http://router.project-osrm.org/route/v1/driving"
-        url = f"{base_url}/{start_lng},{start_lat};{end_lng},{end_lat}"
+        base_url = "https://graphhopper.com/api/1/route"
         
         params = {
-            "geometries": "geojson",
-            "overview": "full", 
-            "steps": "false"
+            "point": [f"{start_lat},{start_lng}", f"{end_lat},{end_lng}"],
+            "vehicle": "car",
+            "key": "585bccb3-2df7-4dcb-b5bf-fc40a8bf4eea",  # You need to set your GraphHopper API key here
+            "calc_points": "true",
+            "instructions": "false"
         }
         
         if alternatives:
-            # Use alternatives=true to get alternative routes (OSRM will return up to 3 alternatives)
-            params["alternatives"] = "true"
+            # Use alternative_route.max_paths to get alternative routes (GraphHopper can return up to 3 alternatives)
+            params["alternative_route.max_paths"] = "3"
         
-        print(f"OSRM Request: {url} with params: {params}")
+        print(f"GraphHopper Request: {base_url} with params: {params}")
         
-        response = requests.get(url, params=params, timeout=8)
+        response = requests.get(base_url, params=params, timeout=8)
         
         if response.status_code == 200:
             data = response.json()
-            if "routes" in data and len(data["routes"]) > 0:
-                return data
+            if "paths" in data and len(data["paths"]) > 0:
+                # Convert GraphHopper response to OSRM-like format for compatibility
+                converted_data = {
+                    "routes": [],
+                    "code": "Ok"
+                }
+                for path in data["paths"]:
+                    route = {
+                        "distance": path.get("distance", 5000),
+                        "duration": path.get("time", 600000) / 1000,  # Convert from ms to seconds
+                        "geometry": path.get("points", {
+                            "type": "LineString",
+                            "coordinates": [[start_lng, start_lat], [end_lng, end_lat]]
+                        })
+                    }
+                    converted_data["routes"].append(route)
+                return converted_data
             else:
-                raise Exception("No routes found in OSRM response")
+                raise Exception("No paths found in GraphHopper response")
         else:
-            raise Exception(f"OSRM API returned {response.status_code}: {response.text}")
+            raise Exception(f"GraphHopper API returned {response.status_code}: {response.text}")
             
     except requests.exceptions.Timeout:
-        print("OSRM timeout - generating fallback route")
+        print("GraphHopper timeout - generating fallback route")
         # Generate a simple fallback route
         return {
             "routes": [{
@@ -332,7 +350,7 @@ async def get_osrm_route(start_lng: float, start_lat: float, end_lng: float, end
             "code": "Ok"
         }
     except Exception as e:
-        print(f"OSRM error: {e}")
+        print(f"GraphHopper error: {e}")
         raise HTTPException(status_code=500, detail=f"Routing service error: {str(e)}")
 
 # Helper function for elevation data
@@ -495,8 +513,8 @@ async def get_route(
         start_lng, start_lat = start_coords
         end_lng, end_lat = end_coords
         
-        # Get route from OSRM
-        route_data = await get_osrm_route(start_lng, start_lat, end_lng, end_lat, alternatives)
+        # Get route from GraphHopper
+        route_data = await get_graphhopper_route(start_lng, start_lat, end_lng, end_lat, alternatives)
         
         if not route_data.get("routes"):
             raise HTTPException(status_code=404, detail="No routes found")
@@ -510,6 +528,163 @@ async def get_route(
         raise HTTPException(status_code=400, detail="Invalid coordinate format")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Routing error: {str(e)}")
+    
+@app.get("/osrm/route")
+def get_osrm_route(
+    start: str = Query(..., description="Start coordinates as lon,lat"),
+    end: str = Query(..., description="End coordinates as lon,lat"),
+    waypoints: Optional[str] = Query(None, description="Intermediate waypoints as lon,lat;lon,lat"),
+    alternatives: bool = Query(False, description="Get alternative routes")
+):
+    """Primary routing endpoint using local OSRM server with Zamboanga map data"""
+    OSRM_URL = "http://localhost:5000"
+    
+    try:
+        # Parse coordinates
+        start_coords = [float(x.strip()) for x in start.split(",")]
+        end_coords = [float(x.strip()) for x in end.split(",")]
+        
+        if len(start_coords) != 2 or len(end_coords) != 2:
+            raise HTTPException(status_code=400, detail="Invalid coordinate format. Use 'lon,lat'")
+        
+        # Build coordinate string for OSRM
+        coord_string = start
+        
+        # Add intermediate waypoints if provided
+        if waypoints:
+            waypoint_list = waypoints.split(';')
+            for wp in waypoint_list:
+                wp_coords = [float(x.strip()) for x in wp.split(",")]
+                if len(wp_coords) != 2:
+                    raise HTTPException(status_code=400, detail="Invalid waypoint format. Use 'lon,lat'")
+                coord_string += f";{wp}"
+        
+        coord_string += f";{end}"
+        
+        # Build OSRM URL with parameters
+        params = "?overview=full&geometries=geojson&steps=true&annotations=true"
+        if alternatives:
+            params += "&alternatives=true"
+            
+        url = f"{OSRM_URL}/route/v1/driving/{coord_string}{params}"
+        
+        print(f"🗺️ OSRM Request: {url}")
+        
+        # Make request to local OSRM server
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        
+        osrm_data = response.json()
+        
+        # Check if route was found
+        if osrm_data.get("code") != "Ok" or not osrm_data.get("routes"):
+            return {
+                "error": "No route found",
+                "code": osrm_data.get("code", "Unknown"),
+                "message": osrm_data.get("message", "No routes available")
+            }
+        
+        # Add local OSRM identifier and metadata
+        response_data = {
+            **osrm_data,
+            "source": "local_osrm",
+            "map_data": "zamboanga_city",
+            "server_status": "online",
+            "total_routes": len(osrm_data.get("routes", [])),
+            "waypoints_used": len(waypoints.split(';')) if waypoints else 0
+        }
+        
+        print(f"✅ OSRM Success: Found {len(osrm_data.get('routes', []))} route(s) with {response_data['waypoints_used']} waypoints")
+        return response_data
+        
+    except ValueError as e:
+        print(f"❌ OSRM coordinate parsing error: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid coordinate format: {str(e)}")
+    except requests.exceptions.ConnectTimeout:
+        print("❌ OSRM server connection timeout")
+        return {
+            "error": "OSRM server timeout", 
+            "code": "ConnectionTimeout",
+            "message": "Local OSRM server is not responding. Please check if Docker container is running."
+        }
+    except requests.exceptions.ConnectionError:
+        print("❌ OSRM server connection failed")
+        return {
+            "error": "OSRM server unavailable", 
+            "code": "ConnectionError",
+            "message": "Cannot connect to local OSRM server. Please ensure Docker container is running on port 5000."
+        }
+    except requests.RequestException as e:
+        print(f"❌ OSRM request error: {e}")
+        return {
+            "error": f"OSRM request failed: {str(e)}", 
+            "code": "RequestError",
+            "message": "Local OSRM server returned an error"
+        }
+    except Exception as e:
+        print(f"❌ Unexpected OSRM error: {e}")
+        return {
+            "error": f"Unexpected error: {str(e)}", 
+            "code": "UnknownError",
+            "message": "An unexpected error occurred"
+        }
+
+@app.get("/route/primary")
+async def get_primary_route(
+    start: str = Query(..., description="Start coordinates as lng,lat"),
+    end: str = Query(..., description="End coordinates as lng,lat"),
+    alternatives: bool = Query(False, description="Include alternative routes")
+):
+    """Primary routing endpoint that prioritizes local OSRM, fallback to GraphHopper"""
+    try:
+        # First, try local OSRM server
+        print("🎯 Trying local OSRM first...")
+        try:
+            # Convert lng,lat to lon,lat for OSRM
+            osrm_result = get_osrm_route(start, end, alternatives)
+            
+            # Check if OSRM was successful
+            if not osrm_result.get("error") and osrm_result.get("routes"):
+                print("✅ Local OSRM succeeded - using Zamboanga map data")
+                return {
+                    **osrm_result,
+                    "routing_source": "local_osrm_primary",
+                    "map_source": "zamboanga_local"
+                }
+        except Exception as osrm_error:
+            print(f"⚠️ Local OSRM failed: {osrm_error}")
+        
+        # Fallback to GraphHopper if OSRM fails
+        print("🌐 Falling back to GraphHopper...")
+        start_coords = [float(x) for x in start.split(",")]
+        end_coords = [float(x) for x in end.split(",")]
+        
+        if len(start_coords) != 2 or len(end_coords) != 2:
+            raise HTTPException(status_code=400, detail="Invalid coordinate format")
+        
+        start_lng, start_lat = start_coords
+        end_lng, end_lat = end_coords
+        
+        # Get route from GraphHopper
+        route_data = await get_graphhopper_route(start_lng, start_lat, end_lng, end_lat, alternatives)
+        
+        if not route_data.get("routes"):
+            raise HTTPException(status_code=404, detail="No routes found from any service")
+        
+        print("✅ GraphHopper fallback succeeded")
+        return {
+            **route_data,
+            "routing_source": "graphhopper_fallback",
+            "map_source": "online"
+        }
+        
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid coordinate format")
+    except Exception as e:
+        print(f"❌ All routing services failed: {e}")
+        raise HTTPException(status_code=500, detail=f"All routing services failed: {str(e)}")
+
+
 
 @app.get("/elevation")
 async def get_elevation(
@@ -901,7 +1076,7 @@ def calculate_slope(elev1: float, elev2: float, distance_m: float) -> float:
 @app.post("/api/route", response_model=RouteResponse)
 async def get_route(route_request: RouteRequest):
     """
-    Get route between two points using OSRM API
+    Get route between two points using GraphHopper API
     
     Input: {"start": [lat, lon], "end": [lat, lon]}
     Returns: GeoJSON LineString with distance and duration
@@ -910,29 +1085,31 @@ async def get_route(route_request: RouteRequest):
         start_lat, start_lon = route_request.start
         end_lat, end_lon = route_request.end
         
-        # Call OSRM API
-        osrm_url = f"http://router.project-osrm.org/route/v1/driving/{start_lon},{start_lat};{end_lon},{end_lat}"
+        # Call GraphHopper API
+        graphhopper_url = "https://graphhopper.com/api/1/route"
         params = {
-            "overview": "full",
-            "geometries": "geojson"
+            "point": [f"{start_lat},{start_lon}", f"{end_lat},{end_lon}"],
+            "vehicle": "car",
+            "key": "585bccb3-2df7-4dcb-b5bf-fc40a8bf4eea",  # You need to set your GraphHopper API key here
+            "calc_points": "true"
         }
         
-        # Make request to OSRM with timeout
-        response = requests.get(osrm_url, params=params, timeout=10)
+        # Make request to GraphHopper with timeout
+        response = requests.get(graphhopper_url, params=params, timeout=10)
         response.raise_for_status()
         
-        osrm_data = response.json()
+        graphhopper_data = response.json()
         
-        # Check if routes were found
-        if not osrm_data.get("routes"):
+        # Check if paths were found
+        if not graphhopper_data.get("paths"):
             raise HTTPException(status_code=404, detail="No route found between the specified points")
         
-        route_data = osrm_data["routes"][0]
+        route_data = graphhopper_data["paths"][0]
         
         # Extract route information
-        geometry = route_data["geometry"]
+        geometry = route_data["points"]
         distance_km = route_data["distance"] / 1000  # Convert meters to kilometers
-        duration_seconds = route_data["duration"]
+        duration_seconds = route_data["time"] / 1000  # Convert milliseconds to seconds
         
         # Convert coordinates to [lat, lon] format for waypoints
         waypoints = [[coord[1], coord[0]] for coord in geometry["coordinates"]]
@@ -951,9 +1128,9 @@ async def get_route(route_request: RouteRequest):
         )
         
     except requests.exceptions.Timeout:
-        raise HTTPException(status_code=504, detail="OSRM API request timed out")
+        raise HTTPException(status_code=504, detail="GraphHopper API request timed out")
     except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=503, detail=f"OSRM API error: {str(e)}")
+        raise HTTPException(status_code=503, detail=f"GraphHopper API error: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
@@ -1274,54 +1451,56 @@ async def find_safest_route(request: SafeRouteRequest):
 
 # Enhanced safe route filtering functions
 async def get_route_with_alternatives(start_lat: float, start_lng: float, end_lat: float, end_lng: float) -> List[dict]:
-    """Get default route and alternatives from OSRM"""
+    """Get default route and alternatives from GraphHopper"""
     routes = []
     
     # Get default route
     try:
-        coordinates = f"{start_lng},{start_lat};{end_lng},{end_lat}"
-        url = f"http://router.project-osrm.org/route/v1/driving/{coordinates}"
+        url = "https://graphhopper.com/api/1/route"
         params = {
-            "overview": "full",
-            "geometries": "geojson"
+            "point": [f"{start_lat},{start_lng}", f"{end_lat},{end_lng}"],
+            "vehicle": "car",
+            "key": "585bccb3-2df7-4dcb-b5bf-fc40a8bf4eea",
+            "calc_points": "true"
         }
         
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
         
-        if data.get("routes"):
-            route = data["routes"][0]
+        if data.get("paths"):
+            path = data["paths"][0]
             routes.append({
                 "id": "default",
-                "geometry": route["geometry"],
-                "distance": route["distance"] / 1000,  # Convert to km
-                "duration": route["duration"]
+                "geometry": path["points"],
+                "distance": path["distance"] / 1000,  # Convert to km
+                "duration": path["time"] / 1000  # Convert ms to seconds
             })
     except Exception as e:
         print(f"Error getting default route: {e}")
     
     # Get alternative routes
     try:
-        url = f"http://router.project-osrm.org/route/v1/driving/{coordinates}"
+        url = "https://graphhopper.com/api/1/route"
         params = {
-            "overview": "full",
-            "geometries": "geojson",
-            "alternatives": "true",
-            "alternative": 2
+            "point": [f"{start_lat},{start_lng}", f"{end_lat},{end_lng}"],
+            "vehicle": "car",
+            "key": "YOUR_API_KEY",
+            "calc_points": "true",
+            "alternative_route.max_paths": "3"
         }
         
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
         
-        if data.get("routes") and len(data["routes"]) > 1:
-            for i, route in enumerate(data["routes"][1:], 1):
+        if data.get("paths") and len(data["paths"]) > 1:
+            for i, path in enumerate(data["paths"][1:], 1):
                 routes.append({
                     "id": f"alt{i}",
-                    "geometry": route["geometry"],
-                    "distance": route["distance"] / 1000,  # Convert to km
-                    "duration": route["duration"]
+                    "geometry": path["points"],
+                    "distance": path["distance"] / 1000,  # Convert to km
+                    "duration": path["time"] / 1000  # Convert ms to seconds
                 })
     except Exception as e:
         print(f"Error getting alternative routes: {e}")
@@ -1447,7 +1626,7 @@ async def analyze_detailed_route(route: dict) -> DetailedRoute:
 async def find_safest_route_with_filtering(request: SafeRouteFilterRequest):
     """Find the safest route using Option A: Filter after routing"""
     try:
-        # Step 1: Get default route and alternatives from OSRM
+        # Step 1: Get default route and alternatives from GraphHopper
         routes = await get_route_with_alternatives(
             request.start_lat, request.start_lng,
             request.end_lat, request.end_lng
@@ -1503,3 +1682,6 @@ async def get_routes_summary(db: Session = Depends(get_db)):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+
+
+
