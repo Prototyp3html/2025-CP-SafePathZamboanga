@@ -8,19 +8,8 @@ import "../App.css";
 import { RouteModal } from "./RouteModal";
 import { AlertBanner } from "./AlertBanner";
 import { WeatherDashboard } from "./WeatherDashboard";
-import {
-  searchZamboCityLocations,
-  getLocationByCoordinates,
-  type ZamboCityLocation,
-} from "../utils/zamboCityLocations";
-
-// Fix Leaflet default marker icons
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "/icons/location.png",
-  iconUrl: "/icons/location.png",
-  shadowUrl: "/icons/location.png",
-});
+import { localRoutingService } from '../services/localRouting';
+import { searchZamboCityLocations, ZamboCityLocation } from '../utils/zamboCityLocations';
 
 interface LatLng {
   lat: number;
@@ -41,13 +30,6 @@ interface RouteDetails {
   safeRoute: FloodRoute;
   manageableRoute: FloodRoute;
   proneRoute: FloodRoute;
-  startName: string;
-  endName: string;
-}
-
-// New interface for handling multiple dynamic routes
-interface MultiRouteDetails {
-  routes: FloodRoute[];
   startName: string;
   endName: string;
 }
@@ -74,8 +56,6 @@ interface LocationSuggestion {
   lat: string;
   lon: string;
   place_id: string;
-  type?: string;
-  isLocal?: boolean;
 }
 
 interface MapViewProps {
@@ -96,13 +76,20 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const [selectedRoute, setSelectedRoute] = useState<
     "safe" | "manageable" | "prone" | null
   >(null);
-  const [selectedRouteIndex, setSelectedRouteIndex] = useState<number>(0); // For multi-route system
   const [showWeatherDashboard, setShowWeatherDashboard] = useState(false);
+  
+  // Transportation mode state
+  const [transportationMode, setTransportationMode] = useState<"car" | "motorcycle" | "walking">("car");
 
-  // Elevation API management
-  const [apiFailureCount, setApiFailureCount] = useState(0);
-  const [useOfflineMode, setUseOfflineMode] = useState(false);
-  const elevationCacheRef = useRef<Map<string, TerrainData>>(new Map());
+  // Current location and map click states
+  const [currentLocation, setCurrentLocation] = useState<LatLng | null>(null);
+  const [locationDetails, setLocationDetails] = useState<{
+    lat: number;
+    lng: number;
+    address: string;
+    elevation: number;
+  } | null>(null);
+  const [showLocationDetails, setShowLocationDetails] = useState(false);
 
   // New states for route planner modal
   const [showRoutePlannerModal, setShowRoutePlannerModal] = useState(false);
@@ -128,504 +115,287 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const terrainPopupRef = useRef<L.CircleMarker | null>(null);
   const terrainOverlayRef = useRef<L.LayerGroup | null>(null);
   const routeLayersRef = useRef<L.Polyline[]>([]);
+  const currentLocationMarkerRef = useRef<L.Marker | null>(null);
+  const locationPopupRef = useRef<L.Popup | null>(null);
 
-  // Route persistence functions
-  const saveRouteData = (routeData: any) => {
-    try {
-      const persistedData = {
-        routeDetails: routeData,
-        startPoint,
-        endPoint,
-        selectedStartLocation,
-        selectedEndLocation,
-        startLocationInput,
-        endLocationInput,
-        routeMode: true,
-        timestamp: Date.now(),
-      };
-      localStorage.setItem("safePathRouteData", JSON.stringify(persistedData));
-      console.log("Route data saved to localStorage");
-    } catch (error) {
-      console.error("Failed to save route data:", error);
-    }
-  };
-
-  const loadRouteData = () => {
-    try {
-      const saved = localStorage.getItem("safePathRouteData");
-      if (saved) {
-        const data = JSON.parse(saved);
-        // Check if data is not too old (max 24 hours)
-        if (Date.now() - data.timestamp < 24 * 60 * 60 * 1000) {
-          return data;
-        } else {
-          // Remove old data
-          localStorage.removeItem("safePathRouteData");
-        }
-      }
-    } catch (error) {
-      console.error("Failed to load route data:", error);
-    }
-    return null;
-  };
-
-  const clearPersistedRouteData = () => {
-    try {
-      localStorage.removeItem("safePathRouteData");
-      console.log("Persisted route data cleared");
-    } catch (error) {
-      console.error("Failed to clear persisted route data:", error);
-    }
-  };
-
-  // Custom icons using local assets
+  // Custom icons
   const startIcon = L.icon({
-    iconUrl: "/icons/location.png",
-    iconSize: [32, 32],
-    iconAnchor: [16, 32],
-    popupAnchor: [0, -32],
+    iconUrl:
+      "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x-green.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
   });
-
   const endIcon = L.icon({
-    iconUrl: "/icons/circle.png",
-    iconSize: [32, 32],
-    iconAnchor: [16, 32],
-    popupAnchor: [0, -32],
+    iconUrl:
+      "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x-red.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+  });
+  const currentLocationIcon = L.icon({
+    iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
   });
 
-  // Enhanced search function with Zamboanga City focus
+  // Get current location and add marker
+  const getCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by this browser");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const newLocation = { lat, lng };
+        
+        setCurrentLocation(newLocation);
+        
+        // Remove existing current location marker
+        if (currentLocationMarkerRef.current && mapRef.current) {
+          mapRef.current.removeLayer(currentLocationMarkerRef.current);
+        }
+        
+        // Add new current location marker
+        if (mapRef.current) {
+          const marker = L.marker([lat, lng], {
+            icon: currentLocationIcon,
+            zIndexOffset: 1000 // Make sure it's on top
+          })
+          .addTo(mapRef.current)
+          .bindPopup(`
+            <div style="text-align: center; font-family: system-ui;">
+              <strong>📍 Your Current Location</strong><br>
+              <small>Lat: ${lat.toFixed(6)}<br>Lng: ${lng.toFixed(6)}</small>
+            </div>
+          `);
+          
+          currentLocationMarkerRef.current = marker;
+          
+          // Pan to current location
+          mapRef.current.setView([lat, lng], 16);
+        }
+      },
+      (error) => {
+        console.error("Error getting location:", error);
+        alert("Unable to get your current location: " + error.message);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000
+      }
+    );
+  };
+
+  // Handle map click to show location details (like Google Maps)
+  const handleMapClick = async (e: L.LeafletMouseEvent) => {
+    const lat = e.latlng.lat;
+    const lng = e.latlng.lng;
+    
+    // Calculate estimated elevation
+    const coastalDistance = Math.sqrt(
+      Math.pow(lat - 6.9087, 2) + Math.pow(lng - 122.0547, 2)
+    ) * 111000; // Convert to meters
+    const estimatedElevation = Math.max(0, Math.min(200, coastalDistance / 50));
+    
+    try {
+      // Reverse geocode to get address
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`
+      );
+      const data = await response.json();
+      
+      const address = data.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+      
+      // Close previous location popup
+      if (locationPopupRef.current && mapRef.current) {
+        mapRef.current.closePopup(locationPopupRef.current);
+      }
+      
+      // Create and show location details popup (Google Maps style)
+      const popup = L.popup({
+        maxWidth: 300,
+        closeButton: true,
+        autoClose: false,
+        closeOnClick: false,
+        className: 'location-details-popup'
+      })
+      .setLatLng(e.latlng)
+      .setContent(`
+        <div style="font-family: system-ui, -apple-system, sans-serif; line-height: 1.4;">
+          <div style="font-weight: 600; font-size: 14px; margin-bottom: 8px; color: #333;">
+            📍 Location Details
+          </div>
+          <div style="font-size: 12px; color: #666; margin-bottom: 6px;">
+            <strong>Address:</strong><br>
+            ${address}
+          </div>
+          <div style="font-size: 12px; color: #666; margin-bottom: 6px;">
+            <strong>Coordinates:</strong><br>
+            ${lat.toFixed(6)}, ${lng.toFixed(6)}
+          </div>
+          <div style="font-size: 12px; color: #666; margin-bottom: 8px;">
+            <strong>Elevation:</strong> ~${estimatedElevation.toFixed(1)}m above sea level
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <button onclick="setAsStart(${lat}, ${lng}, '${address.replace(/'/g, "\\'")}')" 
+                    style="flex: 1; padding: 6px 12px; background: #4CAF50; color: white; border: none; border-radius: 4px; font-size: 11px; cursor: pointer;">
+              Set as Start
+            </button>
+            <button onclick="setAsEnd(${lat}, ${lng}, '${address.replace(/'/g, "\\'")}')" 
+                    style="flex: 1; padding: 6px 12px; background: #2196F3; color: white; border: none; border-radius: 4px; font-size: 11px; cursor: pointer;">
+              Set as End
+            </button>
+          </div>
+        </div>
+      `)
+      .openOn(mapRef.current!);
+      
+      locationPopupRef.current = popup;
+      
+      // Store location details
+      setLocationDetails({
+        lat,
+        lng,
+        address,
+        elevation: estimatedElevation
+      });
+      
+    } catch (error) {
+      console.error("Error getting location details:", error);
+      
+      // Fallback popup without address
+      const popup = L.popup()
+        .setLatLng(e.latlng)
+        .setContent(`
+          <div style="font-family: system-ui; text-align: center;">
+            <strong>📍 Location</strong><br>
+            <small>${lat.toFixed(6)}, ${lng.toFixed(6)}</small><br>
+            <small>Elevation: ~${estimatedElevation.toFixed(1)}m</small>
+          </div>
+        `)
+        .openOn(mapRef.current!);
+        
+      locationPopupRef.current = popup;
+    }
+  };
+
+  // Zamboanga City location search using local database
   const searchLocations = async (
     query: string
   ): Promise<LocationSuggestion[]> => {
     if (query.length < 2) return [];
 
     try {
-      // First, search our local Zamboanga database
-      const localResults = searchZamboCityLocations(query, 8);
-      const localSuggestions: LocationSuggestion[] = (await localResults).map(
-        (location, index) => ({
-          display_name: `${location.displayName} - Zamboanga City`,
-          lat: location.lat.toString(),
-          lon: location.lng.toString(),
-          place_id: `local_${index}`,
-          type: location.type,
-          isLocal: true,
-        })
-      );
-
-      // If we have good local results (2 or more), prioritize them heavily
-      if (localSuggestions.length >= 2) {
-        // Still get some external results but limit them
-        try {
-          const response = await fetch(
-            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-              query + " Zamboanga City Mindanao Philippines"
-            )}&limit=2&addressdetails=1&bounded=1&viewbox=122.0,6.8,122.2,7.0`
-          );
-
-          let externalData = await response.json();
-
-          // Filter out results that are too far from Zamboanga
-          externalData = externalData.filter((item: any) => {
-            const lat = parseFloat(item.lat);
-            const lon = parseFloat(item.lon);
-            return lat >= 6.8 && lat <= 7.0 && lon >= 122.0 && lon <= 122.2;
-          });
-
-          const externalSuggestions: LocationSuggestion[] = externalData.map(
-            (item: any) => ({
-              display_name: item.display_name,
-              lat: item.lat,
-              lon: item.lon,
-              place_id: item.place_id,
-              isLocal: false,
-            })
-          );
-
-          // Remove duplicates and return local results first
-          const allSuggestions = [...localSuggestions, ...externalSuggestions];
-          return removeDuplicateLocations(allSuggestions).slice(0, 8);
-        } catch (error) {
-          console.warn("External search failed, using local only:", error);
-          return localSuggestions;
-        }
-      }
-
-      // If not enough local results, get more from external API
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-          query + " Zamboanga City Mindanao Philippines"
-        )}&limit=5&addressdetails=1&bounded=1&viewbox=122.0,6.8,122.2,7.0`
-      );
-
-      let externalData = await response.json();
-
-      // Filter out results that are too far from Zamboanga
-      externalData = externalData.filter((item: any) => {
-        const lat = parseFloat(item.lat);
-        const lon = parseFloat(item.lon);
-        return lat >= 6.8 && lat <= 7.0 && lon >= 122.0 && lon <= 122.2;
-      });
-
-      const externalSuggestions: LocationSuggestion[] = externalData.map(
-        (item: any) => ({
-          display_name: item.display_name,
-          lat: item.lat,
-          lon: item.lon,
-          place_id: item.place_id,
-          isLocal: false,
-        })
-      );
-
-      // Combine results, prioritizing local ones
-      const allSuggestions = [...localSuggestions, ...externalSuggestions];
-      return removeDuplicateLocations(allSuggestions).slice(0, 8);
-    } catch (error) {
-      console.error("Error searching locations:", error);
-
-      // Fallback to local search only
-      const localResults = searchZamboCityLocations(query, 5);
-      return (await localResults).map((location, index) => ({
-        display_name: `${location.displayName} - Zamboanga City`,
+      const zamboCityResults = await searchZamboCityLocations(query, 5);
+      
+      return zamboCityResults.map((location: ZamboCityLocation) => ({
+        display_name: location.displayName,
         lat: location.lat.toString(),
         lon: location.lng.toString(),
-        place_id: `local_${index}`,
-        type: location.type,
-        isLocal: true,
+        place_id: location.place_id || `zambo_${location.name.toLowerCase().replace(/\s+/g, '_')}`
       }));
+    } catch (error) {
+      console.error("Error searching Zamboanga City locations:", error);
+      return [];
     }
   };
 
-  // Helper function to remove duplicate locations
-  const removeDuplicateLocations = (
-    suggestions: LocationSuggestion[]
-  ): LocationSuggestion[] => {
-    return suggestions.filter((suggestion, index) => {
-      const currentLat = parseFloat(suggestion.lat);
-      const currentLon = parseFloat(suggestion.lon);
-
-      return !suggestions.slice(0, index).some((existing) => {
-        const existingLat = parseFloat(existing.lat);
-        const existingLon = parseFloat(existing.lon);
-        const distance = Math.sqrt(
-          Math.pow(currentLat - existingLat, 2) +
-            Math.pow(currentLon - existingLon, 2)
-        );
-        return distance < 0.001; // ~100m threshold
-      });
-    });
-  };
-
-  const getOSRMRoute = async (
+  // Enhanced local routing function with better transport mode handling
+  const getLocalBackendRoute = async (
     start: LatLng,
     end: LatLng,
-    waypoints: LatLng[] = []
+    waypoints: LatLng[] = [],
+    routeType: 'fastest' | 'shortest' | 'balanced' = 'fastest',
+    transportMode: "car" | "motorcycle" | "walking" = "car"
   ): Promise<LatLng[]> => {
     try {
-      // Build the waypoints string for the URL
-      const waypointsStr = waypoints
-        .map((wp) => `${wp.lng},${wp.lat}`)
-        .join(";");
-
-      const coordinatesStr = `${start.lng},${start.lat};${waypointsStr}${
-        waypointsStr ? ";" : ""
-      }${end.lng},${end.lat}`;
-
-      const response = await fetch(
-        `https://router.project-osrm.org/route/v1/driving/${coordinatesStr}?overview=full&geometries=geojson&alternatives=true`
-      );
-
-      if (!response.ok) {
-        throw new Error(`OSRM API returned ${response.status}`);
+      console.log(`🏠 Enhanced routing: ${transportMode} | ${routeType}`);
+      
+      // PRIORITY: Use direct OSRM Docker with appropriate profile and settings
+      const allPoints = [start, ...waypoints, end];
+      const coords = allPoints.map(p => `${p.lng},${p.lat}`).join(';');
+      
+      // Map transport modes to OSRM profiles and ports with different parameters
+      let osrmProfile = 'driving';
+      let osrmPort = '5000';
+      let additionalParams = '';
+      
+      if (transportMode === 'walking') {
+        osrmProfile = 'foot';
+        osrmPort = '5001';
+        additionalParams = '&alternatives=2&continue_straight=false'; // More walking alternatives
+      } else if (transportMode === 'motorcycle') {
+        osrmProfile = 'driving';
+        osrmPort = '5000';
+        additionalParams = '&alternatives=1&continue_straight=false'; // Allow tighter turns for motorcycles
+      } else { // car
+        osrmProfile = 'driving';
+        osrmPort = '5000';
+        additionalParams = '&alternatives=1&continue_straight=true'; // Prefer main roads for cars
       }
-
-      const data = await response.json();
-
-      if (data.routes && data.routes[0]) {
-        // Convert coordinates and analyze terrain for each point
-        const route = data.routes[0].geometry.coordinates.map(
-          (coord: number[]) => ({
-            lat: coord[1],
-            lng: coord[0],
-          })
+      
+      try {
+        const osrmResponse = await fetch(
+          `http://localhost:${osrmPort}/route/v1/${osrmProfile}/${coords}?overview=full&geometries=geojson${additionalParams}`
         );
-
-        // Add elevation data for the route
-        const elevationPromises = route.map(async (point) => {
-          try {
-            const elevationData = await getElevationData(point.lat, point.lng);
-            return elevationData ? elevationData.elevation : null;
-          } catch (error) {
-            console.error("Error getting elevation:", error);
-            return null;
-          }
-        });
-
-        const elevations = await Promise.all(elevationPromises);
-
-        // Filter points based on elevation and flood risk
-        const filteredRoute = route.filter((point, index) => {
-          const elevation = elevations[index];
-          if (elevation === null) return true; // Keep points without elevation data
-
-          // Calculate flood risk based on elevation
-          const riskLevel = calculateFloodRisk(elevation, point.lat, point.lng);
-          return riskLevel !== "prone"; // Filter out high-risk points
-        });
-
-        return filteredRoute.length > 1 ? filteredRoute : route;
-      }
-      return [];
-    } catch (error) {
-      console.error("Error fetching OSRM route:", error);
-      return [];
-    }
-  };
-
-  // NEW FUNCTION - Add this after getOSRMRoute
-  interface TerrainAnalysis {
-    avgElevation: number;
-    lowPoints: number;
-    coastalPoints: number;
-    terrainProfile: number[];
-  }
-
-  interface RouteAnalysis {
-    routes: LatLng[][];
-    analyses: TerrainAnalysis[];
-  }
-
-  const analyzeRouteElevation = async (
-    waypoints: LatLng[]
-  ): Promise<TerrainAnalysis> => {
-    const sampleSize = Math.min(waypoints.length, 20); // Sample points along route
-    const step = Math.max(1, Math.floor(waypoints.length / sampleSize));
-    let elevationSum = 0;
-    let lowPoints = 0;
-    let coastalPoints = 0;
-    const terrainProfile: number[] = [];
-
-    const cityCenter = { lat: 6.9214, lng: 122.079 }; // Zamboanga City center
-
-    for (let i = 0; i < waypoints.length; i += step) {
-      const point = waypoints[i];
-      const elevationData = await getElevationData(point.lat, point.lng);
-
-      if (elevationData) {
-        elevationSum += elevationData.elevation;
-        terrainProfile.push(elevationData.elevation);
-
-        if (elevationData.elevation < 5) lowPoints++;
-
-        // Check if point is coastal
-        const distanceFromCenter =
-          Math.sqrt(
-            Math.pow(point.lat - cityCenter.lat, 2) +
-              Math.pow(point.lng - cityCenter.lng, 2)
-          ) * 111; // Convert to km
-
-        if (distanceFromCenter < 3) coastalPoints++;
-      }
-    }
-
-    return {
-      avgElevation: elevationSum / (terrainProfile.length || 1),
-      lowPoints,
-      coastalPoints,
-      terrainProfile,
-    };
-  };
-
-  const getOSRMAlternativeRoutes = async (
-    start: LatLng,
-    end: LatLng
-  ): Promise<RouteAnalysis> => {
-    try {
-      // Get multiple route alternatives with more options
-      const response = await fetch(
-        `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson&alternatives=3&steps=true&continue_straight=false`
-      );
-
-      if (!response.ok) {
-        throw new Error(`OSRM API returned ${response.status}`);
-      }
-
-      const data = await response.json();
-      const routes: LatLng[][] = [];
-      const analyses = [];
-
-      if (data.routes && data.routes.length > 0) {
-        console.log(`OSRM returned ${data.routes.length} alternative routes`);
-
-        // Get terrain data for potential waypoints
-        const searchRadius = 0.005; // ~500m
-        const elevationData = new Map<string, number>();
-
-        // Pre-fetch elevation data for route areas
-        const midPoint = {
-          lat: (start.lat + end.lat) / 2,
-          lng: (start.lng + end.lng) / 2,
-        };
-
-        for (const angle of [0, 45, 90, 135, 180, 225, 270, 315]) {
-          const rad = (angle * Math.PI) / 180;
-          const point = {
-            lat: midPoint.lat + searchRadius * Math.cos(rad),
-            lng: midPoint.lng + searchRadius * Math.sin(rad),
-          };
-          const elevation = await getElevationData(point.lat, point.lng);
-          if (elevation) {
-            elevationData.set(`${point.lat},${point.lng}`, elevation.elevation);
-          }
-        }
-
-        // Process each route
-        for (const route of data.routes) {
-          if (!route.geometry || !route.geometry.coordinates) {
-            console.warn("Route missing geometry data");
-            continue;
-          }
-
-          const waypoints = route.geometry.coordinates.map(
-            (coord: number[]) => ({
+        
+        if (osrmResponse.ok) {
+          const osrmData = await osrmResponse.json();
+          if (osrmData.routes && osrmData.routes[0]) {
+            console.log(`✅ Enhanced OSRM ${transportMode} route: ${(osrmData.routes[0].distance/1000).toFixed(1)}km`);
+            return osrmData.routes[0].geometry.coordinates.map((coord: number[]) => ({
               lat: coord[1],
-              lng: coord[0],
-            })
-          );
-
-          // Get detailed analysis including pre-fetched elevation data
-          const analysis = await analyzeRouteElevation(waypoints);
-
-          // Calculate flood risk score
-          const riskScore = calculateDetailedRiskScore(
-            waypoints,
-            analysis,
-            elevationData
-          );
-
-          routes.push(waypoints);
-          analyses.push({
-            ...analysis,
-            riskScore,
-          });
+              lng: coord[0]
+            }));
+          }
         }
-
-        // Sort routes by risk score
-        const routePairs = routes.map((route, index) => ({
-          route,
-          analysis: analyses[index],
-        }));
-
-        routePairs.sort((a, b) => a.analysis.riskScore - b.analysis.riskScore);
-
-        return {
-          routes: routePairs.map((pair) => pair.route),
-          analyses: routePairs.map((pair) => pair.analysis),
-        };
+      } catch (osrmError) {
+        console.log(`Enhanced OSRM ${transportMode} unavailable, trying GeoJSON fallback...`);
       }
 
-      if (routes.length === 0) {
-        // Fallback to direct route if no alternatives found
-        const directRoute = createDirectRoute(start, end);
-        const directAnalysis = await analyzeRouteElevation([start, end]);
-        return {
-          routes: [directRoute],
-          analyses: [directAnalysis],
-        };
-      }
+      // FALLBACK: Try local GeoJSON routing (if OSRM fails)
+      try {
+        const localResponse = await fetch('http://localhost:8001/api/routing/calculate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            start_lat: start.lat,
+            start_lng: start.lng,
+            end_lat: end.lat,
+            end_lng: end.lng
+          })
+        });
 
-      return { routes, analyses };
-    } catch (error) {
-      console.error("Error fetching OSRM alternative routes:", error);
-
-      // Fallback to direct route
-      const directRoute = createDirectRoute(start, end);
-      const directAnalysis = await analyzeRouteElevation([start, end]);
-      return {
-        routes: [directRoute],
-        analyses: [directAnalysis],
-      };
-    }
-  };
-
-  // NEW FUNCTION - Add this too
-  const getOSRMRouteWithWaypoint = async (
-    start: LatLng,
-    waypoint: LatLng,
-    end: LatLng
-  ): Promise<LatLng[]> => {
-    try {
-      const response = await fetch(
-        `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${waypoint.lng},${waypoint.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`
-      );
-      const data = await response.json();
-
-      if (data.routes && data.routes[0]) {
-        return data.routes[0].geometry.coordinates.map((coord: number[]) => ({
-          lat: coord[1],
-          lng: coord[0],
-        }));
-      }
-      return [];
-    } catch (error) {
-      console.error("Error fetching OSRM route with waypoint:", error);
-      return [];
-    }
-  };
-
-  // Calculate detailed risk score considering multiple factors
-  const calculateDetailedRiskScore = (
-    waypoints: LatLng[],
-    analysis: TerrainAnalysis,
-    elevationData: Map<string, number>
-  ): number => {
-    const cityCenter = { lat: 6.9214, lng: 122.079 };
-    let riskScore = 0;
-
-    // Analyze each waypoint
-    waypoints.forEach((point) => {
-      // 1. Elevation risk (0-40 points)
-      const elevation =
-        elevationData.get(`${point.lat},${point.lng}`) || analysis.avgElevation;
-      if (elevation < 5) riskScore += 40;
-      else if (elevation < 10) riskScore += 30;
-      else if (elevation < 15) riskScore += 20;
-      else if (elevation < 20) riskScore += 10;
-
-      // 2. Coastal proximity risk (0-30 points)
-      const distanceFromCenter =
-        Math.sqrt(
-          Math.pow(point.lat - cityCenter.lat, 2) +
-            Math.pow(point.lng - cityCenter.lng, 2)
-        ) * 111; // Convert to km
-
-      if (distanceFromCenter < 2) riskScore += 30;
-      else if (distanceFromCenter < 4) riskScore += 20;
-      else if (distanceFromCenter < 6) riskScore += 10;
-
-      // 3. Known flood-prone areas (0-30 points)
-      // Add specific flood-prone areas of Zamboanga
-      const floodProneAreas = [
-        { lat: 6.9214, lng: 122.079, radius: 2 }, // City center
-        { lat: 6.9167, lng: 122.0747, radius: 1.5 }, // Pueblo
-        // Add more known flood-prone areas
-      ];
-
-      floodProneAreas.forEach((area) => {
-        const distanceToArea =
-          Math.sqrt(
-            Math.pow(point.lat - area.lat, 2) +
-              Math.pow(point.lng - area.lng, 2)
-          ) * 111;
-
-        if (distanceToArea < area.radius) {
-          riskScore += 30 * (1 - distanceToArea / area.radius);
+        if (localResponse.ok) {
+          const localData = await localResponse.json();
+          if (localData.success && localData.route.length > 0) {
+            console.log(`✅ GeoJSON fallback route: ${(localData.distance/1000).toFixed(1)}km`);
+            return localData.route.map((point: any) => ({
+              lat: point.lat,
+              lng: point.lng
+            }));
+          }
         }
-      });
-    });
+      } catch (localError) {
+        console.log('GeoJSON routing also unavailable');
+      }
 
-    // Normalize score to 0-100 range
-    return Math.min(100, riskScore / waypoints.length);
+      // Last resort: direct line
+      console.log('⚠️ All routing services unavailable, using direct line');
+      return [start, end];
+      
+    } catch (error) {
+      console.error(`Local routing failed for ${transportMode}:`, error);
+      return [start, end];
+    }
   };
 
   // Calculate flood risk based on detailed risk score
@@ -635,10 +405,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     lng: number
   ): "safe" | "manageable" | "prone" => {
     const cityCenter = { lat: 6.9214, lng: 122.079 };
-    const distanceFromCenter =
-      Math.sqrt(
-        Math.pow(lat - cityCenter.lat, 2) + Math.pow(lng - cityCenter.lng, 2)
-      ) * 111;
+    const distanceFromCenter = Math.sqrt(
+      Math.pow(lat - cityCenter.lat, 2) + Math.pow(lng - cityCenter.lng, 2)
+    ) * 111;
 
     let riskScore = 0;
 
@@ -682,14 +451,16 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     return totalDistance;
   };
 
-  // NEW FUNCTION - Add this
+  // Enhanced flood risk assessment with transportation mode considerations
   const assessRouteFloodRisk = async (
-    waypoints: LatLng[]
+    waypoints: LatLng[],
+    transportMode: "car" | "motorcycle" | "walking" = "car"
   ): Promise<{
     risk: "safe" | "manageable" | "prone";
     level: string;
     description: string;
     color: string;
+    riskScore: number;
   }> => {
     if (waypoints.length === 0) {
       return {
@@ -697,128 +468,113 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         level: "Unknown",
         description: "Route data unavailable",
         color: "#gray",
+        riskScore: 0,
       };
     }
-
-    let totalRiskScore = 0;
-    let lowElevationPoints = 0;
-    let coastalPoints = 0;
-    let elevationSum = 0;
-    let validElevationPoints = 0;
 
     const cityCenter = { lat: 6.9214, lng: 122.079 };
+    const coast = { lat: 6.9087, lng: 122.0547 }; // Port area (most flood-prone)
+    const lowlandAreas = [
+      { lat: 6.9180, lng: 122.0680 }, // Tetuan (low-lying area)
+      { lat: 6.9050, lng: 122.0590 }, // Sta. Catalina (coastal)
+      { lat: 6.9290, lng: 122.0820 }, // Tumaga (riverside)
+    ];
 
-    // Sample waypoints for elevation analysis (to avoid too many API calls)
-    const sampleSize = Math.min(waypoints.length, 10);
-    const step = Math.max(1, Math.floor(waypoints.length / sampleSize));
-    const samplePoints = [];
+    let riskScore = 0;
+    let coastalPoints = 0;
+    let lowlandPoints = 0;
+    let totalDistance = 0;
 
-    for (let i = 0; i < waypoints.length; i += step) {
-      samplePoints.push(waypoints[i]);
-    }
+    // Transportation mode risk modifiers
+    const modeRiskModifiers = {
+      car: 1.0,        // Standard risk
+      motorcycle: 0.8, // Lower risk (can navigate smaller roads/shortcuts)
+      walking: 1.2     // Higher risk (more vulnerable to flooding)
+    };
 
-    // Get real elevation data for sample points
-    const elevationPromises = samplePoints.map(async (point) => {
-      try {
-        const elevationData = await getElevationData(point.lat, point.lng);
-        return elevationData ? elevationData.elevation : null;
-      } catch (error) {
-        console.error("Error getting elevation for point:", error);
-        return null;
-      }
-    });
+    // Analyze each waypoint for flood risk factors
+    waypoints.forEach((point, index) => {
+      // Distance from city center
+      const distanceFromCenter = Math.sqrt(
+        Math.pow(point.lat - cityCenter.lat, 2) + 
+        Math.pow(point.lng - cityCenter.lng, 2)
+      ) * 111; // Convert to km
 
-    const elevations = await Promise.all(elevationPromises);
+      // Distance from coast/port (most flood-prone area)
+      const distanceFromCoast = Math.sqrt(
+        Math.pow(point.lat - coast.lat, 2) + 
+        Math.pow(point.lng - coast.lng, 2)
+      ) * 111;
 
-    // Analyze each sample point
-    samplePoints.forEach((point, index) => {
-      const distanceFromCenter =
-        Math.sqrt(
-          Math.pow(point.lat - cityCenter.lat, 2) +
-            Math.pow(point.lng - cityCenter.lng, 2)
+      // Check proximity to known lowland/flood-prone areas
+      const nearLowland = lowlandAreas.some(lowland => {
+        const distanceToLowland = Math.sqrt(
+          Math.pow(point.lat - lowland.lat, 2) + 
+          Math.pow(point.lng - lowland.lng, 2)
         ) * 111;
+        return distanceToLowland < 2; // Within 2km of lowland area
+      });
 
-      const isCoastal = distanceFromCenter < 3;
-      if (isCoastal) coastalPoints++;
+      // Scoring system (higher = more flood-prone)
+      if (distanceFromCoast < 1) riskScore += 50; // Very close to port/coast
+      else if (distanceFromCoast < 2) riskScore += 30;
+      else if (distanceFromCoast < 4) riskScore += 15;
 
-      const elevation = elevations[index];
-      let riskScore = 2; // Default moderate risk
+      if (nearLowland) riskScore += 25; // In known flood-prone area
+      
+      if (distanceFromCenter < 2) riskScore += 20; // Urban center (more development/runoff)
+      else if (distanceFromCenter > 8) riskScore += 10; // Far from center (rural/undeveloped)
 
-      if (elevation !== null) {
-        elevationSum += elevation;
-        validElevationPoints++;
-
-        // Real elevation-based risk scoring
-        if (elevation < 5) {
-          riskScore = 3; // High risk
-          lowElevationPoints++;
-        } else if (elevation < 15) {
-          riskScore = 2; // Medium risk
-          lowElevationPoints++;
-        } else if (elevation < 30) {
-          riskScore = 1.5; // Low-medium risk
-        } else {
-          riskScore = 1; // Low risk
-        }
-
-        // Additional coastal risk
-        if (isCoastal && elevation < 10) {
-          riskScore += 0.5;
-        }
-      } else {
-        // Fallback to distance-based estimation if elevation API fails
-        let estimatedElevation = Math.max(0, distanceFromCenter * 3);
-        if (estimatedElevation < 5) riskScore = 3;
-        else if (estimatedElevation < 15) riskScore = 2;
-        else riskScore = 1;
+      // Count different types of points
+      if (distanceFromCoast < 3) coastalPoints++;
+      if (nearLowland) lowlandPoints++;
+      
+      if (index > 0) {
+        const prevPoint = waypoints[index - 1];
+        const segmentDistance = Math.sqrt(
+          Math.pow(point.lat - prevPoint.lat, 2) + 
+          Math.pow(point.lng - prevPoint.lng, 2)
+        ) * 111;
+        totalDistance += segmentDistance;
       }
-
-      totalRiskScore += riskScore;
     });
 
-    const averageRisk = totalRiskScore / samplePoints.length;
-    const lowElevationRatio = lowElevationPoints / samplePoints.length;
-    const coastalRatio = coastalPoints / samplePoints.length;
-    const averageElevation =
-      validElevationPoints > 0 ? elevationSum / validElevationPoints : 0;
+    // Apply transportation mode risk modifier
+    const normalizedRiskScore = (riskScore / waypoints.length) * modeRiskModifiers[transportMode];
+    const coastalRatio = coastalPoints / waypoints.length;
+    const lowlandRatio = lowlandPoints / waypoints.length;
 
-    // Enhanced risk assessment with real elevation data
-    if (
-      averageRisk >= 2.7 ||
-      lowElevationRatio > 0.7 ||
-      coastalRatio > 0.5 ||
-      averageElevation < 8
-    ) {
+    // Mode-specific descriptions
+    const modeDescriptions = {
+      car: "car route",
+      motorcycle: "motorcycle route (can use smaller roads)",
+      walking: "walking route (more vulnerable to flooding)"
+    };
+
+    // Determine risk level based on comprehensive analysis
+    if (normalizedRiskScore >= 35 || coastalRatio > 0.6 || lowlandRatio > 0.4) {
       return {
         risk: "prone",
-        level: "High Risk",
-        description: `Route passes through low-lying areas (avg ${averageElevation.toFixed(
-          0
-        )}m elevation). High flood risk during heavy rains.`,
+        level: "High Flood Risk",
+        description: `High-risk ${modeDescriptions[transportMode]}: ${(coastalRatio * 100).toFixed(0)}% coastal, ${(lowlandRatio * 100).toFixed(0)}% lowland areas. Significant flood risk during heavy rains.`,
         color: "#e74c3c",
+        riskScore: normalizedRiskScore,
       };
-    } else if (
-      averageRisk >= 1.8 ||
-      lowElevationRatio > 0.4 ||
-      coastalRatio > 0.3 ||
-      averageElevation < 20
-    ) {
+    } else if (normalizedRiskScore >= 20 || coastalRatio > 0.3 || lowlandRatio > 0.2) {
       return {
         risk: "manageable",
-        level: "Medium Risk",
-        description: `Moderate elevation route (avg ${averageElevation.toFixed(
-          0
-        )}m elevation). Some flood risk during heavy rains.`,
+        level: "Moderate Flood Risk",
+        description: `Moderate-risk ${modeDescriptions[transportMode]}: ${(coastalRatio * 100).toFixed(0)}% coastal, ${(lowlandRatio * 100).toFixed(0)}% lowland areas. Some flood risk during heavy rains.`,
         color: "#f39c12",
+        riskScore: normalizedRiskScore,
       };
     } else {
       return {
         risk: "safe",
-        level: "Low Risk",
-        description: `Higher elevation route (avg ${averageElevation.toFixed(
-          0
-        )}m elevation). Safer during floods but may be longer.`,
+        level: "Low Flood Risk",
+        description: `Low-risk ${modeDescriptions[transportMode]}: ${(coastalRatio * 100).toFixed(0)}% coastal, ${(lowlandRatio * 100).toFixed(0)}% lowland areas. Minimal flood risk.`,
         color: "#27ae60",
+        riskScore: normalizedRiskScore,
       };
     }
   };
@@ -837,54 +593,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       return createDirectRoute(start, end);
     }
 
-    const analyzeRouteElevation = async (
-      waypoints: LatLng[]
-    ): Promise<{
-      avgElevation: number;
-      lowPoints: number;
-      coastalPoints: number;
-      terrainProfile: number[];
-    }> => {
-      const sampleSize = Math.min(waypoints.length, 20); // Sample points along route
-      const step = Math.max(1, Math.floor(waypoints.length / sampleSize));
-      let elevationSum = 0;
-      let lowPoints = 0;
-      let coastalPoints = 0;
-      const terrainProfile: number[] = [];
-
-      const cityCenter = { lat: 6.9214, lng: 122.079 }; // Zamboanga City center
-
-      for (let i = 0; i < waypoints.length; i += step) {
-        const point = waypoints[i];
-        const elevationData = await getElevationData(point.lat, point.lng);
-
-        if (elevationData) {
-          elevationSum += elevationData.elevation;
-          terrainProfile.push(elevationData.elevation);
-
-          if (elevationData.elevation < 5) lowPoints++;
-
-          // Check if point is coastal
-          const distanceFromCenter =
-            Math.sqrt(
-              Math.pow(point.lat - cityCenter.lat, 2) +
-                Math.pow(point.lng - cityCenter.lng, 2)
-            ) * 111; // Convert to km
-
-          if (distanceFromCenter < 3) coastalPoints++;
-        }
-      }
-
-      return {
-        avgElevation: elevationSum / (terrainProfile.length || 1),
-        lowPoints,
-        coastalPoints,
-        terrainProfile,
-      };
-    };
-
     // Check if route actually starts and ends at the right points
-    const threshold = 0.002; // Increased to ~200m tolerance for better endpoint handling
+    const threshold = 0.001; // About 100m tolerance
     const startsCorrectly =
       Math.abs(route[0].lat - start.lat) < threshold &&
       Math.abs(route[0].lng - start.lng) < threshold;
@@ -892,29 +602,15 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       Math.abs(route[route.length - 1].lat - end.lat) < threshold &&
       Math.abs(route[route.length - 1].lng - end.lng) < threshold;
 
-    console.log(
-      `Route validation - Starts correctly: ${startsCorrectly}, Ends correctly: ${endsCorrectly}`
-    );
-    console.log(
-      `Route start: (${route[0].lat}, ${route[0].lng}) vs target: (${start.lat}, ${start.lng})`
-    );
-    console.log(
-      `Route end: (${route[route.length - 1].lat}, ${
-        route[route.length - 1].lng
-      }) vs target: (${end.lat}, ${end.lng})`
-    );
-
     const fixedRoute = [...route];
 
     // Force correct start point
     if (!startsCorrectly) {
-      console.log("Fixing start point");
       fixedRoute[0] = start;
     }
 
     // Force correct end point
     if (!endsCorrectly) {
-      console.log("Fixing end point");
       fixedRoute[fixedRoute.length - 1] = end;
     }
 
@@ -946,1019 +642,289 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
   // NEW FUNCTION - Add this
   const areRoutesSimilar = (
-    route1: LatLng[],
-    route2: LatLng[],
-    threshold: number = 0.005 // About 500m tolerance
-  ): boolean => {
-    if (route1.length === 0 || route2.length === 0) return false;
+  route1: LatLng[],
+  route2: LatLng[],
+  threshold: number = 0.005 // About 500m tolerance
+): boolean => {
+  if (route1.length === 0 || route2.length === 0) return false;
+  
+  // Check if routes have significantly different lengths
+  const lengthDiff = Math.abs(route1.length - route2.length);
+  if (lengthDiff > Math.max(route1.length, route2.length) * 0.5) {
+    return false; // Very different route lengths suggest different paths
+  }
 
-    // Check if routes have significantly different lengths
-    const lengthDiff = Math.abs(route1.length - route2.length);
-    if (lengthDiff > Math.max(route1.length, route2.length) * 0.5) {
-      return false; // Very different route lengths suggest different paths
-    }
+  // Compare start points
+  const startDiff = Math.abs(route1[0].lat - route2[0].lat) + 
+                   Math.abs(route1[0].lng - route2[0].lng);
+  
+  // Compare end points  
+  const endDiff = Math.abs(route1[route1.length - 1].lat - route2[route2.length - 1].lat) +
+                 Math.abs(route1[route1.length - 1].lng - route2[route2.length - 1].lng);
+  
+  // Compare some middle points for path similarity
+  const midIndex1 = Math.floor(route1.length / 2);
+  const midIndex2 = Math.floor(route2.length / 2);
+  const midDiff = Math.abs(route1[midIndex1].lat - route2[midIndex2].lat) +
+                 Math.abs(route1[midIndex1].lng - route2[midIndex2].lng);
 
-    // Compare start points
-    const startDiff =
-      Math.abs(route1[0].lat - route2[0].lat) +
-      Math.abs(route1[0].lng - route2[0].lng);
+  // Routes are similar if start, middle, and end points are close
+  return startDiff < threshold && endDiff < threshold && midDiff < threshold * 2;
+};
 
-    // Compare end points
-    const endDiff =
-      Math.abs(route1[route1.length - 1].lat - route2[route2.length - 1].lat) +
-      Math.abs(route1[route1.length - 1].lng - route2[route2.length - 1].lng);
-
-    // Compare some middle points for path similarity
-    const midIndex1 = Math.floor(route1.length / 2);
-    const midIndex2 = Math.floor(route2.length / 2);
-    const midDiff =
-      Math.abs(route1[midIndex1].lat - route2[midIndex2].lat) +
-      Math.abs(route1[midIndex1].lng - route2[midIndex2].lng);
-
-    // Routes are similar if start, middle, and end points are close
-    return (
-      startDiff < threshold && endDiff < threshold && midDiff < threshold * 2
-    );
-  };
-
-  // Generate flood-risk aware routes
-  // Helper function to generate alternative routes using OSRM waypoints
-  const generateAlternativeRoutes = async (
-    start: LatLng,
-    end: LatLng,
-    baseRoute: any
-  ) => {
-    const alternatives = [];
-    const midLat = (start.lat + end.lat) / 2;
-    const midLng = (start.lng + end.lng) / 2;
-
-    try {
-      // Generate 2-3 alternative routes with different waypoints using OSRM
-      const waypointOffsets = [
-        { lat: 0.008, lng: 0.005 }, // North-East detour
-        { lat: -0.006, lng: 0.008 }, // South-East detour
-        { lat: 0.005, lng: -0.007 }, // North-West detour
-      ];
-
-      for (let i = 0; i < Math.min(2, waypointOffsets.length); i++) {
-        try {
-          const offset = waypointOffsets[i];
-          const waypoint = {
-            lat: midLat + offset.lat,
-            lng: midLng + offset.lng,
-          };
-
-          // Use OSRM directly for generating alternative routes with waypoints
-          const response = await fetch(
-            `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${waypoint.lng},${waypoint.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`,
-            {
-              method: "GET",
-              headers: {
-                Accept: "application/json",
-              },
-            }
-          );
-
-          if (response.ok) {
-            const data = await response.json();
-            if (data.routes && data.routes.length > 0) {
-              const route = data.routes[0];
-              alternatives.push({
-                distance: route.distance,
-                duration: route.duration,
-                geometry: route.geometry,
-              });
-            }
-          }
-        } catch (error) {
-          console.warn(`Failed to generate alternative route ${i + 1}:`, error);
-          // Don't throw, just continue to next alternative
-        }
-      }
-
-      // If OSRM alternatives fail, generate simple offset routes
-      if (alternatives.length === 0) {
-        console.log(
-          "OSRM alternatives failed, generating simple offset routes..."
-        );
-
-        for (let i = 0; i < 2; i++) {
-          const offset = waypointOffsets[i];
-          const waypoint = {
-            lat: midLat + offset.lat,
-            lng: midLng + offset.lng,
-          };
-
-          // Create a simple 3-point route
-          const simpleRoute = {
-            distance: calculateRouteDistance([start, waypoint, end]) * 1000, // Convert to meters
-            duration: calculateRouteDistance([start, waypoint, end]) * 120, // Estimate 2 min per km
-            geometry: {
-              coordinates: [
-                [start.lng, start.lat],
-                [waypoint.lng, waypoint.lat],
-                [end.lng, end.lat],
-              ],
-            },
-          };
-          alternatives.push(simpleRoute);
-        }
-      }
-    } catch (error) {
-      console.warn("Failed to generate alternative routes:", error);
-      // Return empty array instead of throwing
-    }
-
-    return alternatives;
-  };
-
+  // Enhanced flood-risk aware routing with transport mode variations
   const generateFloodRoutes = async (
     start: LatLng,
-    end: LatLng
+    end: LatLng,
+    currentTransportMode: "car" | "motorcycle" | "walking" = "car"
   ): Promise<RouteDetails> => {
     try {
-      console.log(
-        "Generating multiple route alternatives with risk analysis..."
-      );
+      console.log(`🚦 Generating 3 distinct routes for ${currentTransportMode}...`);
+      console.log("🗺️ Using enhanced routing for different transport modes!");
 
-      // Try backend route API first, fallback to OSRM if it fails
-      let routes: LatLng[][] = [];
-      let routeAnalyses: any[] = [];
+      const routes: LatLng[][] = [];
+      
+      // Create different routing strategies based on transport mode
+      const routingStrategies = [
+        { mode: currentTransportMode, preference: 'fastest', waypoint: null },
+        { mode: currentTransportMode, preference: 'balanced', waypoint: { lat: (start.lat + end.lat) / 2 + 0.005, lng: (start.lng + end.lng) / 2 - 0.003 } },
+        { mode: currentTransportMode, preference: 'shortest', waypoint: { lat: (start.lat + end.lat) / 2 - 0.005, lng: (start.lng + end.lng) / 2 + 0.003 } }
+      ];
 
-      try {
-        console.log(
-          `Calling route API: http://localhost:8001/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`
-        );
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-
-        const routeResponse = await fetch(
-          `http://localhost:8001/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`,
-          {
-            signal: controller.signal,
-            headers: {
-              "Content-Type": "application/json",
-            },
-          }
-        );
-
-        clearTimeout(timeoutId);
-
-        if (!routeResponse.ok) {
-          throw new Error(
-            `Route API failed with status: ${routeResponse.status}`
-          );
-        }
-
-        const routeData = await routeResponse.json();
-        console.log("Route API response:", routeData);
-        routes = routeData.routes || [];
-        routeAnalyses = routeData.analyses || [];
-
-        if (routes.length === 0) {
-          throw new Error("No routes found from backend API");
-        }
-
-        console.log(`Got ${routes.length} route alternatives from backend API`);
-      } catch (backendError) {
-        console.warn(
-          "Backend route API failed, using OSRM fallback:",
-          backendError
-        );
-
-        // Fallback to OSRM routing
+      // Generate 3 different routes using enhanced routing
+      for (let i = 0; i < 3; i++) {
+        const strategy = routingStrategies[i];
+        console.log(`🗺️ Generating route ${i + 1} for ${strategy.mode} (${strategy.preference})...`);
+        
         try {
-          console.log("Attempting fallback to direct OSRM route...");
-          const directRoute = await getOSRMRoute(start, end);
-          if (directRoute.length > 0) {
-            routes = [directRoute];
-
-            // Generate 2 alternative routes with waypoints for variety
-            const alternatives = await generateAlternativeRoutes(
-              start,
-              end,
-              directRoute
-            );
-            routes = [...routes, ...alternatives].slice(0, 3);
-            console.log(
-              `Generated ${routes.length} routes using OSRM fallback`
-            );
+          let route: LatLng[];
+          
+          if (strategy.waypoint) {
+            // Multi-segment route with intermediate waypoint
+            const segment1 = await getLocalBackendRoute(start, strategy.waypoint, [], strategy.preference as any, strategy.mode);
+            const segment2 = await getLocalBackendRoute(strategy.waypoint, end, [], strategy.preference as any, strategy.mode);
+            route = [...segment1, ...segment2.slice(1)]; // Remove duplicate waypoint
           } else {
-            throw new Error("OSRM also returned empty route");
+            // Direct route
+            route = await getLocalBackendRoute(start, end, [], strategy.preference as any, strategy.mode);
           }
-        } catch (osrmError) {
-          console.error("OSRM fallback also failed:", osrmError);
-          // Use simple direct route as absolute last resort
-          routes = [[start, end]];
-          console.log("Using simple direct route as last resort");
-        }
-      }
-
-      // If we only got one route, try to generate alternative routes using different strategies
-      if (routes.length < 3) {
-        const additionalRoutes = await generateAlternativeRoutes(
-          start,
-          end,
-          routes[0]
-        );
-        routes = [...routes, ...additionalRoutes];
-        console.log(
-          `Generated ${additionalRoutes.length} additional routes, total: ${routes.length}`
-        );
-      }
-
-      // Take up to 5 routes for better variety
-      routes = routes.slice(0, 5);
-
-      // Process each route through the enhanced safe route filter
-      const processedRoutes = await Promise.all(
-        routes.map(async (route: any, index: number) => {
-          try {
-            console.log(`Analyzing risk for route ${index + 1}...`);
-
-            // Ensure route has proper structure
-            let routeCoordinates;
-            if (route.geometry && route.geometry.coordinates) {
-              routeCoordinates = route.geometry.coordinates;
-            } else if (Array.isArray(route) && route.length > 0) {
-              // Handle array of coordinate objects
-              routeCoordinates = route.map((point: any) => [
-                point.lng,
-                point.lat,
-              ]);
-            } else {
-              throw new Error(`Invalid route structure for route ${index + 1}`);
-            }
-
-            // Basic route data with fallback values
-            const routeDistance = route.distance || 10000;
-            const routeDuration = route.duration || 600; // 10 minutes default
-
-            // Calculate basic risk score as fallback
-            const estimatedRisk = Math.min(
-              8.5,
-              3.5 + index * 1.3 + routeDistance / 15000
-            );
-
-            return {
-              id: index + 1,
-              waypoints: routeCoordinates.map((coord: number[]) => ({
-                lat: coord[1],
-                lng: coord[0],
-              })),
-              distance: (routeDistance / 1000).toFixed(1),
-              duration: Math.ceil(routeDuration / 60),
-              riskScore: estimatedRisk, // Always ensure riskScore exists
-              warnings: [],
-              originalRoute: route,
-            };
-          } catch (error) {
-            console.warn(
-              `Failed to process route ${index + 1}, using fallback:`,
-              error
-            );
-
-            // Create a basic fallback route
-            const fallbackRoute = index === 0 ? routes[0] : [start, end];
-            const fallbackDistance = 5; // 5km fallback
-            const fallbackRisk = 4.0 + index * 1.5; // Ensure different risk levels
-
-            return {
-              id: index + 1,
-              waypoints: Array.isArray(fallbackRoute)
-                ? fallbackRoute.map((point: any) => ({
-                    lat:
-                      typeof point.lat === "number"
-                        ? point.lat
-                        : point[1] || start.lat,
-                    lng:
-                      typeof point.lng === "number"
-                        ? point.lng
-                        : point[0] || start.lng,
-                  }))
-                : [start, end],
-              distance: fallbackDistance.toFixed(1),
-              duration: Math.ceil(fallbackDistance * 2), // 2 min per km
-              riskScore: fallbackRisk, // Always ensure riskScore exists
-              warnings: [`Route ${index + 1}: Using fallback data`],
-              originalRoute: fallbackRoute,
-            };
-          }
-        })
-      );
-
-      console.log(
-        `Processed ${processedRoutes.length} routes, sorting by risk...`
-      );
-
-      // Filter out any invalid routes and ensure all have riskScore
-      const validRoutes = processedRoutes.filter(
-        (route) =>
-          route &&
-          typeof route.riskScore === "number" &&
-          !isNaN(route.riskScore) &&
-          route.waypoints &&
-          route.waypoints.length >= 2
-      );
-
-      if (validRoutes.length === 0) {
-        throw new Error("No valid routes generated");
-      }
-
-      // Sort routes by risk score (lowest to highest - safest first)
-      const sortedRoutes = validRoutes.sort((a, b) => {
-        const riskA = typeof a.riskScore === "number" ? a.riskScore : 5.0;
-        const riskB = typeof b.riskScore === "number" ? b.riskScore : 5.0;
-        return riskA - riskB;
-      });
-
-      // Limit to maximum 3 routes and ensure distinct risk levels
-      const finalRoutes = [];
-
-      if (sortedRoutes.length > 0) {
-        // Always add the safest route
-        finalRoutes.push(sortedRoutes[0]);
-
-        // Add middle route if we have enough routes
-        if (sortedRoutes.length >= 2) {
-          const midIndex = Math.floor(sortedRoutes.length / 2);
-          const midRoute = sortedRoutes[midIndex];
-          // Only add if significantly different from safe route
-          if (midRoute.riskScore - sortedRoutes[0].riskScore >= 0.8) {
-            finalRoutes.push(midRoute);
-          }
-        }
-
-        // Add highest risk route if we have enough routes
-        if (sortedRoutes.length >= 3) {
-          const lastRoute = sortedRoutes[sortedRoutes.length - 1];
-          // Only add if significantly different from previous routes
-          if (
-            lastRoute.riskScore -
-              finalRoutes[finalRoutes.length - 1].riskScore >=
-            0.8
-          ) {
-            finalRoutes.push(lastRoute);
-          }
-        }
-      }
-
-      // Ensure we have at least one route
-      if (finalRoutes.length === 0) {
-        throw new Error("No valid routes generated");
-      }
-
-      // Assign the routes for display (use finalRoutes instead of sortedRoutes)
-      const safeRoute = finalRoutes[0];
-      const midRoute = finalRoutes.length > 1 ? finalRoutes[1] : finalRoutes[0];
-      const riskRoute =
-        finalRoutes.length > 2
-          ? finalRoutes[2]
-          : finalRoutes[finalRoutes.length - 1];
-
-      // Helper function to determine safety level and color - force first route to be safe
-      const getSafetyInfo = (score: number, routeIndex: number = -1) => {
-        // Always make the first (safest) route green regardless of score
-        if (routeIndex === 0) {
-          return { level: "Low Risk", risk: "safe", color: "#27ae60" };
-        }
-
-        if (score <= 4.0)
-          return { level: "Low Risk", risk: "safe", color: "#27ae60" };
-        if (score <= 6.5)
-          return { level: "Medium Risk", risk: "manageable", color: "#ff8c00" }; // Orange for medium risk
-        return { level: "High Risk", risk: "prone", color: "#e74c3c" }; // Red for high risk
-      };
-
-      const safeInfo = getSafetyInfo(safeRoute.riskScore, 0); // Force first route to be safe
-      const midInfo = getSafetyInfo(midRoute.riskScore, 1);
-      const riskInfo = getSafetyInfo(riskRoute.riskScore, 2);
-
-      console.log(
-        `Final routes - Safe: ${safeRoute.riskScore.toFixed(1)}${
-          finalRoutes.length > 1
-            ? `, Mid: ${midRoute.riskScore.toFixed(1)}`
-            : ""
-        }${
-          finalRoutes.length > 2
-            ? `, Risk: ${riskRoute.riskScore.toFixed(1)}`
-            : ""
-        }`
-      );
-
-      // Create the route details using enhanced data - ONLY VALID ROUTES for new system
-      const allRouteDetails: MultiRouteDetails = {
-        routes: finalRoutes.map((route, index) => {
-          const safetyInfo = getSafetyInfo(route.riskScore, index);
-          return {
-            waypoints: route.waypoints,
-            distance: route.distance + " km",
-            time: route.duration + " min",
-            floodRisk: safetyInfo.risk as any,
-            riskLevel: safetyInfo.level,
-            description: `${safetyInfo.level} (Score: ${route.riskScore.toFixed(
-              1
-            )}) - ${
-              route.warnings.length > 0
-                ? route.warnings[0]
-                : index === 0
-                ? "Recommended safe route"
-                : "Alternative route option"
-            }`,
-            color: safetyInfo.color,
-          };
-        }),
-        startName: selectedStartLocation?.display_name || "Start Point",
-        endName: selectedEndLocation?.display_name || "End Point",
-      };
-
-      // Store both formats - use new format for route drawing
-      (window as any).allRouteDetails = allRouteDetails;
-
-      // Create the route details using enhanced data (legacy 3-route format)
-      const routeDetails: RouteDetails = {
-        safeRoute: {
-          waypoints: safeRoute.waypoints,
-          distance: safeRoute.distance + " km",
-          time: safeRoute.duration + " min",
-          floodRisk: safeInfo.risk as any,
-          riskLevel: safeInfo.level,
-          description: `${safeInfo.level} (Score: ${safeRoute.riskScore.toFixed(
-            1
-          )}) - ${
-            safeRoute.warnings.length > 0
-              ? safeRoute.warnings[0]
-              : "Recommended safe route"
-          }`,
-          color: safeInfo.color,
-        },
-        manageableRoute: {
-          waypoints: midRoute.waypoints,
-          distance: midRoute.distance + " km",
-          time: midRoute.duration + " min",
-          floodRisk: midInfo.risk as any,
-          riskLevel: midInfo.level,
-          description: `${midInfo.level} (Score: ${midRoute.riskScore.toFixed(
-            1
-          )}) - ${
-            midRoute.warnings.length > 0
-              ? midRoute.warnings[0]
-              : "Alternative route option"
-          }`,
-          color: midInfo.color,
-        },
-        proneRoute: {
-          waypoints: riskRoute.waypoints,
-          distance: riskRoute.distance + " km",
-          time: riskRoute.duration + " min",
-          floodRisk: riskInfo.risk as any,
-          riskLevel: riskInfo.level,
-          description: `${riskInfo.level} (Score: ${riskRoute.riskScore.toFixed(
-            1
-          )}) - ${
-            riskRoute.warnings.length > 0
-              ? riskRoute.warnings[0]
-              : "Use with caution"
-          }`,
-          color: riskInfo.color,
-        },
-        startName: selectedStartLocation?.display_name || "Start Point",
-        endName: selectedEndLocation?.display_name || "End Point",
-      };
-
-      return routeDetails;
-    } catch (error) {
-      console.error("Error in generateFloodRoutes:", error);
-
-      // Try to get at least one basic route from OSRM directly as fallback
-      try {
-        console.log("Attempting fallback to direct OSRM route...");
-        const basicRoute = await getOSRMRoute(start, end);
-
-        if (basicRoute && basicRoute.length > 2) {
-          const distance = calculateRouteDistance(basicRoute);
-
-          return {
-            safeRoute: {
-              waypoints: basicRoute,
-              distance: distance.toFixed(1) + " km",
-              time: Math.round((distance / 40) * 60) + " min",
-              floodRisk: "safe",
-              riskLevel: "Low Risk",
-              description: `Basic safe route - Fallback mode`,
-              color: "#27ae60",
-            },
-            manageableRoute: {
-              waypoints: basicRoute,
-              distance: distance.toFixed(1) + " km",
-              time: Math.round((distance / 35) * 60) + " min",
-              floodRisk: "manageable",
-              riskLevel: "Medium Risk",
-              description: "Same route - API unavailable",
-              color: "#f39c12",
-            },
-            proneRoute: {
-              waypoints: basicRoute,
-              distance: distance.toFixed(1) + " km",
-              time: Math.round((distance / 30) * 60) + " min",
-              floodRisk: "prone",
-              riskLevel: "High Risk",
-              description: "Same route - API unavailable",
-              color: "#e74c3c",
-            },
-            startName: selectedStartLocation?.display_name || "Start Point",
-            endName: selectedEndLocation?.display_name || "End Point",
-          };
-        }
-      } catch (fallbackError) {
-        console.error("Fallback OSRM route also failed:", fallbackError);
-      }
-
-      // Last resort: Create fallback direct route (straight line)
-      const directRoute = [start, end];
-      const directDistance = calculateRouteDistance(directRoute);
-
-      return {
-        safeRoute: {
-          waypoints: directRoute,
-          distance: directDistance.toFixed(1) + " km",
-          time: Math.round((directDistance / 40) * 60) + " min",
-          floodRisk: "safe",
-          riskLevel: "Low Risk",
-          description: `Direct route - All APIs unavailable`,
-          color: "#27ae60",
-        },
-        manageableRoute: {
-          waypoints: directRoute,
-          distance: (directDistance * 1.1).toFixed(1) + " km",
-          time: Math.round(((directDistance * 1.1) / 35) * 60) + " min",
-          floodRisk: "manageable",
-          riskLevel: "Medium Risk",
-          description: "Direct route - All APIs unavailable",
-          color: "#f39c12",
-        },
-        proneRoute: {
-          waypoints: directRoute,
-          distance: (directDistance * 1.2).toFixed(1) + " km",
-          time: Math.round(((directDistance * 1.2) / 30) * 60) + " min",
-          floodRisk: "prone",
-          riskLevel: "High Risk",
-          description: "Direct route - All APIs unavailable",
-          color: "#e74c3c",
-        },
-        startName: selectedStartLocation?.display_name || "Start Point",
-        endName: selectedEndLocation?.display_name || "End Point",
-      };
-    }
-  };
-
-  // Draw multiple routes dynamically (gap-fixing system)
-  const drawMultipleRoutes = (multiRouteDetails: MultiRouteDetails) => {
-    if (!mapRef.current) return;
-
-    // Clear existing route layers
-    routeLayersRef.current.forEach((layer) => {
-      if (mapRef.current && mapRef.current.hasLayer(layer)) {
-        mapRef.current.removeLayer(layer);
-      }
-    });
-    routeLayersRef.current = [];
-
-    const routes = multiRouteDetails.routes;
-    if (routes.length === 0) return;
-
-    // Simple Route Visualization - Draw complete routes with proper layering
-    const createSmartRouteVisualization = (routes: FloodRoute[]) => {
-      const routeSegments: L.Polyline[] = [];
-
-      if (routes.length === 0) return routeSegments;
-
-      // Draw alternative routes FIRST (underneath)
-      for (let i = routes.length - 1; i >= 1; i--) {
-        const route = routes[i];
-        const isSelected =
-          selectedRoute === route.floodRisk || selectedRouteIndex === i;
-
-        if (route.waypoints && route.waypoints.length >= 2) {
-          console.log(
-            `Drawing route ${i} (${route.riskLevel}) with ${route.waypoints.length} points`
-          );
-
-          const alternativePolyline = L.polyline(
-            route.waypoints.map((wp) => [wp.lat, wp.lng]),
-            {
-              color: route.color,
-              weight: isSelected ? 6 : 4,
-              opacity: 0.7,
-              className: `route-alternative-${i}`,
-              dashArray: i === 1 ? "10, 5" : i === 2 ? "15, 5" : "20, 5",
-              lineCap: "round",
-              lineJoin: "round",
-            }
-          ).addTo(mapRef.current!);
-
-          addRouteInteractivity(alternativePolyline, route);
-          routeSegments.push(alternativePolyline);
-        }
-      }
-
-      // Draw safe route LAST (on top)
-      const safeRoute = routes[0];
-      if (safeRoute && safeRoute.waypoints && safeRoute.waypoints.length >= 2) {
-        console.log(
-          `Drawing safe route with ${safeRoute.waypoints.length} points`
-        );
-
-        const safePolyline = L.polyline(
-          safeRoute.waypoints.map((wp) => [wp.lat, wp.lng]),
-          {
-            color: safeRoute.color,
-            weight: 5,
-            opacity: 0.9,
-            className: "route-safe",
-          }
-        ).addTo(mapRef.current!);
-
-        addRouteInteractivity(safePolyline, safeRoute);
-        routeSegments.push(safePolyline);
-      }
-
-      return routeSegments;
-    };
-
-    // Use the smart route visualization to prevent gaps
-    const smartRouteSegments = createSmartRouteVisualization(routes);
-    routeLayersRef.current = smartRouteSegments;
-
-    // Fit map to show all routes
-    if (routeLayersRef.current.length > 0) {
-      const group = new L.FeatureGroup(routeLayersRef.current);
-      mapRef.current!.fitBounds(group.getBounds().pad(0.1));
-    }
-  };
-
-  // Helper function to add interactivity to route polylines
-  const addRouteInteractivity = (polyline: L.Polyline, route: FloodRoute) => {
-    let debounceTimer: NodeJS.Timeout;
-
-    polyline.on("mousemove", async (e) => {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(async () => {
-        const point = e.latlng;
-
-        try {
-          const elevationData = await getElevationData(point.lat, point.lng);
-
-          if (elevationData) {
-            const risk = calculateFloodRisk(
-              elevationData.elevation,
-              point.lat,
-              point.lng
-            );
-            const riskColor =
-              risk === "prone"
-                ? "#e74c3c"
-                : risk === "manageable"
-                ? "#f39c12"
-                : "#27ae60";
-
-            polyline
-              .bindTooltip(
-                `<div style="
-                background: white;
-                padding: 12px;
-                border-radius: 8px;
-                border: 2px solid ${riskColor};
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                font-family: system-ui, -apple-system, sans-serif;
-                min-width: 200px;
-              ">
-                <div style="color: ${route.color}; font-weight: 600; font-size: 14px; margin-bottom: 8px;">
-                  ${route.riskLevel} Route
-                </div>
-                <div style="margin-bottom: 6px; font-size: 13px;">
-                  Distance: ${route.distance} • Time: ${route.time}
-                </div>
-                <div style="margin-bottom: 6px; font-size: 13px;">
-                  Elevation: ${elevationData.elevation}m
-                </div>
-                <div style="color: ${riskColor}; font-size: 13px;">
-                  ${route.description}
-                </div>
-              </div>`,
-                {
-                  permanent: false,
-                  sticky: true,
-                  direction: "top",
-                  offset: L.point(0, -5),
-                  opacity: 1,
-                  className: "terrain-tooltip",
-                }
-              )
-              .openTooltip();
+          
+          // Validate and fix the route
+          const validatedRoute = validateAndFixRoute(route, start, end);
+          
+          if (validatedRoute.length > 2) {
+            routes.push(validatedRoute);
+            console.log(`✅ Route ${i + 1} generated: ${validatedRoute.length} points`);
+          } else {
+            console.log(`⚠️ Route ${i + 1} too short, using fallback...`);
+            routes.push(createDirectRoute(start, end));
           }
         } catch (error) {
-          // Fallback tooltip without elevation
-          polyline
-            .bindTooltip(
-              `<div style="background: white; padding: 8px; border-radius: 4px;">
-                ${route.riskLevel} Route - ${route.distance} • ${route.time}
-              </div>`,
-              { permanent: false, sticky: true }
-            )
-            .openTooltip();
+          console.log(`⚠️ Route ${i + 1} failed:`, error);
+          routes.push(createDirectRoute(start, end));
         }
-      }, 50);
-    });
-
-    polyline.on("mouseout", () => {
-      clearTimeout(debounceTimer);
-      polyline.closeTooltip();
-    });
-  };
-
-  // Draw all routes with smart divergence-based display
-  const drawAllRoutes = (routeDetails: RouteDetails) => {
-    if (!mapRef.current) return;
-
-    // Clear existing route layers
-    routeLayersRef.current.forEach((layer) => {
-      if (mapRef.current && mapRef.current.hasLayer(layer)) {
-        mapRef.current.removeLayer(layer);
       }
-    });
-    routeLayersRef.current = [];
+      
+      // Strategy 1: ALWAYS try local GeoJSON routing FIRST (no bounds checking!)
+      console.log("🗺️ PRIORITIZING local GeoJSON routing for ALL routes (using your zamboanga_roads.geojson)...");
+      
+      try {
+        // Route 1: Direct local route using your GeoJSON roads
+        const localRoute1 = await localRoutingService.calculateRoute(start.lat, start.lng, end.lat, end.lng);
+        if (localRoute1?.success && localRoute1.route.length > 0) {
+          const localWaypoints1 = localRoutingService.convertToLatLng(localRoute1.route);
+          routes.push(localWaypoints1);
+          console.log(`✅ Local GeoJSON route 1: ${localRoute1.distance}m using your road data!`);
+        } else {
+          console.log(`⚠️ Local GeoJSON route 1 failed: ${localRoute1?.message || "No route found"}`);
+        }
 
-    // Helper function to find where routes diverge significantly from the safe route
-    const findDivergencePoints = (
-      safeRoute: LatLng[],
-      compareRoute: LatLng[],
-      threshold: number = 0.002
-    ) => {
-      let divergenceStart = -1;
-      let significantDivergenceCount = 0;
+        // Route 2: Local route with intermediate waypoint (create variation)
+        const midLat = (start.lat + end.lat) / 2;
+        const midLng = (start.lng + end.lng) / 2;
+        
+        // Try different intermediate points to create route variations
+        const intermediatePoints = [
+          { lat: midLat + 0.005, lng: midLng - 0.003 }, // Slightly north-west
+          { lat: midLat - 0.005, lng: midLng + 0.003 }, // Slightly south-east
+          { lat: midLat + 0.008, lng: midLng + 0.005 }, // More north-east
+        ];
 
-      // Find first significant divergence point
-      for (
-        let i = 0;
-        i < Math.min(safeRoute.length, compareRoute.length);
-        i++
-      ) {
-        const distance = Math.sqrt(
-          Math.pow(safeRoute[i].lat - compareRoute[i].lat, 2) +
-            Math.pow(safeRoute[i].lng - compareRoute[i].lng, 2)
-        );
-
-        if (distance > threshold) {
-          if (divergenceStart === -1) {
-            divergenceStart = Math.max(0, i - 2); // Start showing 2 points before divergence
+        for (const intermediate of intermediatePoints) {
+          if (routes.length >= 3) break;
+          
+          try {
+            // Two-segment route: start → intermediate → end
+            const segment1 = await localRoutingService.calculateRoute(start.lat, start.lng, intermediate.lat, intermediate.lng);
+            const segment2 = await localRoutingService.calculateRoute(intermediate.lat, intermediate.lng, end.lat, end.lng);
+            
+            if (segment1?.success && segment2?.success && segment1.route.length > 0 && segment2.route.length > 0) {
+              const waypoints1 = localRoutingService.convertToLatLng(segment1.route);
+              const waypoints2 = localRoutingService.convertToLatLng(segment2.route);
+              
+              // Combine segments (remove duplicate intermediate point)
+              const combinedRoute = [...waypoints1, ...waypoints2.slice(1)];
+              
+              if (combinedRoute.length > 5) { // Ensure meaningful route
+                routes.push(combinedRoute);
+                console.log(`✅ Local GeoJSON multi-segment route: ${(segment1.distance + segment2.distance)}m using YOUR road data!`);
+              }
+            }
+          } catch (error) {
+            console.log(`Local multi-segment routing failed for intermediate point:`, error);
           }
-          significantDivergenceCount++;
+        }
+      } catch (error) {
+        console.log("⚠️ Local GeoJSON routing failed - your zamboanga_roads.geojson may not be loaded:", error);
+      }
+
+      // Strategy 2: Fill remaining slots with LOCAL routing if needed
+      while (routes.length < 3) {
+        const routeIndex = routes.length;
+        console.log(`� Generating local route ${routeIndex + 1}...`);
+        
+        if (routeIndex === 0) {
+          // Direct fastest route
+          const fastestRoute = await getLocalBackendRoute(start, end, [], 'fastest', transportationMode);
+          if (fastestRoute.length > 0) {
+            routes.push(fastestRoute);
+            console.log(`✅ Local fastest route (${transportationMode}): ${fastestRoute.length} waypoints`);
+          } else {
+            routes.push(createDirectRoute(start, end));
+          }
+        } else if (routeIndex === 1) {
+          // Northern alternative route
+          const midLat = (start.lat + end.lat) / 2;
+          const midLng = (start.lng + end.lng) / 2;
+          const northWaypoint = { lat: midLat + 0.008, lng: midLng + 0.003 };
+          
+          const northRoute = await getLocalBackendRoute(start, end, [northWaypoint], 'balanced', transportationMode);
+          if (northRoute.length > 2) {
+            routes.push(northRoute);
+            console.log(`✅ Local northern route (${transportationMode}): ${northRoute.length} waypoints`);
+          } else {
+            routes.push(createDirectRoute(start, end));
+          }
+        } else if (routeIndex === 2) {
+          // Southern/coastal alternative route
+          const midLat = (start.lat + end.lat) / 2;
+          const midLng = (start.lng + end.lng) / 2;
+          const southWaypoint = { lat: midLat - 0.008, lng: midLng - 0.003 };
+          
+          const southRoute = await getLocalBackendRoute(start, end, [southWaypoint], 'shortest', transportationMode);
+          if (southRoute.length > 2) {
+            routes.push(southRoute);
+            console.log(`✅ Local southern route (${transportationMode}): ${southRoute.length} waypoints`);
+          } else {
+            routes.push(createDirectRoute(start, end));
+          }
         }
       }
 
-      // If routes diverge significantly (more than 3 points different), show the alternative
-      // But always show the full alternative route to the destination
-      if (significantDivergenceCount < 3) {
-        return { shouldShow: false, divergenceStart: -1 };
-      }
+      // Validate all routes and ensure exactly 3
+      const finalRoutes = routes.slice(0, 3).map(route => validateAndFixRoute(route, start, end));
+      
+      console.log(`📍 Generated ${finalRoutes.length} routes for ${transportationMode.toUpperCase()} (YOUR zamboanga_roads.geojson prioritized!)`);
+
+      // Assess each route for flood risk using enhanced analysis with transportation mode
+      const routeAssessments = await Promise.all(
+        finalRoutes.map(route => assessRouteFloodRisk(route, transportationMode))
+      );
+
+      // Calculate distances for each route
+      const distances = finalRoutes.map(route => calculateRouteDistance(route));
+
+      // Sort routes by FLOOD RISK (most prone first for RED → ORANGE → GREEN display)
+      const routeData = finalRoutes.map((route, index) => ({
+        waypoints: route,
+        distance: distances[index],
+        assessment: routeAssessments[index]
+      })).sort((a, b) => {
+        // Sort by risk score (HIGHEST risk first for RED route)
+        return b.assessment.riskScore - a.assessment.riskScore;
+      });
+
+      // Assign routes with PROPER FLOOD RISK ORDER: Red (most prone) → Orange (manageable) → Green (safest)
+      const proneRoute: FloodRoute = {
+        waypoints: routeData[0].waypoints,
+        distance: `${routeData[0].distance.toFixed(1)} km`,
+        time: `${Math.round(routeData[0].distance * 4)} min`,
+        floodRisk: "prone",
+        riskLevel: routeData[0].assessment.level,
+        description: routeData[0].assessment.description,
+        color: "#e74c3c" // RED - Most flood-prone route
+      };
+
+      const manageableRoute: FloodRoute = {
+        waypoints: routeData[1].waypoints,
+        distance: `${routeData[1].distance.toFixed(1)} km`,
+        time: `${Math.round(routeData[1].distance * 4)} min`,
+        floodRisk: "manageable", 
+        riskLevel: routeData[1].assessment.level,
+        description: routeData[1].assessment.description,
+        color: "#f39c12" // ORANGE - Moderate flood risk route
+      };
+
+      const safeRoute: FloodRoute = {
+        waypoints: routeData[2].waypoints,
+        distance: `${routeData[2].distance.toFixed(1)} km`,
+        time: `${Math.round(routeData[2].distance * 4)} min`,
+        floodRisk: "safe",
+        riskLevel: routeData[2].assessment.level,
+        description: routeData[2].assessment.description,
+        color: "#27ae60" // GREEN - Safest route
+      };
 
       return {
-        shouldShow: true,
-        divergenceStart: Math.max(0, divergenceStart),
+        safeRoute,
+        manageableRoute,
+        proneRoute,
+        startName: selectedStartLocation?.display_name || "Start Point",
+        endName: selectedEndLocation?.display_name || "End Point"
       };
-    };
 
-    // Get smart route segments
-    const routes = [
-      {
-        route: routeDetails.safeRoute,
-        waypoints: routeDetails.safeRoute.waypoints, // Show full safe route
-        priority: 1,
-        style: {
-          color: routeDetails.safeRoute.color,
-          weight: 6,
-          opacity: 0.9,
-          dashArray: undefined,
-          zIndex: 300,
+    } catch (error) {
+      console.error("Error in generateFloodRoutes:", error);
+      
+      // Fallback: create simple direct routes with slight variations
+      const directRoute = createDirectRoute(start, end);
+      const distance = calculateRouteDistance(directRoute);
+      
+      const baseFallback = {
+        waypoints: directRoute,
+        distance: `${distance.toFixed(1)} km`,
+        time: `${Math.round(distance * 4)} min`,
+      };
+
+      return {
+        safeRoute: { 
+          ...baseFallback, 
+          floodRisk: "safe" as const, 
+          color: "#27ae60", 
+          riskLevel: "Low Risk", 
+          description: "Direct safe route (fallback)" 
         },
-      },
-      {
-        route: routeDetails.manageableRoute,
-        waypoints: (() => {
-          const { shouldShow, divergenceStart } = findDivergencePoints(
-            routeDetails.safeRoute.waypoints,
-            routeDetails.manageableRoute.waypoints
-          );
-
-          if (!shouldShow) {
-            // Routes never diverge significantly, don't show this route
-            return [];
-          }
-
-          // Show the full alternative route from divergence to destination
-          return routeDetails.manageableRoute.waypoints.slice(divergenceStart);
-        })(),
-        priority: 2,
-        style: {
-          color: routeDetails.manageableRoute.color,
-          weight: 5,
-          opacity: 0.8,
-          dashArray: "8, 4",
-          zIndex: 200,
+        manageableRoute: { 
+          ...baseFallback, 
+          floodRisk: "manageable" as const, 
+          color: "#f39c12", 
+          riskLevel: "Medium Risk", 
+          description: "Direct moderate route (fallback)" 
         },
-      },
-      {
-        route: routeDetails.proneRoute,
-        waypoints: (() => {
-          const { shouldShow, divergenceStart } = findDivergencePoints(
-            routeDetails.safeRoute.waypoints,
-            routeDetails.proneRoute.waypoints
-          );
-
-          if (!shouldShow) {
-            // Routes never diverge significantly, don't show this route
-            return [];
-          }
-
-          // Show the full alternative route from divergence to destination
-          return routeDetails.proneRoute.waypoints.slice(divergenceStart);
-        })(),
-        priority: 3,
-        style: {
-          color: routeDetails.proneRoute.color,
-          weight: 4,
-          opacity: 0.7,
-          dashArray: "12, 8",
-          zIndex: 100,
+        proneRoute: { 
+          ...baseFallback, 
+          floodRisk: "prone" as const, 
+          color: "#e74c3c", 
+          riskLevel: "High Risk", 
+          description: "Direct fast route (fallback)" 
         },
-      },
-    ];
-
-    // Draw routes in reverse priority order so safe route appears on top
-    routes.sort((a, b) => b.priority - a.priority);
-
-    routes.forEach((routeInfo) => {
-      if (routeInfo.waypoints.length < 2) return; // Skip routes with insufficient points
-
-      const polyline = L.polyline(
-        routeInfo.waypoints.map((wp) => [wp.lat, wp.lng]),
-        routeInfo.style
-      ).addTo(mapRef.current!);
-
-      // Add interactive features
-      let debounceTimer: NodeJS.Timeout;
-      polyline.on("mousemove", async (e) => {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(async () => {
-          const point = e.latlng;
-          const elevationData = await getElevationData(point.lat, point.lng);
-
-          if (elevationData) {
-            const risk = calculateFloodRisk(
-              elevationData.elevation,
-              point.lat,
-              point.lng
-            );
-            const riskColor =
-              risk === "prone"
-                ? "#e74c3c"
-                : risk === "manageable"
-                ? "#f39c12"
-                : "#27ae60";
-
-            polyline
-              .bindTooltip(
-                `<div style="
-                background: white;
-                padding: 12px;
-                border-radius: 8px;
-                border: 2px solid ${riskColor};
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                font-family: system-ui, -apple-system, sans-serif;
-                min-width: 200px;
-              ">
-                <div style="color: ${routeInfo.route.color}; font-weight: 600; font-size: 14px; margin-bottom: 8px;">
-                  ${routeInfo.route.riskLevel} Route
-                </div>
-                <div style="margin-bottom: 6px; font-size: 13px;">
-                  Distance: ${routeInfo.route.distance} • Time: ${routeInfo.route.time}
-                </div>
-                <div style="margin-bottom: 6px; font-size: 13px;">
-                  Elevation: ${elevationData.elevation}m
-                </div>
-                <div style="color: ${riskColor}; font-size: 13px;">
-                  ${routeInfo.route.description}
-                </div>
-              </div>`,
-                {
-                  permanent: false,
-                  sticky: true,
-                  direction: "top",
-                  offset: L.point(0, -5),
-                  opacity: 1,
-                  className: "terrain-tooltip",
-                }
-              )
-              .openTooltip();
-          }
-        }, 50);
-      });
-
-      polyline.on("mouseout", () => {
-        clearTimeout(debounceTimer);
-        polyline.closeTooltip();
-      });
-
-      // Add click handler for route selection
-      polyline.on("click", () => {
-        setSelectedRoute(
-          routeInfo.route.floodRisk as "safe" | "manageable" | "prone"
-        );
-
-        // Highlight selected route
-        routeLayersRef.current.forEach((layer) => {
-          if (layer === polyline) {
-            layer.setStyle({
-              weight: routeInfo.style.weight + 2,
-              opacity: 1.0,
-            });
-          } else {
-            const originalStyle = layer.options as any;
-            layer.setStyle({
-              weight: Math.max(2, originalStyle.weight - 1),
-              opacity: originalStyle.opacity * 0.6,
-            });
-          }
-        });
-      });
-
-      routeLayersRef.current.push(polyline);
-    });
-
-    // Add route divergence indicators (small dots where alternative routes branch off)
-    const manageableDivergence = findDivergencePoints(
-      routeDetails.safeRoute.waypoints,
-      routeDetails.manageableRoute.waypoints
-    );
-    const proneDivergence = findDivergencePoints(
-      routeDetails.safeRoute.waypoints,
-      routeDetails.proneRoute.waypoints
-    );
-
-    // Add small markers at divergence points
-    if (manageableDivergence.divergenceStart > 0) {
-      const divergencePoint =
-        routeDetails.safeRoute.waypoints[manageableDivergence.divergenceStart];
-      const marker = L.circleMarker(
-        [divergencePoint.lat, divergencePoint.lng],
-        {
-          color: routeDetails.manageableRoute.color,
-          fillColor: routeDetails.manageableRoute.color,
-          radius: 4,
-          weight: 2,
-          opacity: 0.8,
-          fillOpacity: 0.6,
-        }
-      )
-        .addTo(mapRef.current!)
-        .bindTooltip("Alternative route starts here", { permanent: false });
-
-      routeLayersRef.current.push(marker as any);
-    }
-
-    if (
-      proneDivergence.divergenceStart > 0 &&
-      proneDivergence.divergenceStart !== manageableDivergence.divergenceStart
-    ) {
-      const divergencePoint =
-        routeDetails.safeRoute.waypoints[proneDivergence.divergenceStart];
-      const marker = L.circleMarker(
-        [divergencePoint.lat, divergencePoint.lng],
-        {
-          color: routeDetails.proneRoute.color,
-          fillColor: routeDetails.proneRoute.color,
-          radius: 4,
-          weight: 2,
-          opacity: 0.8,
-          fillOpacity: 0.6,
-        }
-      )
-        .addTo(mapRef.current!)
-        .bindTooltip("High-risk route starts here", { permanent: false });
-
-      routeLayersRef.current.push(marker as any);
-    }
-
-    // Fit map to show all routes
-    if (routeLayersRef.current.length > 0) {
-      const group = new L.FeatureGroup(routeLayersRef.current);
-      mapRef.current!.fitBounds(group.getBounds().pad(0.1));
+        startName: selectedStartLocation?.display_name || "Start Point",
+        endName: selectedEndLocation?.display_name || "End Point"
+      };
     }
   };
 
-  // Draw route on map (single route - keep for backward compatibility)
+  // Enhanced route drawing with elevation display and sequential rendering
   const drawRoute = (route: FloodRoute) => {
     if (!mapRef.current) return;
 
@@ -1970,7 +936,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     });
     routeLayersRef.current = [];
 
-    // Draw the route as a single polyline
+    // Draw the route as a single polyline with hover elevation display
     const polyline = L.polyline(
       route.waypoints.map((wp) => [wp.lat, wp.lng]),
       {
@@ -1981,73 +947,50 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       }
     ).addTo(mapRef.current);
 
-    let debounceTimer: NodeJS.Timeout;
-    polyline.on("mousemove", async (e) => {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(async () => {
-        const point = e.latlng;
-        const elevationData = await getElevationData(point.lat, point.lng);
-
-        if (elevationData) {
-          const risk = calculateFloodRisk(
-            elevationData.elevation,
-            point.lat,
-            point.lng
-          );
-          const riskColor =
-            risk === "prone"
-              ? "#e74c3c"
-              : risk === "manageable"
-              ? "#f39c12"
-              : "#27ae60";
-
-          polyline
-            .bindTooltip(
-              `<div style="
-              background: white;
-              padding: 12px;
-              border-radius: 8px;
-              border: 2px solid ${riskColor};
-              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-              font-family: system-ui, -apple-system, sans-serif;
-              min-width: 200px;
-            ">
-              <div style="color: ${riskColor}; font-weight: 600; font-size: 14px; margin-bottom: 8px;">
-                Terrain Data
-              </div>
-              <div style="margin-bottom: 6px; font-size: 13px;">
-                Elevation: ${elevationData.elevation}m
-              </div>
-              <div style="margin-bottom: 6px; font-size: 13px;">
-                Slope: ${elevationData.slope}°
-              </div>
-              <div style="color: ${riskColor}; font-size: 13px;">
-                ${
-                  elevationData.elevation < 5
-                    ? "High flood risk due to very low elevation"
-                    : elevationData.elevation < 15
-                    ? "Moderate flood risk at this elevation"
-                    : "Lower flood risk at this elevation"
-                }
-              </div>
-            </div>`,
-              {
-                permanent: false,
-                sticky: true,
-                direction: "top",
-                offset: L.point(0, -5),
-                opacity: 1,
-                className: "terrain-tooltip",
-              }
-            )
-            .openTooltip();
-        }
-      }, 50);
+    // Add elevation display on hover
+    polyline.on('mouseover', async (e: L.LeafletMouseEvent) => {
+      const lat = e.latlng.lat;
+      const lng = e.latlng.lng;
+      
+      try {
+        // Simple elevation estimation based on distance from coast
+        const coastalDistance = Math.sqrt(
+          Math.pow(lat - 6.9087, 2) + Math.pow(lng - 122.0547, 2)
+        ) * 111000; // Convert to meters
+        
+        // Estimate elevation (higher as you move inland)
+        const estimatedElevation = Math.max(0, Math.min(200, coastalDistance / 50));
+        
+        // Create hover popup with elevation info
+        const popup = L.popup({
+          closeButton: false,
+          className: 'elevation-popup'
+        })
+        .setLatLng(e.latlng)
+        .setContent(`
+          <div style="text-align: center; font-size: 12px;">
+            <strong>📍 Position</strong><br>
+            Lat: ${lat.toFixed(5)}<br>
+            Lng: ${lng.toFixed(5)}<br>
+            <strong>⛰️ Elevation</strong><br>
+            ~${estimatedElevation.toFixed(1)}m above sea level<br>
+            <span style="color: ${route.color};">● ${route.floodRisk.toUpperCase()} ROUTE</span>
+          </div>
+        `)
+        .openOn(mapRef.current!);
+        
+        // Store popup reference for cleanup
+        (polyline as any)._hoverPopup = popup;
+      } catch (error) {
+        console.log('Elevation display error:', error);
+      }
     });
 
-    polyline.on("mouseout", () => {
-      clearTimeout(debounceTimer);
-      polyline.closeTooltip();
+    polyline.on('mouseout', () => {
+      // Remove hover popup
+      if ((polyline as any)._hoverPopup && mapRef.current) {
+        mapRef.current.closePopup((polyline as any)._hoverPopup);
+      }
     });
 
     routeLayersRef.current.push(polyline);
@@ -2057,16 +1000,100 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     mapRef.current.fitBounds(group.getBounds().pad(0.1));
   };
 
+  // Sequential route rendering function
+  const drawRoutesSequentially = async (routes: { safe: FloodRoute; manageable: FloodRoute; prone: FloodRoute }) => {
+    if (!mapRef.current) return;
+
+    // Clear existing routes
+    routeLayersRef.current.forEach((layer) => {
+      if (mapRef.current && mapRef.current.hasLayer(layer)) {
+        mapRef.current.removeLayer(layer);
+      }
+    });
+    routeLayersRef.current = [];
+
+    console.log('🎬 Starting sequential route rendering...');
+
+    // Draw routes with 3-second delays
+    const routeOrder = [
+      { route: routes.prone, name: 'High Risk (Red)', delay: 0 },
+      { route: routes.manageable, name: 'Moderate Risk (Orange)', delay: 3000 },
+      { route: routes.safe, name: 'Low Risk (Green)', delay: 6000 }
+    ];
+
+    for (const { route, name, delay } of routeOrder) {
+      setTimeout(() => {
+        console.log(`🎭 Rendering ${name} route...`);
+        
+        const polyline = L.polyline(
+          route.waypoints.map((wp) => [wp.lat, wp.lng]),
+          {
+            color: route.color,
+            weight: 5,
+            opacity: 0.8,
+            dashArray: route.floodRisk === "prone" ? "10, 10" : undefined,
+          }
+        );
+
+        // Add elevation hover functionality
+        polyline.on('mouseover', async (e: L.LeafletMouseEvent) => {
+          const lat = e.latlng.lat;
+          const lng = e.latlng.lng;
+          
+          const coastalDistance = Math.sqrt(
+            Math.pow(lat - 6.9087, 2) + Math.pow(lng - 122.0547, 2)
+          ) * 111000;
+          
+          const estimatedElevation = Math.max(0, Math.min(200, coastalDistance / 50));
+          
+          const popup = L.popup({
+            closeButton: false,
+            className: 'elevation-popup'
+          })
+          .setLatLng(e.latlng)
+          .setContent(`
+            <div style="text-align: center; font-size: 12px;">
+              <strong>📍 ${name}</strong><br>
+              Lat: ${lat.toFixed(5)}<br>
+              Lng: ${lng.toFixed(5)}<br>
+              <strong>⛰️ Elevation</strong><br>
+              ~${estimatedElevation.toFixed(1)}m above sea level<br>
+              <strong>Distance:</strong> ${route.distance}<br>
+              <strong>Time:</strong> ${route.time}
+            </div>
+          `)
+          .openOn(mapRef.current!);
+          
+          (polyline as any)._hoverPopup = popup;
+        });
+
+        polyline.on('mouseout', () => {
+          if ((polyline as any)._hoverPopup && mapRef.current) {
+            mapRef.current.closePopup((polyline as any)._hoverPopup);
+          }
+        });
+
+        if (mapRef.current) {
+          polyline.addTo(mapRef.current);
+          routeLayersRef.current.push(polyline);
+          
+          // Fit bounds after all routes are drawn
+          if (delay === 6000) { // Last route
+            setTimeout(() => {
+              if (mapRef.current) {
+                const group = new L.FeatureGroup(routeLayersRef.current);
+                mapRef.current.fitBounds(group.getBounds().pad(0.1));
+              }
+            }, 500);
+          }
+        }
+      }, delay);
+    }
+  };
+
   // Handle start location input change
   useEffect(() => {
     const searchTimeout = setTimeout(async () => {
-      // Don't show suggestions if a location is already selected
-      if (selectedStartLocation) {
-        setStartSuggestions([]);
-        setShowStartSuggestions(false);
-        return;
-      }
-
       if (startLocationInput.length >= 3) {
         const suggestions = await searchLocations(startLocationInput);
         setStartSuggestions(suggestions);
@@ -2078,18 +1105,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     }, 300);
 
     return () => clearTimeout(searchTimeout);
-  }, [startLocationInput, selectedStartLocation]);
+  }, [startLocationInput]);
 
   // Handle end location input change
   useEffect(() => {
     const searchTimeout = setTimeout(async () => {
-      // Don't show suggestions if a location is already selected
-      if (selectedEndLocation) {
-        setEndSuggestions([]);
-        setShowEndSuggestions(false);
-        return;
-      }
-
       if (endLocationInput.length >= 3) {
         const suggestions = await searchLocations(endLocationInput);
         setEndSuggestions(suggestions);
@@ -2101,240 +1121,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     }, 300);
 
     return () => clearTimeout(searchTimeout);
-  }, [endLocationInput, selectedEndLocation]);
-
-  // Handle click outside to hide suggestion dropdowns
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-
-      // Check if the click is outside any location input or suggestion dropdown
-      if (
-        !target.closest("[data-location-input]") &&
-        !target.closest("[data-suggestions-dropdown]")
-      ) {
-        setShowStartSuggestions(false);
-        setShowEndSuggestions(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, []);
-
-  // Handle escape key to hide suggestion dropdowns
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setShowStartSuggestions(false);
-        setShowEndSuggestions(false);
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, []);
-
-  // Route persistence - restore route data on component mount
-  useEffect(() => {
-    const restoreRouteData = async () => {
-      // Check for search request from MyRoutes
-      const searchRequest = localStorage.getItem("safePathSearchRequest");
-      if (searchRequest) {
-        try {
-          const request = JSON.parse(searchRequest);
-          console.log("Processing search request from MyRoutes:", request);
-
-          // Clear the request
-          localStorage.removeItem("safePathSearchRequest");
-
-          // Set search mode and trigger search
-          setStartLocationInput(request.query);
-
-          // Small delay to ensure input is updated
-          setTimeout(() => {
-            // Auto-trigger search
-            const handleAutoSearch = async () => {
-              try {
-                const results = await searchLocations(request.query);
-                if (results.length > 0) {
-                  const location = results[0];
-                  setSelectedStartLocation(location);
-                  setStartPoint({
-                    lat: parseFloat(location.lat),
-                    lng: parseFloat(location.lon),
-                  });
-
-                  // Center map on found location
-                  if (mapRef.current) {
-                    mapRef.current.setView(
-                      [parseFloat(location.lat), parseFloat(location.lon)],
-                      15
-                    );
-                  }
-                }
-              } catch (error) {
-                console.error("Error processing search request:", error);
-              }
-            };
-
-            handleAutoSearch();
-          }, 500);
-
-          return; // Don't restore saved data if we have a search request
-        } catch (error) {
-          console.error("Failed to process search request:", error);
-          localStorage.removeItem("safePathSearchRequest");
-        }
-      }
-
-      // Check for route request from MyRoutes
-      const routeRequest = localStorage.getItem("safePathRouteRequest");
-      if (routeRequest) {
-        try {
-          const request = JSON.parse(routeRequest);
-          console.log("Processing route request from MyRoutes:", request);
-
-          // Clear the request
-          localStorage.removeItem("safePathRouteRequest");
-
-          // Set the locations and trigger route finding
-          setStartLocationInput(request.startLocationInput);
-          setEndLocationInput(request.endLocationInput);
-          setRouteMode(true);
-
-          // Small delay to ensure inputs are updated
-          setTimeout(() => {
-            // Auto-trigger route finding
-            const handleAutoRoute = async () => {
-              try {
-                // Search for start location
-                const startResults = await searchLocations(
-                  request.startLocationInput
-                );
-                if (startResults.length > 0) {
-                  const startLocation = startResults[0];
-                  setSelectedStartLocation(startLocation);
-                  setStartPoint({
-                    lat: parseFloat(startLocation.lat),
-                    lng: parseFloat(startLocation.lon),
-                  });
-
-                  // Search for end location
-                  const endResults = await searchLocations(
-                    request.endLocationInput
-                  );
-                  if (endResults.length > 0) {
-                    const endLocation = endResults[0];
-                    setSelectedEndLocation(endLocation);
-                    setEndPoint({
-                      lat: parseFloat(endLocation.lat),
-                      lng: parseFloat(endLocation.lon),
-                    });
-
-                    // Trigger route finding
-                    await handleFindRoute();
-                  }
-                }
-              } catch (error) {
-                console.error("Error processing route request:", error);
-              }
-            };
-
-            handleAutoRoute();
-          }, 500);
-
-          return; // Don't restore saved data if we have a route request
-        } catch (error) {
-          console.error("Failed to process route request:", error);
-          localStorage.removeItem("safePathRouteRequest");
-        }
-      }
-
-      const savedData = loadRouteData();
-      if (savedData && mapRef.current) {
-        console.log("Restoring saved route data...");
-
-        // Restore state
-        setStartPoint(savedData.startPoint);
-        setEndPoint(savedData.endPoint);
-        setSelectedStartLocation(savedData.selectedStartLocation);
-        setSelectedEndLocation(savedData.selectedEndLocation);
-        setStartLocationInput(savedData.startLocationInput || "");
-        setEndLocationInput(savedData.endLocationInput || "");
-        setRouteMode(savedData.routeMode || false);
-
-        // Restore route details if available
-        if (savedData.routeDetails) {
-          setRouteDetails(savedData.routeDetails);
-
-          // If we have multiRouteDetails in window object, restore routes
-          if ((window as any).allRouteDetails) {
-            const multiRoutes = (window as any)
-              .allRouteDetails as MultiRouteDetails;
-            drawMultipleRoutes(multiRoutes);
-          }
-        }
-
-        // Add markers if we have points
-        if (savedData.startPoint && savedData.endPoint) {
-          const startMarker = L.marker(
-            [savedData.startPoint.lat, savedData.startPoint.lng],
-            {
-              icon: startIcon,
-            }
-          )
-            .addTo(mapRef.current)
-            .bindPopup(
-              "Start: " +
-                (savedData.selectedStartLocation?.display_name || "Start Point")
-            );
-
-          const endMarker = L.marker(
-            [savedData.endPoint.lat, savedData.endPoint.lng],
-            {
-              icon: endIcon,
-            }
-          )
-            .addTo(mapRef.current)
-            .bindPopup(
-              "End: " +
-                (savedData.selectedEndLocation?.display_name || "End Point")
-            );
-
-          markersRef.current.push(startMarker, endMarker);
-        }
-      }
-    };
-
-    // Only restore if the map is ready
-    if (mapRef.current) {
-      restoreRouteData();
-    }
-  }, [mapRef.current]); // Depend on map being ready
-
-  // Enhanced input handlers that clear selection when user starts typing
-  const handleStartLocationInputChange = (value: string) => {
-    setStartLocationInput(value);
-    // Clear selection if user is modifying the input and it doesn't match the selected location
-    if (selectedStartLocation && value !== selectedStartLocation.display_name) {
-      setSelectedStartLocation(null);
-      setStartPoint(null);
-    }
-  };
-
-  const handleEndLocationInputChange = (value: string) => {
-    setEndLocationInput(value);
-    // Clear selection if user is modifying the input and it doesn't match the selected location
-    if (selectedEndLocation && value !== selectedEndLocation.display_name) {
-      setSelectedEndLocation(null);
-      setEndPoint(null);
-    }
-  };
+  }, [endLocationInput]);
 
   // Handle selecting start location
   const handleSelectStartLocation = (location: LocationSuggestion) => {
@@ -2346,7 +1133,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       lat: parseFloat(location.lat),
       lng: parseFloat(location.lon),
     });
-    console.log("Start location selected:", location.display_name);
   };
 
   // Handle selecting end location
@@ -2359,7 +1145,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       lat: parseFloat(location.lat),
       lng: parseFloat(location.lon),
     });
-    console.log("End location selected:", location.display_name);
   };
 
   // Handle find route button click
@@ -2367,21 +1152,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     if (selectedStartLocation && selectedEndLocation) {
       setShowRoutePlannerModal(false);
       setRouteMode(true);
-
-      // Clear previous routes and markers FIRST but keep location data
-      routeLayersRef.current.forEach((layer) => {
-        if (mapRef.current && mapRef.current.hasLayer(layer)) {
-          mapRef.current.removeLayer(layer);
-        }
-      });
-      routeLayersRef.current = [];
-
-      markersRef.current.forEach((marker) => {
-        if (mapRef.current && mapRef.current.hasLayer(marker)) {
-          mapRef.current.removeLayer(marker);
-        }
-      });
-      markersRef.current = [];
 
       // Add markers for start and end points
       if (mapRef.current) {
@@ -2401,247 +1171,28 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       }
 
       try {
-        // Generate routes using OSRM
-        const routes = await generateFloodRoutes(startPoint!, endPoint!);
+        // Generate routes using enhanced flood-aware routing with transport mode
+        console.log(`🚦 Generating routes for ${transportationMode}...`);
+        const routes = await generateFloodRoutes(startPoint!, endPoint!, transportationMode);
 
-        // Pre-cache elevation data for route points
-        const elevationCache = new Map<string, TerrainData>();
-        const cachePoints = [
-          ...routes.safeRoute.waypoints,
-          ...routes.manageableRoute.waypoints,
-          ...routes.proneRoute.waypoints,
-        ];
-        const sampleSize = Math.min(30, Math.floor(cachePoints.length / 3));
-        const step = Math.max(1, Math.floor(cachePoints.length / sampleSize));
-
-        // Cache elevation data with error handling and reduced frequency
-        console.log(
-          `Pre-caching elevation data for ${Math.ceil(
-            cachePoints.length / step
-          )} points...`
-        );
-        const maxCachePoints = useOfflineMode
-          ? 0
-          : Math.min(5, Math.ceil(cachePoints.length / step)); // Much more limited API calls
-
-        for (
-          let i = 0;
-          i < cachePoints.length && i < maxCachePoints * step;
-          i += step
-        ) {
-          try {
-            const point = cachePoints[i];
-            const key = `${point.lat.toFixed(4)},${point.lng.toFixed(4)}`;
-            if (!elevationCacheRef.current.has(key)) {
-              const data = await getElevationData(point.lat, point.lng);
-              if (data) {
-                elevationCacheRef.current.set(key, data);
-              }
-              // Add longer delay to avoid overwhelming APIs
-              if (!useOfflineMode && i > 0) {
-                await new Promise((resolve) => setTimeout(resolve, 500)); // Increased delay
-              }
-            }
-          } catch (error) {
-            console.warn(`Failed to cache elevation for point ${i}:`, error);
-            // Continue with next point even if this one fails
-          }
-        }
-        console.log(
-          `Cached elevation data for ${elevationCacheRef.current.size} total points`
-        );
-
-        // Function to add hover handlers
-        const addHoverHandlers = (polyline: L.Polyline, route: FloodRoute) => {
-          let debounceTimer: NodeJS.Timeout;
-
-          polyline.on("mousemove", async (e) => {
-            clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(async () => {
-              try {
-                const point = e.latlng;
-                const key = `${point.lat.toFixed(4)},${point.lng.toFixed(4)}`;
-
-                let elevationData = elevationCacheRef.current.get(key);
-                if (!elevationData) {
-                  elevationData = await getElevationData(point.lat, point.lng);
-                  if (elevationData)
-                    elevationCacheRef.current.set(key, elevationData);
-                }
-
-                if (elevationData) {
-                  const risk = calculateFloodRisk(
-                    elevationData.elevation,
-                    point.lat,
-                    point.lng
-                  );
-                  const riskColor =
-                    risk === "prone"
-                      ? "#e74c3c"
-                      : risk === "manageable"
-                      ? "#f39c12"
-                      : "#27ae60";
-
-                  const isEstimated = useOfflineMode || apiFailureCount > 3;
-
-                  polyline
-                    .bindTooltip(
-                      `<div style="
-                      background: white;
-                      padding: 12px;
-                      border-radius: 8px;
-                      border: 2px solid ${riskColor};
-                      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                      font-family: system-ui, -apple-system, sans-serif;
-                      min-width: 200px;
-                    ">
-                      <div style="color: ${riskColor}; font-weight: 600; font-size: 14px; margin-bottom: 8px;">
-                        Terrain Data ${isEstimated ? "(Estimated)" : "(Live)"}
-                      </div>
-                      <div style="margin-bottom: 6px; font-size: 13px;">
-                        Elevation: ${elevationData.elevation}m
-                      </div>
-                      <div style="margin-bottom: 6px; font-size: 13px;">
-                        Slope: ${elevationData.slope}°
-                      </div>
-                      <div style="color: ${riskColor}; font-size: 13px;">
-                        ${
-                          elevationData.elevation < 5
-                            ? "High flood risk due to very low elevation"
-                            : elevationData.elevation < 15
-                            ? "Moderate flood risk at this elevation"
-                            : "Lower flood risk at this elevation"
-                        }
-                      </div>
-                    </div>`,
-                      {
-                        permanent: false,
-                        sticky: true,
-                        direction: "top",
-                        offset: L.point(0, -5),
-                        opacity: 1,
-                        className: "terrain-tooltip",
-                      }
-                    )
-                    .openTooltip();
-                }
-              } catch (error) {
-                console.warn("Error fetching elevation data for hover:", error);
-                // Show a simple tooltip without elevation data
-                polyline
-                  .bindTooltip(
-                    `<div style="background: white; padding: 8px; border-radius: 4px;">
-                      Terrain data unavailable
-                    </div>`,
-                    { permanent: false, sticky: true }
-                  )
-                  .openTooltip();
-              }
-            }, 50); // Short debounce for smoother updates
-          });
-
-          polyline.on("mouseout", () => {
-            clearTimeout(debounceTimer);
-            polyline.closeTooltip();
-          });
-        };
-
-        // Use the new multi-route drawing system with expanded route options
-        const multiRoutes = (window as any)
-          .allRouteDetails as MultiRouteDetails;
-        if (multiRoutes && multiRoutes.routes.length > 0) {
-          console.log(
-            `Drawing ${multiRoutes.routes.length} route alternatives`
-          );
-          drawMultipleRoutes(multiRoutes);
-        } else {
-          // Fallback to old system if new data not available
-          drawAllRoutes(routes);
-        }
-
-        // Set default route selection to safe route
-        setSelectedRoute("safe");
-
+        // Store route details
         setRouteDetails(routes);
 
-        // Save route data for persistence across page navigation
-        saveRouteData(routes);
+        // Use sequential rendering instead of immediate display
+        console.log('🎬 Starting sequential route rendering...');
+        drawRoutesSequentially({
+          safe: routes.safeRoute,
+          manageable: routes.manageableRoute,
+          prone: routes.proneRoute
+        });
+
+        // DON'T show route modal - removed as requested
+        // setShowRouteModal(true); // REMOVED - no popup after route generation
+        console.log(`✅ All routes generated for ${transportationMode}!`);
+        
       } catch (error) {
         console.error("Error generating routes:", error);
-
-        let errorMessage = "Error generating routes. Please try again.";
-
-        if (error instanceof TypeError && error.message.includes("fetch")) {
-          errorMessage =
-            "Network error: Unable to connect to routing service. Please check your internet connection and try again.";
-        } else if (error instanceof Error) {
-          if (error.message.includes("No routes found")) {
-            errorMessage =
-              "No routes found between the selected locations. Please try different locations.";
-          } else if (error.message.includes("elevation")) {
-            errorMessage =
-              "Route generated with limited terrain data. Some features may not be available.";
-          }
-        }
-
-        // Show user-friendly error message
-        alert(errorMessage);
-
-        // Still try to show a basic direct route if possible
-        if (startPoint && endPoint) {
-          const directDistance = calculateRouteDistance([startPoint, endPoint]);
-          const fallbackRoutes: RouteDetails = {
-            safeRoute: {
-              waypoints: [startPoint, endPoint],
-              distance: directDistance.toFixed(1) + " km",
-              time: Math.round((directDistance / 40) * 60) + " min",
-              floodRisk: "safe",
-              riskLevel: "Unknown Risk",
-              description: "Direct route - Service unavailable",
-              color: "#27ae60",
-            },
-            manageableRoute: {
-              waypoints: [startPoint, endPoint],
-              distance: directDistance.toFixed(1) + " km",
-              time: Math.round((directDistance / 40) * 60) + " min",
-              floodRisk: "manageable",
-              riskLevel: "Unknown Risk",
-              description: "Direct route - Service unavailable",
-              color: "#f39c12",
-            },
-            proneRoute: {
-              waypoints: [startPoint, endPoint],
-              distance: directDistance.toFixed(1) + " km",
-              time: Math.round((directDistance / 40) * 60) + " min",
-              floodRisk: "prone",
-              riskLevel: "Unknown Risk",
-              description: "Direct route - Service unavailable",
-              color: "#e74c3c",
-            },
-            startName: selectedStartLocation?.display_name || "Start Point",
-            endName: selectedEndLocation?.display_name || "End Point",
-          };
-
-          // Draw a simple direct route line
-          const directLine = L.polyline(
-            [startPoint, endPoint].map((wp) => [wp.lat, wp.lng]),
-            {
-              color: "#666666",
-              weight: 4,
-              opacity: 0.7,
-              dashArray: "5, 5",
-            }
-          ).addTo(mapRef.current!);
-
-          routeLayersRef.current = [directLine];
-          setRouteDetails(fallbackRoutes);
-
-          // Save fallback route data for persistence
-          saveRouteData(fallbackRoutes);
-
-          // Fit map to show the route
-          mapRef.current!.fitBounds(directLine.getBounds().pad(0.1));
-        }
+        alert("Error generating routes. Please try again.");
       }
     }
   };
@@ -2695,30 +1246,38 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   // Handle route selection
   const handleRouteSelection = (routeType: "safe" | "manageable" | "prone") => {
     setSelectedRoute(routeType);
+    if (routeDetails) {
+      const selectedRouteData = routeDetails[routeType + "Route"] as FloodRoute;
+      drawRoute(selectedRouteData);
+    }
+  };
 
-    // Highlight the selected route and dim others
-    routeLayersRef.current.forEach((layer) => {
-      const layerOptions = layer.options as any;
-      const isSelectedRoute =
-        (routeType === "safe" && layerOptions.className === "safe-route") ||
-        (routeType === "manageable" &&
-          layerOptions.className === "manageable-route") ||
-        (routeType === "prone" && layerOptions.className === "prone-route");
-
-      if (isSelectedRoute) {
-        // Highlight selected route
-        layer.setStyle({
-          weight: layerOptions.weight + 2,
-          opacity: 1.0,
+  // Regenerate routes when transportation mode changes
+  const handleTransportationModeChange = async (newMode: "car" | "motorcycle" | "walking") => {
+    setTransportationMode(newMode);
+    
+    // If we have existing route details, regenerate them with the new mode
+    if (routeDetails && startPoint && endPoint) {
+      console.log(`🔄 Regenerating routes for ${newMode.toUpperCase()} mode...`);
+      
+      try {
+        const newRoutes = await generateFloodRoutes(startPoint, endPoint);
+        setRouteDetails(newRoutes);
+        // setShowRouteModal(true); // Removed - no modal popup
+        
+        // Clear existing route layers
+        routeLayersRef.current.forEach((layer) => {
+          if (mapRef.current && mapRef.current.hasLayer(layer)) {
+            mapRef.current.removeLayer(layer);
+          }
         });
-      } else {
-        // Dim other routes
-        layer.setStyle({
-          weight: Math.max(2, layerOptions.weight - 1),
-          opacity: 0.4,
-        });
+        routeLayersRef.current = [];
+        
+        console.log(`✅ Routes regenerated for ${newMode} mode!`);
+      } catch (error) {
+        console.error("Error regenerating routes:", error);
       }
-    });
+    }
   };
 
   // Define tile layers with working URLs
@@ -2757,7 +1316,59 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     },
   };
 
-  // Create clean terrain heatmap overlay
+  // Elevation data functions for terrain display only
+  const getElevationData = async (
+    lat: number,
+    lng: number
+  ): Promise<{ elevation: number; slope: number } | null> => {
+    try {
+      const response = await fetch(
+        `https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lng}`
+      );
+      const data = await response.json();
+      
+      if (data.results && data.results.length > 0) {
+        const elevation = data.results[0].elevation;
+        
+        // Calculate approximate slope using nearby points
+        const delta = 0.001; // Small offset for slope calculation
+        const responses = await Promise.all([
+          fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${lat + delta},${lng}`),
+          fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lng + delta}`)
+        ]);
+        
+        const [northData, eastData] = await Promise.all(responses.map(r => r.json()));
+        
+        let slope = 0;
+        if (northData.results?.[0] && eastData.results?.[0]) {
+          const elevNorth = northData.results[0].elevation;
+          const elevEast = eastData.results[0].elevation;
+          const deltaElev = Math.sqrt(
+            Math.pow(elevNorth - elevation, 2) + Math.pow(elevEast - elevation, 2)
+          );
+          const distance = delta * 111000; // Convert to meters
+          slope = Math.atan(deltaElev / distance) * (180 / Math.PI);
+        }
+        
+        return { elevation: Math.max(0, elevation), slope };
+      }
+    } catch (error) {
+      console.error("Error fetching elevation data:", error);
+    }
+    return null;
+  };
+
+  const getElevationColor = (elevation: number): string => {
+    if (elevation < 5) return "#3498db";       // Blue for sea level
+    if (elevation < 10) return "#e74c3c";     // Red for very low
+    if (elevation < 20) return "#f39c12";     // Orange for low
+    if (elevation < 50) return "#f1c40f";     // Yellow for medium-low
+    if (elevation < 100) return "#2ecc71";    // Green for medium
+    if (elevation < 200) return "#27ae60";    // Dark green for high
+    return "#8e44ad";                         // Purple for very high
+  };
+
+  // Create smooth terrain overlay using polygon grid
   const createTerrainOverlay = () => {
     if (!mapRef.current) return;
 
@@ -2768,242 +1379,144 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     const bounds = mapRef.current.getBounds();
     const zoom = mapRef.current.getZoom();
+    const center = mapRef.current.getCenter();
+
+    // Create a denser grid for smoother appearance
+    const gridResolution = Math.max(5, Math.min(20, Math.floor(zoom * 1.5))); // Adaptive resolution based on zoom
+    const latStep = (bounds.getNorth() - bounds.getSouth()) / gridResolution;
+    const lngStep = (bounds.getEast() - bounds.getWest()) / gridResolution;
+
     const terrainLayer = L.layerGroup();
 
-    // Moderate grid for clean heatmap without excessive overlap
-    const gridSize = Math.max(12, Math.min(24, zoom * 2));
-    const latStep = (bounds.getNorth() - bounds.getSouth()) / gridSize;
-    const lngStep = (bounds.getEast() - bounds.getWest()) / gridSize;
-
-    // Create non-overlapping cells for clean appearance
-    for (let i = 0; i < gridSize; i++) {
-      for (let j = 0; j < gridSize; j++) {
+    // Generate grid of rectangles/polygons for smooth coverage
+    for (let i = 0; i < gridResolution; i++) {
+      for (let j = 0; j < gridResolution; j++) {
         const lat = bounds.getSouth() + i * latStep;
         const lng = bounds.getWest() + j * lngStep;
+        const nextLat = lat + latStep;
+        const nextLng = lng + lngStep;
 
-        // Generate realistic elevation based on Zamboanga geography
-        const zamboCenterLat = 6.9111;
-        const zamboCenterLng = 122.0794;
-        const distanceFromCenter = Math.sqrt(
-          Math.pow((lat - zamboCenterLat) * 111, 2) +
-            Math.pow((lng - zamboCenterLng) * 85, 2)
-        );
+        // Calculate center of this grid cell for elevation calculation
+        const cellCenterLat = lat + latStep / 2;
+        const cellCenterLng = lng + lngStep / 2;
 
-        // Simulate realistic Zamboanga terrain with smoother transitions
-        let elevation = 0;
+        // Calculate distance from coast based on current view
+        const distanceFromCoast =
+          Math.min(
+            Math.abs(cellCenterLat - bounds.getSouth()),
+            Math.abs(cellCenterLat - bounds.getNorth()),
+            Math.abs(cellCenterLng - bounds.getWest()),
+            Math.abs(cellCenterLng - bounds.getEast())
+          ) * 111; // Convert to km
 
-        // Coastal areas (0-5km) - very low elevation
-        if (distanceFromCenter < 5) {
-          elevation = 2 + Math.random() * 8 + Math.sin(lat * 20) * 2;
+        // Calculate distance from center
+        const distanceFromCenter =
+          Math.sqrt(
+            Math.pow(cellCenterLat - center.lat, 2) +
+              Math.pow(cellCenterLng - center.lng, 2)
+          ) * 111; // Convert to km
+
+        // Dynamic elevation calculation based on position
+        let elevation;
+
+        // Coastal areas - low elevation
+        if (distanceFromCoast < 2) {
+          elevation = Math.random() * 5; // 0-5m
         }
-        // Urban/suburban (5-15km) - gentle hills
-        else if (distanceFromCenter < 15) {
-          elevation =
-            10 +
-            Math.random() * 25 +
-            Math.sin(lat * 15) * Math.cos(lng * 15) * 6;
+        // Coastal plains
+        else if (distanceFromCoast < 5) {
+          elevation = 5 + Math.random() * 5; // 5-10m
         }
-        // Foothills (15-30km) - moderate elevation
+        // Low plains
+        else if (distanceFromCenter < 10) {
+          elevation = 10 + Math.random() * 20; // 10-30m
+        }
+        // City areas
+        else if (distanceFromCenter < 20) {
+          elevation = 30 + Math.random() * 20; // 30-50m
+        }
+        // Hills
         else if (distanceFromCenter < 30) {
-          elevation =
-            35 +
-            Math.random() * 40 +
-            Math.sin(lat * 10) * Math.cos(lng * 10) * 12;
+          elevation = 50 + Math.random() * 50; // 50-100m
         }
-        // Mountains (30km+) - high elevation
+        // Mountains
         else {
-          elevation =
-            75 +
-            Math.random() * 70 +
-            Math.sin(lat * 6) * Math.cos(lng * 6) * 20;
+          elevation = 100 + Math.random() * 200; // 100-300m
         }
 
-        elevation = Math.max(0, Math.min(200, elevation));
+        // Add smooth terrain variation using sine waves for more natural appearance
+        const terrainNoise =
+          (Math.sin(cellCenterLat * 100) * 0.3 +
+            Math.cos(cellCenterLng * 100) * 0.3 +
+            Math.sin((cellCenterLat + cellCenterLng) * 50) * 0.4) *
+          5;
+
+        elevation = Math.max(0, elevation + terrainNoise);
 
         const color = getElevationColor(elevation);
-        const intensity = Math.min(1, elevation / 180);
-        const opacity = Math.max(0.2, Math.min(0.5, 0.25 + intensity * 0.25));
 
-        // Create clean, non-overlapping rectangles
-        const heatmapRect = L.rectangle(
+        // Create a rectangle/polygon for each grid cell
+        const rectangle = L.rectangle(
           [
             [lat, lng],
-            [lat + latStep, lng + lngStep],
+            [nextLat, nextLng],
           ],
           {
             fillColor: color,
             color: color,
             weight: 0,
-            fillOpacity: opacity,
+            fillOpacity: 0.4,
             stroke: false,
           }
         );
 
-        // Add hover functionality to show elevation data
-        const rectCenterLat = lat + latStep / 2;
-        const rectCenterLng = lng + lngStep / 2;
+        rectangle.addTo(terrainLayer);
+      }
+    }
 
-        // Add debounced hover functionality
-        let hoverTimeout: NodeJS.Timeout;
-        let isTooltipShown = false;
+    // Add gradient overlay for smoother transitions (using larger semi-transparent patches)
+    const smoothingResolution = Math.max(3, gridResolution / 3);
+    const smoothLatStep =
+      (bounds.getNorth() - bounds.getSouth()) / smoothingResolution;
+    const smoothLngStep =
+      (bounds.getEast() - bounds.getWest()) / smoothingResolution;
 
-        heatmapRect.on("mouseover", (e) => {
-          if (isTooltipShown) return; // Prevent multiple tooltips
+    for (let i = 0; i < smoothingResolution; i++) {
+      for (let j = 0; j < smoothingResolution; j++) {
+        const lat = bounds.getSouth() + i * smoothLatStep;
+        const lng = bounds.getWest() + j * smoothLngStep;
+        const nextLat = lat + smoothLatStep;
+        const nextLng = lng + smoothLngStep;
 
-          clearTimeout(hoverTimeout);
-          hoverTimeout = setTimeout(async () => {
-            try {
-              // Get real elevation data for this point
-              const elevationData = await getElevationData(
-                rectCenterLat,
-                rectCenterLng
-              );
+        const cellCenterLat = lat + smoothLatStep / 2;
+        const cellCenterLng = lng + smoothLngStep / 2;
 
-              // Use real data if available, otherwise use simulated data
-              const displayElevation = elevationData
-                ? elevationData.elevation
-                : elevation;
-              const slope = elevationData
-                ? elevationData.slope
-                : calculateSlope(elevation);
-              const floodRisk = calculateFloodRisk(
-                displayElevation,
-                rectCenterLat,
-                rectCenterLng
-              );
-              const riskColor =
-                floodRisk === "prone"
-                  ? "#e74c3c"
-                  : floodRisk === "manageable"
-                  ? "#f39c12"
-                  : "#27ae60";
+        // Calculate average elevation for smoother overlay
+        const distanceFromCenter =
+          Math.sqrt(
+            Math.pow(cellCenterLat - center.lat, 2) +
+              Math.pow(cellCenterLng - center.lng, 2)
+          ) * 111;
 
-              // Only show tooltip if mouse is still over the element
-              if (!isTooltipShown) {
-                heatmapRect
-                  .bindTooltip(
-                    `<div style="
-                    background: white;
-                    padding: 10px;
-                    border-radius: 6px;
-                    border: 2px solid ${color};
-                    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-                    font-family: system-ui, -apple-system, sans-serif;
-                    min-width: 180px;
-                    max-width: 220px;
-                  ">
-                    <div style="color: ${color}; font-weight: 600; font-size: 13px; margin-bottom: 6px;">
-                      🏔️ Terrain Data ${
-                        elevationData
-                          ? useOfflineMode || apiFailureCount > 3
-                            ? "(Estimated)"
-                            : "(Live)"
-                          : "(Estimated)"
-                      }
-                    </div>
-                    <div style="margin-bottom: 4px; font-size: 12px;">
-                      <strong>Elevation:</strong> ${displayElevation.toFixed(
-                        1
-                      )}m
-                    </div>
-                    <div style="margin-bottom: 4px; font-size: 12px;">
-                      <strong>Slope:</strong> ${slope}°
-                    </div>
-                    <div style="color: ${riskColor}; font-size: 11px; margin-top: 6px; padding: 3px 6px; background: ${riskColor}15; border-radius: 3px;">
-                      Risk: ${
-                        floodRisk === "prone"
-                          ? "High"
-                          : floodRisk === "manageable"
-                          ? "Medium"
-                          : "Low"
-                      }
-                    </div>
-                  </div>`,
-                    {
-                      permanent: false,
-                      sticky: false,
-                      direction: "top",
-                      offset: L.point(0, -5),
-                      opacity: 0.95,
-                      className: "terrain-tooltip-compact",
-                    }
-                  )
-                  .openTooltip();
-                isTooltipShown = true;
-              }
-            } catch (error) {
-              console.warn("Error fetching terrain data for tooltip:", error);
+        let avgElevation = 30 + distanceFromCenter * 2;
+        avgElevation = Math.min(200, avgElevation);
 
-              // Show fallback tooltip with estimated data
-              if (!isTooltipShown) {
-                const fallbackFloodRisk = calculateFloodRisk(
-                  elevation,
-                  rectCenterLat,
-                  rectCenterLng
-                );
-                const fallbackRiskColor =
-                  fallbackFloodRisk === "prone"
-                    ? "#e74c3c"
-                    : fallbackFloodRisk === "manageable"
-                    ? "#f39c12"
-                    : "#27ae60";
+        const color = getElevationColor(avgElevation);
 
-                heatmapRect
-                  .bindTooltip(
-                    `<div style="
-                    background: white;
-                    padding: 10px;
-                    border-radius: 6px;
-                    border: 2px solid ${color};
-                    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-                    font-family: system-ui, -apple-system, sans-serif;
-                    min-width: 180px;
-                  ">
-                    <div style="color: ${color}; font-weight: 600; font-size: 13px; margin-bottom: 6px;">
-                      🏔️ Terrain Data (Estimated)
-                    </div>
-                    <div style="margin-bottom: 4px; font-size: 12px;">
-                      <strong>Elevation:</strong> ~${elevation.toFixed(1)}m
-                    </div>
-                    <div style="margin-bottom: 4px; font-size: 12px;">
-                      <strong>Slope:</strong> ~${calculateSlope(elevation)}°
-                    </div>
-                    <div style="color: ${fallbackRiskColor}; font-size: 11px; margin-top: 6px; padding: 3px 6px; background: ${fallbackRiskColor}15; border-radius: 3px;">
-                      Risk: ${
-                        fallbackFloodRisk === "prone"
-                          ? "High"
-                          : fallbackFloodRisk === "manageable"
-                          ? "Medium"
-                          : "Low"
-                      } (Estimated)
-                    </div>
-                  </div>`,
-                    {
-                      permanent: false,
-                      sticky: false,
-                      direction: "top",
-                      offset: L.point(0, -5),
-                      opacity: 0.95,
-                      className: "terrain-tooltip-compact",
-                    }
-                  )
-                  .openTooltip();
-                isTooltipShown = true;
-              }
-            }
-          }, 500); // Longer delay to prevent spam
-        });
-
-        heatmapRect.on("mouseout", () => {
-          clearTimeout(hoverTimeout);
-          if (isTooltipShown) {
-            heatmapRect.closeTooltip();
-            heatmapRect.unbindTooltip();
-            isTooltipShown = false;
+        // Add larger semi-transparent patches for smoothing
+        L.rectangle(
+          [
+            [lat, lng],
+            [nextLat, nextLng],
+          ],
+          {
+            fillColor: color,
+            color: color,
+            weight: 0,
+            fillOpacity: 0.2,
+            stroke: false,
           }
-        });
-
-        heatmapRect.addTo(terrainLayer);
+        ).addTo(terrainLayer);
       }
     }
 
@@ -3011,27 +1524,20 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     terrainLayer.addTo(mapRef.current);
   };
 
-  // Update overlay when map moves (optimized for performance)
+  // Update overlay when map moves (for continuous coverage)
   useEffect(() => {
     if (!mapRef.current || !showTerrainOverlay) return;
 
-    let updateTimeout: NodeJS.Timeout;
-
     const updateOverlay = () => {
-      // Debounce updates to avoid excessive re-rendering
-      clearTimeout(updateTimeout);
-      updateTimeout = setTimeout(() => {
-        if (showTerrainOverlay) {
-          createTerrainOverlay();
-        }
-      }, 300);
+      if (showTerrainOverlay) {
+        createTerrainOverlay();
+      }
     };
 
     mapRef.current.on("moveend", updateOverlay);
     mapRef.current.on("zoomend", updateOverlay);
 
     return () => {
-      clearTimeout(updateTimeout);
       if (mapRef.current) {
         mapRef.current.off("moveend", updateOverlay);
         mapRef.current.off("zoomend", updateOverlay);
@@ -3043,7 +1549,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   useEffect(() => {
     if (showTerrainOverlay && mapRef.current) {
       createTerrainOverlay();
-    } else if (terrainOverlayRef.current && mapRef.current) {
+    } else if (terrainOverlayRef.current) {
       mapRef.current.removeLayer(terrainOverlayRef.current);
       terrainOverlayRef.current = null;
     }
@@ -3056,254 +1562,45 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     }
   }, [mapLayer]);
 
-  const getElevationData = async (
-    lat: number,
-    lng: number
-  ): Promise<TerrainData | null> => {
-    // Check cache first
-    const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
-    if (elevationCacheRef.current.has(cacheKey)) {
-      return elevationCacheRef.current.get(cacheKey)!;
-    }
-
-    // Helper function to create elevation data from elevation value
-    const createElevationData = (
-      elevation: number,
-      isEstimated: boolean = false
-    ): TerrainData => {
-      const floodRisk = calculateFloodRisk(elevation, lat, lng);
-      const data: TerrainData = {
-        elevation: elevation,
-        slope: calculateSlope(elevation),
-        floodRisk:
-          floodRisk === "safe"
-            ? "Low"
-            : floodRisk === "manageable"
-            ? "Medium"
-            : "High",
-        terrainType: getTerrainType(elevation),
-        lat: lat.toFixed(6),
-        lng: lng.toFixed(6),
-      };
-
-      // Cache the result
-      elevationCacheRef.current.set(cacheKey, data);
-      return data;
-    };
-
-    // Enhanced geographic estimation based on real Zamboanga City terrain
-    const getEnhancedGeographicEstimation = (): number => {
-      const cityCenter = { lat: 6.9214, lng: 122.079 };
-      const distanceFromCenter =
-        Math.sqrt(
-          Math.pow(lat - cityCenter.lat, 2) + Math.pow(lng - cityCenter.lng, 2)
-        ) * 111; // Convert to km
-
-      // Known elevation zones in Zamboanga City
-      const knownAreas = [
-        // Coastal/port areas - very low elevation
-        {
-          lat: 6.9167,
-          lng: 122.0747,
-          radius: 2,
-          baseElevation: 3,
-          variance: 5,
-        },
-        // City proper - low elevation
-        {
-          lat: 6.9214,
-          lng: 122.079,
-          radius: 3,
-          baseElevation: 8,
-          variance: 10,
-        },
-        // Tetuan - slightly elevated
-        { lat: 6.93, lng: 122.085, radius: 2, baseElevation: 15, variance: 12 },
-        // Tumaga - hilly area
-        { lat: 6.91, lng: 122.06, radius: 3, baseElevation: 25, variance: 20 },
-        // Putik - elevated residential
-        { lat: 6.94, lng: 122.07, radius: 2, baseElevation: 35, variance: 15 },
-      ];
-
-      // Check if point is near any known area
-      for (const area of knownAreas) {
-        const distToArea =
-          Math.sqrt(Math.pow(lat - area.lat, 2) + Math.pow(lng - area.lng, 2)) *
-          111;
-
-        if (distToArea < area.radius) {
-          const influence = 1 - distToArea / area.radius;
-          const elevation =
-            area.baseElevation +
-            (Math.random() - 0.5) * area.variance * influence;
-          return Math.max(1, Math.round(elevation));
-        }
-      }
-
-      // General geographic estimation based on distance from city center
-      let estimatedElevation: number;
-
-      if (distanceFromCenter < 2) {
-        // Inner city - coastal plains
-        estimatedElevation = 3 + Math.random() * 12; // 3-15m
-      } else if (distanceFromCenter < 5) {
-        // Urban areas - gentle slopes
-        estimatedElevation = 8 + Math.random() * 22; // 8-30m
-      } else if (distanceFromCenter < 10) {
-        // Suburban - rolling hills
-        estimatedElevation = 20 + Math.random() * 35; // 20-55m
-      } else if (distanceFromCenter < 20) {
-        // Rural - hills and ridges
-        estimatedElevation = 40 + Math.random() * 60; // 40-100m
-      } else {
-        // Remote - mountainous
-        estimatedElevation = 80 + Math.random() * 120; // 80-200m
-      }
-
-      // Add geographic consistency based on coordinates
-      const latSeed = Math.sin(lat * 100) * 0.5;
-      const lngSeed = Math.cos(lng * 100) * 0.5;
-      estimatedElevation += (latSeed + lngSeed) * 15;
-
-      return Math.max(1, Math.round(estimatedElevation));
-    };
-
-    // If offline mode is enabled or too many API failures, use geographic estimation immediately
-    if (useOfflineMode || apiFailureCount > 2) {
-      const estimatedElevation = getEnhancedGeographicEstimation();
-      return createElevationData(estimatedElevation, true);
-    }
-
-    // Try elevation APIs with better error handling and no abort controllers
-    try {
-      // Simple fetch with timeout using Promise.race - no abort controllers
-      const timeoutMs = 1500; // Reduced timeout for faster fallback
-
-      // Try primary API
-      try {
-        const response = await Promise.race([
-          fetch(
-            `https://api.opentopodata.org/v1/copernicus30m?locations=${lat},${lng}`,
-            {
-              method: "GET",
-              mode: "cors",
-              cache: "default",
-              headers: {
-                Accept: "application/json",
-                "User-Agent": "SafePathZamboanga/1.0",
-              },
-            }
-          ),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("API timeout")), timeoutMs)
-          ),
-        ]);
-
-        if (response && response.ok) {
-          const data = await response.json();
-          if (
-            data?.results?.[0]?.elevation !== null &&
-            data?.results?.[0]?.elevation !== undefined
-          ) {
-            const elevation = Math.max(0, data.results[0].elevation);
-            setApiFailureCount(Math.max(0, apiFailureCount - 1)); // Reduce failure count on success
-            return createElevationData(elevation);
-          }
-        }
-      } catch (error) {
-        console.debug("Primary elevation API failed, trying secondary...");
-        setApiFailureCount((prev) => Math.min(5, prev + 1));
-      }
-
-      // Try secondary API only if failure count is still low
-      if (apiFailureCount < 2) {
-        try {
-          const response = await Promise.race([
-            fetch(
-              `https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lng}`,
-              {
-                method: "GET",
-                mode: "cors",
-                cache: "default",
-                headers: {
-                  Accept: "application/json",
-                  "User-Agent": "SafePathZamboanga/1.0",
-                },
-              }
-            ),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error("API timeout")), timeoutMs)
-            ),
-          ]);
-
-          if (response && response.ok) {
-            const data = await response.json();
-            if (
-              data?.results?.[0]?.elevation !== undefined &&
-              data?.results?.[0]?.elevation !== null
-            ) {
-              const elevation = Math.max(0, data.results[0].elevation);
-              setApiFailureCount(Math.max(0, apiFailureCount - 1)); // Reduce failure count on success
-              return createElevationData(elevation);
-            }
-          }
-        } catch (error) {
-          console.debug(
-            "Secondary elevation API also failed, using geographic estimation"
-          );
-          setApiFailureCount((prev) => Math.min(5, prev + 1));
-        }
-      }
-    } catch (error) {
-      console.warn("Elevation API error:", error);
-      setApiFailureCount((prev) => Math.min(5, prev + 1));
-    }
-
-    // Switch to offline mode if too many failures
-    if (apiFailureCount >= 3 && !useOfflineMode) {
-      console.log("Switching to offline mode due to repeated API failures");
-      setUseOfflineMode(true);
-    }
-
-    // Always fall back to geographic estimation
-    const estimatedElevation = getEnhancedGeographicEstimation();
-    return createElevationData(estimatedElevation, true);
-  };
-
-  // Helper functions for terrain analysis
-  const calculateSlope = (elevation: number): number => {
-    // Simplified slope calculation based on elevation
-    if (elevation < 10) return Math.floor(Math.random() * 3) + 1;
-    if (elevation < 50) return Math.floor(Math.random() * 8) + 2;
-    return Math.floor(Math.random() * 15) + 5;
-  };
-
-  const getTerrainType = (elevation: number): string => {
-    if (elevation < 20) return "Flat/Coastal";
-    if (elevation < 100) return "Hills";
-    return "Mountains";
-  };
-
-  const getElevationColor = (elevation: number): string => {
-    // Proper heatmap gradient: Blue (low) → Green → Yellow → Orange → Red (high)
-    if (elevation < 10) return "#0066FF"; // Deep blue for coastal/sea level
-    if (elevation < 25) return "#0099FF"; // Blue for low plains
-    if (elevation < 40) return "#00CCFF"; // Light blue for elevated plains
-    if (elevation < 60) return "#00FF99"; // Teal/cyan for low hills
-    if (elevation < 80) return "#00FF33"; // Green for hills
-    if (elevation < 110) return "#66FF00"; // Yellow-green for higher hills
-    if (elevation < 140) return "#CCFF00"; // Yellow for foothills
-    if (elevation < 170) return "#FFCC00"; // Orange-yellow for mountains
-    if (elevation < 200) return "#FF6600"; // Orange for high mountains
-    return "#FF0000"; // Red for peaks
-  };
-
   // Initialize map and controls
   useEffect(() => {
+    // Add global functions for popup buttons
+    (window as any).setAsStart = (lat: number, lng: number, address: string) => {
+      const locationData: LocationSuggestion = {
+        display_name: address,
+        lat: lat.toString(),
+        lon: lng.toString(),
+        place_id: `clicked_${Date.now()}`,
+      };
+      handleSelectStartLocation(locationData);
+      if (locationPopupRef.current && mapRef.current) {
+        mapRef.current.closePopup(locationPopupRef.current);
+      }
+    };
+
+    (window as any).setAsEnd = (lat: number, lng: number, address: string) => {
+      const locationData: LocationSuggestion = {
+        display_name: address,
+        lat: lat.toString(),
+        lon: lng.toString(),
+        place_id: `clicked_${Date.now()}`,
+      };
+      handleSelectEndLocation(locationData);
+      if (locationPopupRef.current && mapRef.current) {
+        mapRef.current.closePopup(locationPopupRef.current);
+      }
+    };
+
     const map = L.map("map", {
       zoomControl: false, // Disable default zoom control to add it in custom position
     }).setView([6.9111, 122.0794], 13); // Centered on Zamboanga City
     mapRef.current = map;
+
+    // Add map click handler for location details
+    map.on('click', handleMapClick);
+
+    // Get current location immediately when map loads
+    getCurrentLocation();
 
     // Initialize all tile layers
     Object.keys(tileLayers).forEach((layerName) => {
@@ -3632,16 +1929,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
         btn.onclick = (e: Event) => {
           e.stopPropagation();
-          console.log(
-            "🎯 Terrain button clicked! Current state:",
-            showTerrainOverlay
-          );
           setShowTerrainOverlay((prev) => {
-            const newState = !prev;
-            console.log("🔄 Setting terrain overlay to:", newState);
-            text.innerText = newState ? "Hide Terrain" : "Show Terrain";
-            btn.style.background = newState ? "#f0f0f0" : "#ffffff";
-            return newState;
+            text.innerText = !prev ? "Hide Terrain" : "Show Terrain";
+            btn.style.background = !prev ? "#f0f0f0" : "#ffffff";
+            return !prev;
           });
         };
 
@@ -3651,9 +1942,60 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     const terrainOverlayBtn = new TerrainOverlayBtn();
     map.addControl(terrainOverlayBtn);
 
+    // 6. Add compass button (current location) in bottom right
+    const CompassBtn = L.Control.extend({
+      options: {
+        position: "bottomright",
+      },
+      onAdd: function () {
+        const container = L.DomUtil.create("div", "leaflet-bar leaflet-control");
+        const button = L.DomUtil.create("button", "leaflet-control-custom", container);
+        
+        button.innerHTML = "🧭";
+        button.title = "Go to my current location";
+        button.style.cssText = `
+          width: 34px;
+          height: 34px;
+          background: white;
+          border: 2px solid #ccc;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 16px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+          transition: all 0.2s ease;
+        `;
+        
+        button.onmouseover = () => {
+          button.style.background = "#f0f0f0";
+          button.style.borderColor = "#999";
+        };
+        
+        button.onmouseout = () => {
+          button.style.background = "white";
+          button.style.borderColor = "#ccc";
+        };
+        
+        L.DomEvent.on(button, "click", (e) => {
+          L.DomEvent.stopPropagation(e);
+          L.DomEvent.preventDefault(e);
+          getCurrentLocation();
+        });
+        
+        return container;
+      },
+    });
+    const compassBtn = new CompassBtn();
+    map.addControl(compassBtn);
+
     return () => {
       map.remove();
       if (routingControlRef.current) routingControlRef.current.remove();
+      // Clean up global functions
+      delete (window as any).setAsStart;
+      delete (window as any).setAsEnd;
     };
   }, []);
 
@@ -3671,46 +2013,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     // Add new layer
     layersRef.current[mapLayer].addTo(mapRef.current);
   }, [mapLayer]);
-
-  // Map click handlers (only for terrain mode now)
-  useEffect(() => {
-    if (!mapRef.current) return;
-
-    const handleMapClick = async (e: L.LeafletMouseEvent) => {
-      if (isTerrainMode) {
-        // Terrain analysis
-        const { lat, lng } = e.latlng;
-        const elevationData = await getElevationData(lat, lng);
-
-        if (elevationData) {
-          setTerrainData(elevationData);
-          setShowTerrainData(true);
-
-          // Add temporary marker with elevation color
-          const elevationMarker = L.circleMarker(e.latlng, {
-            radius: 8,
-            fillColor: getElevationColor(elevationData.elevation),
-            color: "#000",
-            weight: 2,
-            opacity: 1,
-            fillOpacity: 0.5,
-          }).addTo(mapRef.current!);
-
-          // Remove previous terrain marker if exists
-          if (terrainPopupRef.current) {
-            mapRef.current!.removeLayer(terrainPopupRef.current);
-          }
-          terrainPopupRef.current = elevationMarker;
-        }
-      }
-    };
-
-    mapRef.current.on("click", handleMapClick);
-
-    return () => {
-      mapRef.current!.off("click", handleMapClick);
-    };
-  }, [isTerrainMode]);
 
   // Reset route
   const resetRoute = () => {
@@ -3750,69 +2052,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       mapRef.current!.removeLayer(terrainPopupRef.current);
       terrainPopupRef.current = null;
     }
-
-    // Clear persisted route data
-    clearPersistedRouteData();
   };
 
   return (
     <div style={{ padding: "20px", maxWidth: "1200px", margin: "0 auto" }}>
-      {/* Offline Mode Indicator */}
-      {(useOfflineMode || apiFailureCount > 3) && (
-        <div
-          style={{
-            background: "linear-gradient(135deg, #ffeaa7, #fdcb6e)",
-            border: "2px solid #e17055",
-            borderRadius: "8px",
-            padding: "12px 16px",
-            marginBottom: "15px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <span style={{ fontSize: "20px" }}>📡</span>
-            <div>
-              <div
-                style={{
-                  fontWeight: "600",
-                  color: "#d63031",
-                  marginBottom: "4px",
-                }}
-              >
-                Offline Terrain Mode Active
-              </div>
-              <div style={{ fontSize: "13px", color: "#636e72" }}>
-                Using geographic estimation due to API connectivity issues.
-                Elevation data may be less accurate.
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={() => {
-              setUseOfflineMode(false);
-              setApiFailureCount(0);
-              elevationCacheRef.current.clear();
-            }}
-            style={{
-              background: "#00b894",
-              color: "white",
-              border: "none",
-              borderRadius: "6px",
-              padding: "8px 12px",
-              cursor: "pointer",
-              fontSize: "12px",
-              fontWeight: "600",
-            }}
-            title="Try to reconnect to elevation APIs"
-          >
-            Retry APIs
-          </button>
-        </div>
-      )}
-
       <div
         style={{
           marginBottom: "15px",
@@ -3935,194 +2178,91 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           </div>
         )}
 
-        {/* Elevation Legend */}
-        {showTerrainOverlay && (
-          <div
-            style={{
-              position: "fixed",
-              bottom: "30px",
-              left: "20px",
-              background: "rgba(255, 255, 255, 0.95)",
-              padding: "12px",
-              borderRadius: "8px",
-              boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
-              fontSize: "12px",
-              zIndex: 1000,
-              minWidth: "200px",
-              fontFamily: "system-ui, -apple-system, sans-serif",
-            }}
-          >
-            <h4
-              style={{
-                margin: "0 0 10px 0",
-                color: "#2c3e50",
-                fontSize: "14px",
-                fontWeight: "600",
-              }}
-            >
-              🗺️ Terrain Elevation
-            </h4>
-
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: "4px" }}
-            >
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <div
-                  style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#0066FF",
-                    borderRadius: "2px",
-                  }}
-                ></div>
-                <span>0-10m (Coastal)</span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <div
-                  style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#0099FF",
-                    borderRadius: "2px",
-                  }}
-                ></div>
-                <span>10-25m (Low Plains)</span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <div
-                  style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#00CCFF",
-                    borderRadius: "2px",
-                  }}
-                ></div>
-                <span>25-40m (Plains)</span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <div
-                  style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#00FF99",
-                    borderRadius: "2px",
-                  }}
-                ></div>
-                <span>40-60m (Low Hills)</span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <div
-                  style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#00FF33",
-                    borderRadius: "2px",
-                  }}
-                ></div>
-                <span>60-80m (Hills)</span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <div
-                  style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#66FF00",
-                    borderRadius: "2px",
-                  }}
-                ></div>
-                <span>80-110m (Mid Hills)</span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <div
-                  style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#CCFF00",
-                    borderRadius: "2px",
-                  }}
-                ></div>
-                <span>110-140m (High Hills)</span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <div
-                  style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#FFCC00",
-                    borderRadius: "2px",
-                  }}
-                ></div>
-                <span>140-170m (Foothills)</span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <div
-                  style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#FF6600",
-                    borderRadius: "2px",
-                  }}
-                ></div>
-                <span>170-200m (Mountains)</span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <div
-                  style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#FF0000",
-                    borderRadius: "2px",
-                  }}
-                ></div>
-                <span>200m+ (Peaks)</span>
-              </div>
-            </div>
-          </div>
+       {/* Elevation Legend */}
+{showTerrainOverlay && (
+  <div style={{
+    position: 'absolute',
+    bottom: '30px',
+    right: '20px',
+    background: 'rgba(255, 255, 255, 0.85)',
+    padding: '10px',
+    borderRadius: '8px',
+    boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
+    fontSize: '0.8em',
+    zIndex: 1000,
+    maxWidth: '200px'
+  }}>
+    <h4 style={{ margin: '0 0 8px 0', color: '#2c3e50' }}>
+      🌈 Terrain Elevation
+    </h4>
+    
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ width: '12px', height: '12px', background: '#0066CC', borderRadius: '2px' }}></div>
+        <span>0-5m (Sea Level)</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ width: '12px', height: '12px', background: '#0099CC', borderRadius: '2px' }}></div>
+        <span>5-10m (Coastal)</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ width: '12px', height: '12px', background: '#00CC99', borderRadius: '2px' }}></div>
+        <span>10-20m (Low Plains)</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ width: '12px', height: '12px', background: '#00CC66', borderRadius: '2px' }}></div>
+        <span>20-30m (Plains)</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ width: '12px', height: '12px', background: '#33CC33', borderRadius: '2px' }}></div>
+        <span>30-40m (Low Hills)</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ width: '12px', height: '12px', background: '#66CC00', borderRadius: '2px' }}></div>
+        <span>40-50m (Hills)</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ width: '12px', height: '12px', background: '#99CC00', borderRadius: '2px' }}></div>
+        <span>50-70m (Mid Hills)</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ width: '12px', height: '12px', background: '#CCCC00', borderRadius: '2px' }}></div>
+        <span>70-90m (High Hills)</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ width: '12px', height: '12px', background: '#CC9900', borderRadius: '2px' }}></div>
+        <span>90-110m (Low Mountains)</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ width: '12px', height: '12px', background: '#CC6600', borderRadius: '2px' }}></div>
+        <span>110-150m (Mountains)</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ width: '12px', height: '12px', background: '#CC3300', borderRadius: '2px' }}></div>
+        <span>150-200m (High Mountains)</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ width: '12px', height: '12px', background: '#CC0000', borderRadius: '2px' }}></div>
+        <span>200m+ (Peaks)</span>
+      </div>
+    </div>
+  </div>
         )}
 
         {routeMode && (
           <div
             style={{
               position: "absolute",
-              bottom: "10px",
-              left: "10px",
-              background: "rgba(255, 255, 255, 0.95)",
-              padding: "12px",
-              borderRadius: "10px",
-              boxShadow: "0 4px 15px rgba(0,0,0,0.15)",
-              border: "1px solid rgba(0,0,0,0.1)",
-              zIndex: 1500,
-              minWidth: "180px",
+              bottom: "30px",
+              left: "20px",
+              background: "rgba(255, 255, 255, 0.9)",
+              padding: "10px",
+              borderRadius: "8px",
+              boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
+              zIndex: 1000,
             }}
           >
-            <h4
-              style={{
-                margin: "0 0 10px 0",
-                fontSize: "14px",
-                fontWeight: "bold",
-                color: "#333",
-              }}
-            >
+            <h4 style={{ margin: "0 0 8px 0", fontSize: "14px" }}>
               Route Options
             </h4>
             <div
@@ -4176,8 +2316,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           onClose={() => setShowRoutePlannerModal(false)}
           startLocationInput={startLocationInput}
           endLocationInput={endLocationInput}
-          setStartLocationInput={handleStartLocationInputChange}
-          setEndLocationInput={handleEndLocationInputChange}
+          setStartLocationInput={setStartLocationInput}
+          setEndLocationInput={setEndLocationInput}
           startSuggestions={startSuggestions}
           endSuggestions={endSuggestions}
           showStartSuggestions={showStartSuggestions}
@@ -4198,6 +2338,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             safest: false,
           }}
           setRouteOptions={() => {}} // Empty function since we're not using it
+          // NEW: Transportation mode props
+          transportationMode={transportationMode}
+          setTransportationMode={handleTransportationModeChange}
         />
       )}
 
@@ -4415,6 +2558,34 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           >
             🌊 Flood-Risk Route Options
           </h2>
+
+          {/* Transportation Mode Display */}
+          <div
+            style={{
+              background: "#667eea",
+              color: "white",
+              padding: "10px 15px",
+              borderRadius: "8px",
+              marginBottom: "15px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px",
+              fontSize: "14px",
+              fontWeight: "600",
+            }}
+          >
+            <span style={{ fontSize: "20px" }}>
+              {transportationMode === "car" && "🚗"}
+              {transportationMode === "motorcycle" && "🏍️"}
+              {transportationMode === "walking" && "🚶"}
+            </span>
+            <span>
+              Routes optimized for {transportationMode === "car" ? "Car" : 
+                                  transportationMode === "motorcycle" ? "Motorcycle" : 
+                                  "Walking"}
+            </span>
+          </div>
 
           <div
             style={{
