@@ -32,3 +32,8 @@ dist-ssr
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Ignore raster datasets
+public/data/*.tif
+public/data/*.tiff
+

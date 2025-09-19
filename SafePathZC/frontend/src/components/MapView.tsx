@@ -4,6 +4,12 @@ import "leaflet-control-geocoder";
 import "leaflet/dist/leaflet.css";
 import "leaflet-control-geocoder/dist/Control.Geocoder.css";
 import "leaflet-routing-machine";
+// @ts-ignore
+import parseGeoraster from "georaster";
+// @ts-ignore
+import GeoRasterLayer from "georaster-layer-for-leaflet";
+// @ts-ignore
+import * as geoblaze from "geoblaze";
 import "../App.css";
 import { RouteModal } from "./RouteModal";
 import { AlertBanner } from "./AlertBanner";
@@ -63,6 +69,14 @@ interface MapViewProps {
 }
 
 export const MapView = ({ onModalOpen }: MapViewProps) => {
+  const demRasterRef = useRef<any>(null);
+  const floodRasterRef = useRef<any>(null);
+  const demLayerRef = useRef<any>(null);
+  const floodLayerRef = useRef<any>(null);
+  const elevationCacheRef = useRef<Map<string, number>>(new Map());
+  const slopeCacheRef = useRef<Map<string, number>>(new Map());
+  const [showDEM, setShowDEM] = useState<boolean>(false);
+  const [showFlood, setShowFlood] = useState<boolean>(true);
   const [routeMode, setRouteMode] = useState(false);
   const [startPoint, setStartPoint] = useState<LatLng | null>(null);
   const [endPoint, setEndPoint] = useState<LatLng | null>(null);
@@ -140,6 +154,115 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     popupAnchor: [1, -34],
   });
 
+  // Coordinate key for caching
+  const coordKey = (lat: number, lng: number) => `${lat.toFixed(6)},${lng.toFixed(6)}`;
+
+  // Load raster data
+  const loadRasters = async () => {
+    try {
+      // DEM
+      const demResp = await fetch('/data/Zamboanga_DEM.tiff');
+      const demBuf = await demResp.arrayBuffer();
+      const demGr = await parseGeoraster(demBuf);
+      demRasterRef.current = demGr;
+
+      demLayerRef.current = new GeoRasterLayer({
+        georaster: demGr,
+        opacity: 0.55,
+        resolution: 256,
+        pixelValuesToColorFn: (values: any) => {
+          const v = values && values[0];
+          if (v === null || v === undefined || v === demGr.noDataValue) return null;
+          // Color ramp (simple) — tune to your preference
+          if (v < 5) return '#3498db';
+          if (v < 10) return '#e74c3c';
+          if (v < 20) return '#f39c12';
+          if (v < 50) return '#f1c40f';
+          if (v < 100) return '#2ecc71';
+          if (v < 200) return '#27ae60';
+          return '#8e44ad';
+        }
+      });
+
+      // Flood extent (binary raster expected: 1 = flooded, 0 = not flooded)
+      const floodResp = await fetch('/data/Zamboanga_FloodExtent_201701.tif');
+      const floodBuf = await floodResp.arrayBuffer();
+      const floodGr = await parseGeoraster(floodBuf);
+      floodRasterRef.current = floodGr;
+
+      floodLayerRef.current = new GeoRasterLayer({
+        georaster: floodGr,
+        opacity: 0.6,
+        resolution: 256,
+        pixelValuesToColorFn: (values: any) => {
+          const v = values && values[0];
+          // adapt this condition to how your flood TIFF encodes flooded pixels
+          if (v === 1) return 'rgba(0,80,255,0.55)';
+          return null;
+        }
+      });
+
+      // If map already initialized, add layers according to current toggles
+      if (mapRef.current) {
+        if (showDEM) demLayerRef.current.addTo(mapRef.current);
+        if (showFlood) floodLayerRef.current.addTo(mapRef.current);
+      }
+
+    } catch (err) {
+      console.error('Error loading rasters:', err);
+    }
+  };
+
+  // Get elevation at coordinates
+  const getElevationAt = async (lat: number, lng: number): Promise<number | null> => {
+    const key = coordKey(lat, lng);
+    if (elevationCacheRef.current.has(key)) return elevationCacheRef.current.get(key)!;
+    if (!demRasterRef.current) return null;
+
+    try {
+      // geoblaze.identify accepts [x,y] === [lng,lat]
+      const val = await (geoblaze as any).identify(demRasterRef.current, [lng, lat]);
+      const elev = Array.isArray(val) ? val[0] : val;
+      if (elev !== null && elev !== undefined) elevationCacheRef.current.set(key, elev);
+      return elev ?? null;
+    } catch (err) {
+      console.error('getElevationAt error', err);
+      return null;
+    }
+  };
+
+  // Get slope at coordinates
+  const getSlopeAt = async (lat: number, lng: number): Promise<number | null> => {
+    const key = coordKey(lat, lng);
+    if (slopeCacheRef.current.has(key)) return slopeCacheRef.current.get(key)!;
+
+    const delta = 0.0009; // ~100m (approx). Tweak if needed.
+    const center = await getElevationAt(lat, lng);
+    if (center === null) return null;
+    const north = (await getElevationAt(lat + delta, lng)) ?? center;
+    const east = (await getElevationAt(lat, lng + delta)) ?? center;
+
+    const dz = Math.sqrt(Math.pow(north - center, 2) + Math.pow(east - center, 2));
+    const distance = delta * 111000; // approximate meters
+    const slopeDeg = Math.atan2(dz, distance) * (180 / Math.PI);
+    slopeCacheRef.current.set(key, slopeDeg);
+    return slopeDeg;
+  };
+
+  // Check if location is flooded
+  const isFloodedAt = async (lat: number, lng: number): Promise<boolean> => {
+    if (!floodRasterRef.current) return false;
+    try {
+      const val = await (geoblaze as any).identify(floodRasterRef.current, [lng, lat]);
+      const v = Array.isArray(val) ? val[0] : val;
+      // assume flooded value is 1 — adapt if your TIFF uses other coding
+      return v === 1;
+    } catch (err) {
+      console.error('isFloodedAt error', err);
+      return false;
+    }
+  };
+
   // Get current location and add marker
   const getCurrentLocation = () => {
     if (!navigator.geolocation) {
@@ -196,91 +319,58 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const handleMapClick = async (e: L.LeafletMouseEvent) => {
     const lat = e.latlng.lat;
     const lng = e.latlng.lng;
-    
-    // Calculate estimated elevation
-    const coastalDistance = Math.sqrt(
-      Math.pow(lat - 6.9087, 2) + Math.pow(lng - 122.0547, 2)
-    ) * 111000; // Convert to meters
-    const estimatedElevation = Math.max(0, Math.min(200, coastalDistance / 50));
-    
+
+    // Try to get real elevation from DEM (falls back to estimate if missing)
+    let elevation = await getElevationAt(lat, lng);
+    if (elevation === null) {
+      // fallback estimate (your previous logic), small coastal heuristic
+      const coastalDistance = Math.sqrt(
+        Math.pow(lat - 6.9087, 2) + Math.pow(lng - 122.0547, 2)
+      ) * 111000;
+      elevation = Math.max(0, Math.min(200, coastalDistance / 50));
+    }
+
+    // Check flood status
+    const flooded = await isFloodedAt(lat, lng);
+
+    // Reverse geocode (keep your original code or reuse)
     try {
-      // Reverse geocode to get address
       const response = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`
       );
       const data = await response.json();
-      
       const address = data.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-      
-      // Close previous location popup
-      if (locationPopupRef.current && mapRef.current) {
-        mapRef.current.closePopup(locationPopupRef.current);
-      }
-      
-      // Create and show location details popup (Google Maps style)
-      const popup = L.popup({
-        maxWidth: 300,
-        closeButton: true,
-        autoClose: false,
-        closeOnClick: false,
-        className: 'location-details-popup'
-      })
-      .setLatLng(e.latlng)
-      .setContent(`
-        <div style="font-family: system-ui, -apple-system, sans-serif; line-height: 1.4;">
-          <div style="font-weight: 600; font-size: 14px; margin-bottom: 8px; color: #333;">
-            📍 Location Details
+
+      // Build popup content
+      const popupContent = `
+        <div style="font-family: system-ui; line-height: 1.4;">
+          <div style="font-weight:600;">📍 Location Details</div>
+          <div><strong>Address:</strong><br>${address}</div>
+          <div><strong>Coordinates:</strong><br>${lat.toFixed(6)}, ${lng.toFixed(6)}</div>
+          <div><strong>Elevation:</strong><br>~${elevation?.toFixed(1)} m</div>
+          <div style="margin-top:6px; font-weight:700; color:${flooded ? '#e74c3c':'#27ae60'}">
+            ${flooded ? '⚠️ Flooded Area' : '✅ Not Flooded (DEM)'}
           </div>
-          <div style="font-size: 12px; color: #666; margin-bottom: 6px;">
-            <strong>Address:</strong><br>
-            ${address}
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <button onclick="setAsStart(${lat}, ${lng}, '${address.replace(/'/g, "\\'")}')" style="flex:1; padding: 6px 12px; background: #4CAF50; color: white; border: none; border-radius: 4px; font-size: 11px; cursor: pointer;">Set as Start</button>
+            <button onclick="setAsEnd(${lat}, ${lng}, '${address.replace(/'/g, "\\'")}')" style="flex:1; padding: 6px 12px; background: #2196F3; color: white; border: none; border-radius: 4px; font-size: 11px; cursor: pointer;">Set as End</button>
           </div>
-          <div style="font-size: 12px; color: #666; margin-bottom: 6px;">
-            <strong>Coordinates:</strong><br>
-            ${lat.toFixed(6)}, ${lng.toFixed(6)}
-          </div>
-          <div style="font-size: 12px; color: #666; margin-bottom: 8px;">
-            <strong>Elevation:</strong> ~${estimatedElevation.toFixed(1)}m above sea level
-          </div>
-          <div style="display: flex; gap: 8px; margin-top: 8px;">
-            <button onclick="setAsStart(${lat}, ${lng}, '${address.replace(/'/g, "\\'")}')" 
-                    style="flex: 1; padding: 6px 12px; background: #4CAF50; color: white; border: none; border-radius: 4px; font-size: 11px; cursor: pointer;">
-              Set as Start
-            </button>
-            <button onclick="setAsEnd(${lat}, ${lng}, '${address.replace(/'/g, "\\'")}')" 
-                    style="flex: 1; padding: 6px 12px; background: #2196F3; color: white; border: none; border-radius: 4px; font-size: 11px; cursor: pointer;">
-              Set as End
-            </button>
-          </div>
-        </div>
-      `)
-      .openOn(mapRef.current!);
-      
-      locationPopupRef.current = popup;
-      
-      // Store location details
-      setLocationDetails({
-        lat,
-        lng,
-        address,
-        elevation: estimatedElevation
-      });
-      
-    } catch (error) {
-      console.error("Error getting location details:", error);
-      
-      // Fallback popup without address
-      const popup = L.popup()
+        </div>`;
+
+      if (locationPopupRef.current && mapRef.current) mapRef.current.closePopup(locationPopupRef.current);
+
+      const popup = L.popup({ maxWidth: 300, closeButton: true, autoClose: false, closeOnClick: false, className: 'location-details-popup' })
         .setLatLng(e.latlng)
-        .setContent(`
-          <div style="font-family: system-ui; text-align: center;">
-            <strong>📍 Location</strong><br>
-            <small>${lat.toFixed(6)}, ${lng.toFixed(6)}</small><br>
-            <small>Elevation: ~${estimatedElevation.toFixed(1)}m</small>
-          </div>
-        `)
+        .setContent(popupContent)
         .openOn(mapRef.current!);
-        
+
+      locationPopupRef.current = popup;
+
+      setLocationDetails({ lat, lng, address, elevation: elevation ?? 0 });
+
+    } catch (err) {
+      console.error('handleMapClick reverse geocode error', err);
+      const popup = L.popup().setLatLng(e.latlng).setContent(`Lat: ${lat.toFixed(6)}<br>Lng: ${lng.toFixed(6)}<br>Elevation: ~${(elevation ?? 0).toFixed(1)}m`).openOn(mapRef.current!);
       locationPopupRef.current = popup;
     }
   };
@@ -451,7 +541,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     return totalDistance;
   };
 
-  // Enhanced flood risk assessment with transportation mode considerations
+  // Enhanced flood risk assessment with real DEM and flood data
   const assessRouteFloodRisk = async (
     waypoints: LatLng[],
     transportMode: "car" | "motorcycle" | "walking" = "car"
@@ -462,121 +552,44 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     color: string;
     riskScore: number;
   }> => {
-    if (waypoints.length === 0) {
-      return {
-        risk: "safe",
-        level: "Unknown",
-        description: "Route data unavailable",
-        color: "#gray",
-        riskScore: 0,
-      };
+    if (!waypoints || waypoints.length === 0) {
+      return { risk: 'safe', level: 'Unknown', description: 'No route', color: '#95a5a6', riskScore: 0 };
     }
 
-    const cityCenter = { lat: 6.9214, lng: 122.079 };
-    const coast = { lat: 6.9087, lng: 122.0547 }; // Port area (most flood-prone)
-    const lowlandAreas = [
-      { lat: 6.9180, lng: 122.0680 }, // Tetuan (low-lying area)
-      { lat: 6.9050, lng: 122.0590 }, // Sta. Catalina (coastal)
-      { lat: 6.9290, lng: 122.0820 }, // Tumaga (riverside)
-    ];
+    let floodedCount = 0;
+    let lowElevCount = 0;
+    let steepSlopeCount = 0;
 
-    let riskScore = 0;
-    let coastalPoints = 0;
-    let lowlandPoints = 0;
-    let totalDistance = 0;
+    for (const wp of waypoints) {
+      const elev = await getElevationAt(wp.lat, wp.lng);
+      if (elev !== null && elev < 5) lowElevCount++;
 
-    // Transportation mode risk modifiers
-    const modeRiskModifiers = {
-      car: 1.0,        // Standard risk
-      motorcycle: 0.8, // Lower risk (can navigate smaller roads/shortcuts)
-      walking: 1.2     // Higher risk (more vulnerable to flooding)
-    };
+      const flooded = await isFloodedAt(wp.lat, wp.lng);
+      if (flooded) floodedCount++;
 
-    // Analyze each waypoint for flood risk factors
-    waypoints.forEach((point, index) => {
-      // Distance from city center
-      const distanceFromCenter = Math.sqrt(
-        Math.pow(point.lat - cityCenter.lat, 2) + 
-        Math.pow(point.lng - cityCenter.lng, 2)
-      ) * 111; // Convert to km
-
-      // Distance from coast/port (most flood-prone area)
-      const distanceFromCoast = Math.sqrt(
-        Math.pow(point.lat - coast.lat, 2) + 
-        Math.pow(point.lng - coast.lng, 2)
-      ) * 111;
-
-      // Check proximity to known lowland/flood-prone areas
-      const nearLowland = lowlandAreas.some(lowland => {
-        const distanceToLowland = Math.sqrt(
-          Math.pow(point.lat - lowland.lat, 2) + 
-          Math.pow(point.lng - lowland.lng, 2)
-        ) * 111;
-        return distanceToLowland < 2; // Within 2km of lowland area
-      });
-
-      // Scoring system (higher = more flood-prone)
-      if (distanceFromCoast < 1) riskScore += 50; // Very close to port/coast
-      else if (distanceFromCoast < 2) riskScore += 30;
-      else if (distanceFromCoast < 4) riskScore += 15;
-
-      if (nearLowland) riskScore += 25; // In known flood-prone area
-      
-      if (distanceFromCenter < 2) riskScore += 20; // Urban center (more development/runoff)
-      else if (distanceFromCenter > 8) riskScore += 10; // Far from center (rural/undeveloped)
-
-      // Count different types of points
-      if (distanceFromCoast < 3) coastalPoints++;
-      if (nearLowland) lowlandPoints++;
-      
-      if (index > 0) {
-        const prevPoint = waypoints[index - 1];
-        const segmentDistance = Math.sqrt(
-          Math.pow(point.lat - prevPoint.lat, 2) + 
-          Math.pow(point.lng - prevPoint.lng, 2)
-        ) * 111;
-        totalDistance += segmentDistance;
-      }
-    });
-
-    // Apply transportation mode risk modifier
-    const normalizedRiskScore = (riskScore / waypoints.length) * modeRiskModifiers[transportMode];
-    const coastalRatio = coastalPoints / waypoints.length;
-    const lowlandRatio = lowlandPoints / waypoints.length;
-
-    // Mode-specific descriptions
-    const modeDescriptions = {
-      car: "car route",
-      motorcycle: "motorcycle route (can use smaller roads)",
-      walking: "walking route (more vulnerable to flooding)"
-    };
-
-    // Determine risk level based on comprehensive analysis
-    if (normalizedRiskScore >= 35 || coastalRatio > 0.6 || lowlandRatio > 0.4) {
-      return {
-        risk: "prone",
-        level: "High Flood Risk",
-        description: `High-risk ${modeDescriptions[transportMode]}: ${(coastalRatio * 100).toFixed(0)}% coastal, ${(lowlandRatio * 100).toFixed(0)}% lowland areas. Significant flood risk during heavy rains.`,
-        color: "#e74c3c",
-        riskScore: normalizedRiskScore,
-      };
-    } else if (normalizedRiskScore >= 20 || coastalRatio > 0.3 || lowlandRatio > 0.2) {
-      return {
-        risk: "manageable",
-        level: "Moderate Flood Risk",
-        description: `Moderate-risk ${modeDescriptions[transportMode]}: ${(coastalRatio * 100).toFixed(0)}% coastal, ${(lowlandRatio * 100).toFixed(0)}% lowland areas. Some flood risk during heavy rains.`,
-        color: "#f39c12",
-        riskScore: normalizedRiskScore,
-      };
-    } else {
-      return {
-        risk: "safe",
-        level: "Low Flood Risk",
-        description: `Low-risk ${modeDescriptions[transportMode]}: ${(coastalRatio * 100).toFixed(0)}% coastal, ${(lowlandRatio * 100).toFixed(0)}% lowland areas. Minimal flood risk.`,
-        color: "#27ae60",
-        riskScore: normalizedRiskScore,
-      };
+      const slope = await getSlopeAt(wp.lat, wp.lng);
+      if (slope !== null && slope > 15) steepSlopeCount++; // example threshold
     }
+
+    const fRatio = floodedCount / waypoints.length;
+    const lowRatio = lowElevCount / waypoints.length;
+    const slopeRatio = steepSlopeCount / waypoints.length;
+
+    // Combine into a single riskScore (scale 0..100)
+    let riskScore = Math.round((fRatio * 80 + lowRatio * 30 + slopeRatio * 10) * 100) / 100;
+
+    // Mode modifier
+    const modeModifier = transportMode === 'walking' ? 1.2 : transportMode === 'motorcycle' ? 0.9 : 1.0;
+    riskScore = riskScore * modeModifier;
+
+    if (riskScore >= 35 || fRatio > 0.5 || lowRatio > 0.4) {
+      return { risk: 'prone', level: 'High Flood Risk', description: `High risk: ${(fRatio * 100).toFixed(0)}% flooded points`, color: '#e74c3c', riskScore };
+    }
+    if (riskScore >= 15 || fRatio > 0.2 || lowRatio > 0.2) {
+      return { risk: 'manageable', level: 'Moderate Flood Risk', description: `Moderate risk: ${(fRatio * 100).toFixed(0)}% flooded points`, color: '#f39c12', riskScore };
+    }
+
+    return { risk: 'safe', level: 'Low Flood Risk', description: `Low risk: ${(fRatio * 100).toFixed(0)}% flooded points`, color: '#27ae60', riskScore };
   };
 
   // NEW FUNCTION - Add this
@@ -953,13 +966,15 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       const lng = e.latlng.lng;
       
       try {
-        // Simple elevation estimation based on distance from coast
-        const coastalDistance = Math.sqrt(
-          Math.pow(lat - 6.9087, 2) + Math.pow(lng - 122.0547, 2)
-        ) * 111000; // Convert to meters
-        
-        // Estimate elevation (higher as you move inland)
-        const estimatedElevation = Math.max(0, Math.min(200, coastalDistance / 50));
+        // Try to get real elevation from DEM (falls back to estimate if missing)
+        let elevation = await getElevationAt(lat, lng);
+        if (elevation === null) {
+          // fallback estimate
+          const coastalDistance = Math.sqrt(
+            Math.pow(lat - 6.9087, 2) + Math.pow(lng - 122.0547, 2)
+          ) * 111000;
+          elevation = Math.max(0, Math.min(200, coastalDistance / 50));
+        }
         
         // Create hover popup with elevation info
         const popup = L.popup({
@@ -973,7 +988,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             Lat: ${lat.toFixed(5)}<br>
             Lng: ${lng.toFixed(5)}<br>
             <strong>⛰️ Elevation</strong><br>
-            ~${estimatedElevation.toFixed(1)}m above sea level<br>
+            ~${elevation.toFixed(1)}m above sea level<br>
             <span style="color: ${route.color};">● ${route.floodRisk.toUpperCase()} ROUTE</span>
           </div>
         `)
@@ -1040,11 +1055,15 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           const lat = e.latlng.lat;
           const lng = e.latlng.lng;
           
-          const coastalDistance = Math.sqrt(
-            Math.pow(lat - 6.9087, 2) + Math.pow(lng - 122.0547, 2)
-          ) * 111000;
-          
-          const estimatedElevation = Math.max(0, Math.min(200, coastalDistance / 50));
+          // Try to get real elevation from DEM (falls back to estimate if missing)
+          let elevation = await getElevationAt(lat, lng);
+          if (elevation === null) {
+            // fallback estimate
+            const coastalDistance = Math.sqrt(
+              Math.pow(lat - 6.9087, 2) + Math.pow(lng - 122.0547, 2)
+            ) * 111000;
+            elevation = Math.max(0, Math.min(200, coastalDistance / 50));
+          }
           
           const popup = L.popup({
             closeButton: false,
@@ -1057,7 +1076,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               Lat: ${lat.toFixed(5)}<br>
               Lng: ${lng.toFixed(5)}<br>
               <strong>⛰️ Elevation</strong><br>
-              ~${estimatedElevation.toFixed(1)}m above sea level<br>
+              ~${elevation.toFixed(1)}m above sea level<br>
               <strong>Distance:</strong> ${route.distance}<br>
               <strong>Time:</strong> ${route.time}
             </div>
@@ -1122,6 +1141,42 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     return () => clearTimeout(searchTimeout);
   }, [endLocationInput]);
+
+  // Handle DEM layer toggle
+  useEffect(() => {
+    if (!mapRef.current) return;
+    try {
+      if (showDEM) {
+        if (demLayerRef.current && !mapRef.current.hasLayer(demLayerRef.current)) {
+          demLayerRef.current.addTo(mapRef.current);
+        }
+      } else {
+        if (demLayerRef.current && mapRef.current.hasLayer(demLayerRef.current)) {
+          mapRef.current.removeLayer(demLayerRef.current);
+        }
+      }
+    } catch (e) {
+      console.warn('DEM toggle error', e);
+    }
+  }, [showDEM]);
+
+  // Handle Flood layer toggle
+  useEffect(() => {
+    if (!mapRef.current) return;
+    try {
+      if (showFlood) {
+        if (floodLayerRef.current && !mapRef.current.hasLayer(floodLayerRef.current)) {
+          floodLayerRef.current.addTo(mapRef.current);
+        }
+      } else {
+        if (floodLayerRef.current && mapRef.current.hasLayer(floodLayerRef.current)) {
+          mapRef.current.removeLayer(floodLayerRef.current);
+        }
+      }
+    } catch (e) {
+      console.warn('Flood toggle error', e);
+    }
+  }, [showFlood]);
 
   // Handle selecting start location
   const handleSelectStartLocation = (location: LocationSuggestion) => {
@@ -1291,7 +1346,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       },
     },
     terrain: {
-      url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+      url: "https://{s}.tile.openttopomap.org/{z}/{x}/{y}.png",
       options: {
         maxZoom: 17,
         attribution:
@@ -1596,6 +1651,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     }).setView([6.9111, 122.0794], 13); // Centered on Zamboanga City
     mapRef.current = map;
 
+    // Load raster data
+    loadRasters();
+
     // Add map click handler for location details
     map.on('click', handleMapClick);
 
@@ -1801,6 +1859,40 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         mapViewIcon.style.cssText = `width: 24px; height: 24px;`;
         mapViewBtn.appendChild(mapViewIcon);
         mapViewBtn.title = "Toggle Map View";
+
+        // 4. DEM toggle button
+        const demToggleBtn = L.DomUtil.create('button', 'leaflet-control-custom', menuContainer);
+        styleSubBtn(demToggleBtn);
+        demToggleBtn.title = 'Toggle DEM (elevation)';
+        const demIcon = document.createElement("img");
+        demIcon.src = "/icons/terrain.png";
+        demIcon.style.cssText = `
+            width: 20px;
+            height: 20px;
+            filter: brightness(0) invert(1);
+          `;
+        demToggleBtn.appendChild(demIcon);
+        demToggleBtn.onclick = (ev) => { 
+          ev.stopPropagation(); 
+          setShowDEM(prev => !prev); 
+        };
+
+        // 5. Flood toggle button
+        const floodToggleBtn = L.DomUtil.create('button', 'leaflet-control-custom', menuContainer);
+        styleSubBtn(floodToggleBtn);
+        floodToggleBtn.title = 'Toggle Flood Extent';
+        const floodIcon = document.createElement("img");
+        floodIcon.src = "/icons/water.png";
+        floodIcon.style.cssText = `
+            width: 20px;
+            height: 20px;
+            filter: brightness(0) invert(1);
+          `;
+        floodToggleBtn.appendChild(floodIcon);
+        floodToggleBtn.onclick = (ev) => { 
+          ev.stopPropagation(); 
+          setShowFlood(prev => !prev); 
+        };
 
         // Toggle menu function
         const toggleMenu = () => {
@@ -2281,7 +2373,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                 <span style={{ fontSize: "12px" }}>Safe Route</span>
               </div>
               <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+                style={{ display: "flex', alignItems: 'center', gap: '8px" }}
               >
                 <div
                   style={{
@@ -2744,7 +2836,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               </p>
             </div>
 
-            {/* Prone Route */}
+           {/* Prone Route */}
             <div
               style={{
                 border:
