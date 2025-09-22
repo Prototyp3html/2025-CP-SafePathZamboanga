@@ -1,0 +1,66 @@
+version: "3.8"
+
+services:
+  # OSRM Driving Profile (Cars/Motorcycles)
+  osrm-driving:
+    image: osrm/osrm-backend
+    container_name: safepath-osrm-driving
+    ports:
+      - "5000:5000"
+    volumes:
+      - C:/Users/Lenovo/osrm-data:/data
+    command: osrm-routed --algorithm mld /data/zamboanga-driving.osrm
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:5000/route/v1/driving/122.079,6.9214;122.08,6.92",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # OSRM Walking Profile (Pedestrians)
+  osrm-walking:
+    image: osrm/osrm-backend
+    container_name: safepath-osrm-walking
+    ports:
+      - "5001:5000"
+    volumes:
+      - C:/Users/Lenovo/osrm-data:/data
+    command: osrm-routed --algorithm mld /data/zamboanga-foot.osrm
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:5000/route/v1/foot/122.079,6.9214;122.08,6.92",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Optional: Local tile server for offline maps
+  tile-server:
+    image: overv/openstreetmap-tile-server
+    container_name: safepath-tiles
+    ports:
+      - "8080:80"
+    volumes:
+      - osm-data:/var/lib/postgresql/12/main
+      - osm-tiles:/var/cache/renderd/tiles
+    environment:
+      - THREADS=4
+      - OSM2PGSQL_EXTRA_ARGS=-C 2048
+    restart: unless-stopped
+    profiles:
+      - tiles # Only start with --profile tiles
+
+volumes:
+  osm-data:
+  osm-tiles:

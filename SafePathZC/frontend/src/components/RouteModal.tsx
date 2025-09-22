@@ -38,6 +38,9 @@ interface RouteModalProps {
   setRouteOptions: (
     options: RouteOptions | ((prev: RouteOptions) => RouteOptions)
   ) => void;
+  // NEW: Transportation mode props
+  transportationMode: "car" | "motorcycle" | "walking";
+  setTransportationMode: (mode: "car" | "motorcycle" | "walking") => void;
 }
 
 export const RouteModal = ({
@@ -60,6 +63,9 @@ export const RouteModal = ({
   handleFindRoute,
   routeOptions,
   setRouteOptions,
+  // NEW: Transportation mode props
+  transportationMode,
+  setTransportationMode,
 }: RouteModalProps) => {
   return (
     <div
@@ -420,6 +426,104 @@ export const RouteModal = ({
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Transportation Mode Selection */}
+          <div style={{ marginBottom: "20px" }}>
+            <label
+              style={{
+                display: "block",
+                marginBottom: "12px",
+                fontWeight: "bold",
+                color: "#333",
+                fontSize: "14px",
+              }}
+            >
+              🚗 Transportation Mode
+            </label>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr 1fr",
+                gap: "8px",
+              }}
+            >
+              <button
+                onClick={() => setTransportationMode("car")}
+                style={{
+                  padding: "12px 8px",
+                  border: `2px solid ${transportationMode === "car" ? "#667eea" : "#e5e7eb"}`,
+                  borderRadius: "8px",
+                  background: transportationMode === "car" ? "#667eea" : "white",
+                  color: transportationMode === "car" ? "white" : "#374151",
+                  fontSize: "12px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+              >
+                <span style={{ fontSize: "20px" }}>🚗</span>
+                <span>Car</span>
+              </button>
+              <button
+                onClick={() => setTransportationMode("motorcycle")}
+                style={{
+                  padding: "12px 8px",
+                  border: `2px solid ${transportationMode === "motorcycle" ? "#667eea" : "#e5e7eb"}`,
+                  borderRadius: "8px",
+                  background: transportationMode === "motorcycle" ? "#667eea" : "white",
+                  color: transportationMode === "motorcycle" ? "white" : "#374151",
+                  fontSize: "12px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+              >
+                <span style={{ fontSize: "20px" }}>🏍️</span>
+                <span>Motorcycle</span>
+              </button>
+              <button
+                onClick={() => setTransportationMode("walking")}
+                style={{
+                  padding: "12px 8px",
+                  border: `2px solid ${transportationMode === "walking" ? "#667eea" : "#e5e7eb"}`,
+                  borderRadius: "8px",
+                  background: transportationMode === "walking" ? "#667eea" : "white",
+                  color: transportationMode === "walking" ? "white" : "#374151",
+                  fontSize: "12px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+              >
+                <span style={{ fontSize: "20px" }}>🚶</span>
+                <span>Walking</span>
+              </button>
+            </div>
+            <div
+              style={{
+                marginTop: "8px",
+                fontSize: "12px",
+                color: "#6b7280",
+                textAlign: "center",
+              }}
+            >
+              {transportationMode === "car" && "🚗 Road routes optimized for cars"}
+              {transportationMode === "motorcycle" && "🏍️ Flexible routes with smaller roads"}
+              {transportationMode === "walking" && "🚶 Pedestrian-friendly paths"}
+            </div>
           </div>
 
           {/* Find Route Button */}
