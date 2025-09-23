@@ -310,6 +310,43 @@ try:
 except ImportError as e:
     print(f"Warning: Could not load local routing module: {e}")
 
+# Include PostGIS routing endpoints
+try:
+    from routes.postgis_routing import router as postgis_routing_router
+    app.include_router(postgis_routing_router)
+    print("PostGIS routing endpoints loaded successfully")
+except ImportError as e:
+    print(f"Warning: Could not load PostGIS routing module: {e}")
+
+# Include simplified PostgreSQL routing endpoints
+try:
+    from routes.simple_routing import router as simple_routing_router
+    app.include_router(simple_routing_router)
+    print("Simplified PostgreSQL routing endpoints loaded successfully")
+except ImportError as e:
+    print(f"Warning: Could not load simplified routing module: {e}")
+
+# Initialize PostGIS database on startup
+try:
+    from database.config import initialize_database
+    if initialize_database():
+        print("PostGIS database initialized successfully")
+    else:
+        print("Warning: PostGIS database initialization failed")
+except ImportError as e:
+    print(f"Warning: Could not initialize PostGIS database: {e}")
+
+# Cleanup on shutdown
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup database connections on shutdown"""
+    try:
+        from database.config import cleanup_database
+        cleanup_database()
+        print("Database connections cleaned up successfully")
+    except ImportError:
+        pass
+
 # Dependency to get DB session
 def get_db():
     db = SessionLocal()

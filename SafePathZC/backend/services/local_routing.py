@@ -47,40 +47,75 @@ class Coordinate:
 
 @dataclass
 class RoadSegment:
-    """Represents a road segment from GeoJSON"""
+    """Represents a road segment from enhanced terrain GeoJSON"""
     osm_id: str
-    name: Optional[str]
-    highway_type: Optional[str]
+    road_id: float
     coordinates: List[Coordinate]
+    length_m: float
+    elev_mean: float
+    elev_min: float
+    elev_max: float
+    flooded: bool  # True if flooded, False if safe
+    name: Optional[str] = None
+    highway_type: Optional[str] = None
     oneway: bool = False
     maxspeed: int = 40  # Default speed limit
     surface: str = "unknown"
     
     def get_length(self) -> float:
-        """Calculate total length of road segment"""
-        total_length = 0
-        for i in range(len(self.coordinates) - 1):
-            total_length += self.coordinates[i].distance_to(self.coordinates[i + 1])
-        return total_length
+        """Get pre-calculated length from terrain data"""
+        return self.length_m
+    
+    def get_elevation_gain(self) -> float:
+        """Calculate elevation gain across segment"""
+        return max(0, self.elev_max - self.elev_min)
+    
+    def get_flood_risk_factor(self) -> float:
+        """Get flood risk multiplier for routing cost"""
+        return 2.5 if self.flooded else 1.0  # Flooded roads cost 2.5x more
+    
+    def get_terrain_difficulty(self) -> float:
+        """Calculate terrain difficulty based on elevation"""
+        elevation_factor = 1.0 + (self.elev_mean / 100.0 * 0.1)  # 10% increase per 100m
+        slope_factor = 1.0 + (self.get_elevation_gain() / self.length_m * 10.0)  # Slope penalty
+        return elevation_factor * slope_factor
+    
+    def get_routing_cost(self, transportation_mode: str = "car") -> float:
+        """Calculate routing cost considering terrain, flood risk, and transportation mode"""
+        base_cost = self.length_m
+        
+        # Apply flood risk
+        flood_factor = self.get_flood_risk_factor()
+        
+        # Apply terrain difficulty
+        terrain_factor = self.get_terrain_difficulty()
+        
+        # Transportation mode adjustments
+        mode_factors = {
+            "car": 1.0,
+            "motorcycle": 0.9,  # Motorcycles slightly faster on hills
+            "walking": 2.0      # Walking is much slower, more affected by terrain
+        }
+        mode_factor = mode_factors.get(transportation_mode, 1.0)
+        
+        # Elevation considerations for different modes
+        if transportation_mode == "walking" and self.elev_mean > 50:
+            terrain_factor *= 1.5  # Walking is much harder at elevation
+        
+        return base_cost * flood_factor * terrain_factor * mode_factor
     
     def get_speed_limit(self) -> int:
-        """Get speed limit based on highway type and properties"""
-        if self.maxspeed:
-            return self.maxspeed
+        """Get speed limit with terrain adjustments"""
+        base_speed = self.maxspeed
         
-        # Default speeds by highway type
-        speed_map = {
-            'trunk': 60,
-            'primary': 50,
-            'secondary': 40,
-            'tertiary': 30,
-            'residential': 25,
-            'trunk_link': 40,
-            'primary_link': 40,
-            'service': 20
-        }
+        # Reduce speed on steep or flooded roads
+        if self.flooded:
+            base_speed = min(base_speed, 25)  # Max 25 km/h on flooded roads
         
-        return speed_map.get(self.highway_type, 40)
+        if self.get_elevation_gain() > 20:  # Steep roads
+            base_speed = min(base_speed, 35)
+            
+        return max(10, base_speed)  # Minimum 10 km/h
 
 @dataclass
 class RouteNode:
@@ -122,9 +157,17 @@ class LocalRoutingService:
                     for coord in geometry['coordinates']
                 ]
                 
-                # Parse properties
+                # Parse properties - Enhanced for terrain data
                 name = properties.get('name')
                 highway_type = properties.get('highway')
+                
+                # Parse terrain properties
+                elev_mean = properties.get('elev_mean', 0.0)
+                elev_min = properties.get('elev_min', 0.0) 
+                elev_max = properties.get('elev_max', 0.0)
+                flooded = properties.get('flooded', False)
+                length_m = properties.get('length_m', 100.0)  # Default length if missing
+                road_id = properties.get('road_id', '')
                 
                 # Parse oneway from other_tags
                 oneway = False
@@ -151,15 +194,20 @@ class LocalRoutingService:
                         except IndexError:
                             pass
                 
-                # Create road segment
+                # Create road segment with terrain data
                 segment = RoadSegment(
-                    osm_id=properties.get('osm_id', ''),
+                    osm_id=properties.get('osm_id', road_id),  # Use road_id if osm_id not available
                     name=name,
                     highway_type=highway_type,
                     coordinates=coordinates,
                     oneway=oneway,
                     maxspeed=maxspeed,
-                    surface=surface
+                    surface=surface,
+                    elev_mean=elev_mean,
+                    elev_min=elev_min,
+                    elev_max=elev_max,
+                    flooded=flooded,
+                    length_m=length_m
                 )
                 
                 self.road_segments.append(segment)
@@ -213,8 +261,8 @@ class LocalRoutingService:
         
         return nearest_point
     
-    def calculate_route(self, start: Coordinate, end: Coordinate) -> Optional[List[Coordinate]]:
-        """Calculate route using A* algorithm"""
+    def calculate_route(self, start: Coordinate, end: Coordinate, mode: str = "car") -> Optional[List[Coordinate]]:
+        """Calculate route using A* algorithm with terrain awareness"""
         if not self.loaded:
             logger.error("Road network not loaded")
             return None
@@ -227,8 +275,8 @@ class LocalRoutingService:
             logger.warning("Could not find road connections for start/end points")
             return None
         
-        # Use A* algorithm
-        route = self._a_star_search(start_road, end_road)
+        # Use A* algorithm with terrain awareness
+        route = self._a_star_search(start_road, end_road, mode)
         
         if route:
             # Add original start/end points if different
@@ -244,8 +292,8 @@ class LocalRoutingService:
         
         return None
     
-    def _a_star_search(self, start: Coordinate, end: Coordinate) -> Optional[List[Coordinate]]:
-        """A* pathfinding algorithm"""
+    def _a_star_search(self, start: Coordinate, end: Coordinate, mode: str = "car") -> Optional[List[Coordinate]]:
+        """A* pathfinding algorithm with terrain-aware routing costs"""
         open_set = [(0, start)]  # (f_score, coordinate)
         came_from = {}
         g_score = {start: 0}
@@ -278,8 +326,10 @@ class LocalRoutingService:
                         if neighbor in visited:
                             continue
                         
-                        # Calculate movement cost
-                        tentative_g = g_score[current] + current.distance_to(neighbor)
+                        # Calculate terrain-aware movement cost
+                        base_distance = current.distance_to(neighbor)
+                        routing_cost = segment.get_routing_cost(mode)
+                        tentative_g = g_score[current] + (base_distance * routing_cost)
                         
                         if neighbor not in g_score or tentative_g < g_score[neighbor]:
                             came_from[neighbor] = current
@@ -311,14 +361,22 @@ class LocalRoutingService:
         
         return neighbors
     
-    def get_route_info(self, route: List[Coordinate]) -> Dict:
-        """Get route information including distance and estimated time"""
+    def get_route_info(self, route: List[Coordinate], mode: str = "car") -> Dict:
+        """Get route information including distance, time, and terrain details"""
         if len(route) < 2:
-            return {"distance": 0, "duration": 0, "segments": []}
+            return {"distance": 0, "duration": 0, "segments": [], "terrain_summary": {}}
         
         total_distance = 0
         total_time = 0
         segments_info = []
+        terrain_summary = {
+            "total_elevation_gain": 0,
+            "flood_risk_segments": 0,
+            "steep_segments": 0,
+            "avg_elevation": 0
+        }
+        
+        elevations = []
         
         for i in range(len(route) - 1):
             current = route[i]
@@ -327,14 +385,34 @@ class LocalRoutingService:
             distance = current.distance_to(next_point)
             total_distance += distance
             
-            # Find the road segment for speed calculation
+            # Find the road segment for detailed calculations
             speed = 40  # Default speed
             road_name = "Unknown Road"
+            elevation_info = {}
+            flood_risk = False
             
             for segment in self.road_segments:
                 if current in segment.coordinates and next_point in segment.coordinates:
-                    speed = segment.get_speed_limit()
+                    speed = segment.get_terrain_adjusted_speed(mode)
                     road_name = segment.name or f"{segment.highway_type or 'road'}"
+                    
+                    # Collect terrain information
+                    elevation_info = {
+                        "elev_mean": segment.elev_mean,
+                        "elev_min": segment.elev_min,
+                        "elev_max": segment.elev_max,
+                        "elevation_gain": segment.get_elevation_gain()
+                    }
+                    elevations.append(segment.elev_mean)
+                    terrain_summary["total_elevation_gain"] += segment.get_elevation_gain()
+                    
+                    if segment.flooded:
+                        flood_risk = True
+                        terrain_summary["flood_risk_segments"] += 1
+                    
+                    if segment.get_terrain_difficulty() > 1.2:
+                        terrain_summary["steep_segments"] += 1
+                    
                     break
             
             # Calculate time (distance in km / speed in kmh * 3600 for seconds)
@@ -345,13 +423,20 @@ class LocalRoutingService:
                 "distance": distance,
                 "duration": segment_time,
                 "road_name": road_name,
-                "speed_limit": speed
+                "speed_limit": speed,
+                "elevation_info": elevation_info,
+                "flood_risk": flood_risk
             })
+        
+        # Calculate terrain summary
+        if elevations:
+            terrain_summary["avg_elevation"] = sum(elevations) / len(elevations)
         
         return {
             "distance": total_distance,
             "duration": total_time,
-            "segments": segments_info
+            "segments": segments_info,
+            "terrain_summary": terrain_summary
         }
 
 # Global instance
@@ -361,23 +446,23 @@ def get_routing_service() -> LocalRoutingService:
     """Get the global routing service instance"""
     global _routing_service
     if _routing_service is None:
-        geojson_path = Path(__file__).parent.parent / "data" / "zamboanga_roads.geojson"
+        geojson_path = Path(__file__).parent.parent / "data" / "terrain_roads.geojson"
         _routing_service = LocalRoutingService(str(geojson_path))
         _routing_service.load_road_network()
     return _routing_service
 
 def calculate_local_route(start_lat: float, start_lng: float, 
-                         end_lat: float, end_lng: float) -> Optional[Dict]:
-    """Calculate route using local road network"""
+                         end_lat: float, end_lng: float, mode: str = "car") -> Optional[Dict]:
+    """Calculate route using local road network with terrain awareness"""
     service = get_routing_service()
     
     start = Coordinate(lat=start_lat, lng=start_lng)
     end = Coordinate(lat=end_lat, lng=end_lng)
     
-    route = service.calculate_route(start, end)
+    route = service.calculate_route(start, end, mode)
     
     if route:
-        route_info = service.get_route_info(route)
+        route_info = service.get_route_info(route, mode)
         
         return {
             "success": True,
@@ -385,7 +470,8 @@ def calculate_local_route(start_lat: float, start_lng: float,
             "distance": route_info["distance"],
             "duration": route_info["duration"],
             "segments": route_info["segments"],
-            "source": "local_geojson"
+            "terrain_summary": route_info["terrain_summary"],
+            "source": "local_geojson_terrain"
         }
     
     return None

@@ -17,6 +17,7 @@ class RouteRequest(BaseModel):
     start_lng: float = Field(..., description="Starting longitude") 
     end_lat: float = Field(..., description="Ending latitude")
     end_lng: float = Field(..., description="Ending longitude")
+    mode: str = Field("car", description="Transportation mode: car, motorcycle, or walking")
 
 class RoutePoint(BaseModel):
     """A point in a route"""
@@ -29,6 +30,8 @@ class RouteSegment(BaseModel):
     duration: float = Field(..., description="Duration in seconds")
     road_name: str = Field(..., description="Name of the road")
     speed_limit: int = Field(..., description="Speed limit in km/h")
+    elevation_info: Optional[Dict[str, float]] = Field(None, description="Elevation information")
+    flood_risk: bool = Field(False, description="Whether this segment has flood risk")
 
 class RouteResponse(BaseModel):
     """Response model for route calculation"""
@@ -37,6 +40,7 @@ class RouteResponse(BaseModel):
     distance: float = Field(..., description="Total distance in meters")
     duration: float = Field(..., description="Total duration in seconds")
     segments: List[RouteSegment]
+    terrain_summary: Optional[Dict[str, Any]] = Field(None, description="Summary of terrain factors")
     source: str = Field(default="local_geojson")
     message: Optional[str] = None
 
@@ -67,7 +71,8 @@ async def calculate_route(request: RouteRequest):
         
         result = calculate_local_route(
             request.start_lat, request.start_lng,
-            request.end_lat, request.end_lng
+            request.end_lat, request.end_lng,
+            request.mode
         )
         
         if result:
@@ -77,6 +82,7 @@ async def calculate_route(request: RouteRequest):
                 distance=result["distance"],
                 duration=result["duration"],
                 segments=[RouteSegment(**seg) for seg in result["segments"]],
+                terrain_summary=result.get("terrain_summary"),
                 source=result["source"],
                 message=f"Route calculated with {len(result['route'])} waypoints"
             )
@@ -99,7 +105,8 @@ async def calculate_route_get(
     start_lat: float = Query(..., description="Starting latitude"),
     start_lng: float = Query(..., description="Starting longitude"),
     end_lat: float = Query(..., description="Ending latitude"),
-    end_lng: float = Query(..., description="Ending longitude")
+    end_lng: float = Query(..., description="Ending longitude"),
+    mode: str = Query("car", description="Transportation mode: car, motorcycle, or walking")
 ):
     """
     Calculate route using GET method (for easy testing)
@@ -108,7 +115,8 @@ async def calculate_route_get(
         start_lat=start_lat,
         start_lng=start_lng,
         end_lat=end_lat,
-        end_lng=end_lng
+        end_lng=end_lng,
+        mode=mode
     )
     return await calculate_route(request)
 
