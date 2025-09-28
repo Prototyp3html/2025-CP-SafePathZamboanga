@@ -38,13 +38,15 @@ export async function searchZamboCityLocations(
   }
 
   try {
-    const searchQuery = encodeURIComponent(`${query.trim()}, Zamboanga City, Philippines`);
+    const searchQuery = encodeURIComponent(
+      `${query.trim()}, Zamboanga City, Philippines`
+    );
     const nominatimUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${searchQuery}&limit=${limit}&countrycodes=ph&addressdetails=1&extratags=1`;
 
     const response = await fetch(nominatimUrl, {
       headers: {
-        'User-Agent': 'SafePathZamboanga/1.0 (https://safepath-zamboanga.com)'
-      }
+        "User-Agent": "SafePathZamboanga/1.0 (https://safepath-zamboanga.com)",
+      },
     });
 
     if (!response.ok) {
@@ -55,15 +57,17 @@ export async function searchZamboCityLocations(
 
     // Filter and format results for Zamboanga City
     const zamboCityResults = results
-      .filter(result => {
+      .filter((result) => {
         const displayName = result.display_name.toLowerCase();
-        return displayName.includes('zamboanga') || 
-               displayName.includes('zamboanga city') ||
-               displayName.includes('zamboanga del sur');
+        return (
+          displayName.includes("zamboanga") ||
+          displayName.includes("zamboanga city") ||
+          displayName.includes("zamboanga del sur")
+        );
       })
-      .map(result => ({
-        name: result.display_name.split(',')[0].toUpperCase(),
-        displayName: result.display_name.split(',')[0],
+      .map((result) => ({
+        name: result.display_name.split(",")[0].toUpperCase(),
+        displayName: result.display_name.split(",")[0],
         lat: parseFloat(result.lat),
         lng: parseFloat(result.lon),
         type: result.type,
@@ -71,72 +75,76 @@ export async function searchZamboCityLocations(
         place_id: result.place_id,
         osm_type: result.osm_type,
         osm_id: result.osm_id,
-        boundingbox: result.boundingbox
+        boundingbox: result.boundingbox,
       }))
       .sort((a, b) => (b.importance || 0) - (a.importance || 0));
 
     return zamboCityResults;
   } catch (error) {
-    console.error('Error searching locations:', error);
-    
+    console.error("Error searching locations:", error);
+
     // Fallback to basic locations if API fails
     return getBasicZamboCityLocations(query, limit);
   }
 }
 
 // Basic fallback locations for when OpenStreetMap is unavailable
-function getBasicZamboCityLocations(query: string, limit: number): ZamboCityLocation[] {
+function getBasicZamboCityLocations(
+  query: string,
+  limit: number
+): ZamboCityLocation[] {
   const basicLocations: ZamboCityLocation[] = [
     {
       name: "ZAMBOANGA CITY HALL",
       displayName: "Zamboanga City Hall",
       lat: 6.9214,
       lng: 122.079,
-      type: "government"
+      type: "government",
     },
     {
       name: "ATENEO DE ZAMBOANGA",
       displayName: "Ateneo de Zamboanga University",
       lat: 6.9167,
       lng: 122.0834,
-      type: "educational"
+      type: "educational",
     },
     {
       name: "ZAMBOANGA AIRPORT",
       displayName: "Zamboanga International Airport",
       lat: 6.9224,
       lng: 122.0596,
-      type: "transport"
+      type: "transport",
     },
     {
       name: "KCC MALL",
       displayName: "KCC Mall of Zamboanga",
       lat: 6.9156,
       lng: 122.0789,
-      type: "commercial"
+      type: "commercial",
     },
     {
       name: "WMSU",
       displayName: "Western Mindanao State University",
       lat: 6.9078,
       lng: 122.0656,
-      type: "educational"
+      type: "educational",
     },
     {
       name: "ZAMBOANGA PORT",
       displayName: "Zamboanga Port",
       lat: 6.9244,
       lng: 122.0816,
-      type: "transport"
-    }
+      type: "transport",
+    },
   ];
 
   const searchTerm = query.toLowerCase().trim();
-  
+
   return basicLocations
-    .filter(location => 
-      location.name.toLowerCase().includes(searchTerm) ||
-      location.displayName.toLowerCase().includes(searchTerm)
+    .filter(
+      (location) =>
+        location.name.toLowerCase().includes(searchTerm) ||
+        location.displayName.toLowerCase().includes(searchTerm)
     )
     .slice(0, limit);
 }
@@ -151,8 +159,8 @@ export async function getLocationByCoordinates(
 
     const response = await fetch(nominatimUrl, {
       headers: {
-        'User-Agent': 'SafePathZamboanga/1.0 (https://safepath-zamboanga.com)'
-      }
+        "User-Agent": "SafePathZamboanga/1.0 (https://safepath-zamboanga.com)",
+      },
     });
 
     if (!response.ok) {
@@ -162,8 +170,8 @@ export async function getLocationByCoordinates(
     const result: NominatimResult = await response.json();
 
     return {
-      name: result.display_name.split(',')[0].toUpperCase(),
-      displayName: result.display_name.split(',')[0],
+      name: result.display_name.split(",")[0].toUpperCase(),
+      displayName: result.display_name.split(",")[0],
       lat: parseFloat(result.lat),
       lng: parseFloat(result.lon),
       type: result.type,
@@ -171,10 +179,10 @@ export async function getLocationByCoordinates(
       place_id: result.place_id,
       osm_type: result.osm_type,
       osm_id: result.osm_id,
-      boundingbox: result.boundingbox
+      boundingbox: result.boundingbox,
     };
   } catch (error) {
-    console.error('Error getting location by coordinates:', error);
+    console.error("Error getting location by coordinates:", error);
     return null;
   }
 }

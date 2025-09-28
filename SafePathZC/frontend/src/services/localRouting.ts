@@ -96,10 +96,8 @@ class LocalRoutingService {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          start_lat: startLat,
-          start_lng: startLng,
-          end_lat: endLat,
-          end_lng: endLng,
+          start: [startLat, startLng],
+          end: [endLat, endLng],
         }),
       });
 
@@ -108,9 +106,13 @@ class LocalRoutingService {
       }
 
       const data = await response.json();
-      
+
       if (data.success) {
-        console.log(`✓ Local routing: ${data.route.length} waypoints, ${(data.distance/1000).toFixed(1)}km, ${Math.round(data.duration/60)}min`);
+        console.log(
+          `✓ Local routing: ${data.route.length} waypoints, ${(
+            data.distance / 1000
+          ).toFixed(1)}km, ${Math.round(data.duration / 60)}min`
+        );
       } else {
         console.log("Local routing failed:", data.message);
       }
@@ -155,7 +157,7 @@ class LocalRoutingService {
    * Convert local route to LatLng format used by Leaflet
    */
   convertToLatLng(route: LocalRoutePoint[]): { lat: number; lng: number }[] {
-    return route.map(point => ({
+    return route.map((point) => ({
       lat: point.lat,
       lng: point.lng,
     }));
@@ -189,8 +191,8 @@ class LocalRoutingService {
   formatRouteStats(route: LocalRouteResponse): string {
     const distanceKm = (route.distance / 1000).toFixed(1);
     const durationMin = Math.round(route.duration / 60);
-    const roadTypes = new Set(route.segments.map(s => s.road_name)).size;
-    
+    const roadTypes = new Set(route.segments.map((s) => s.road_name)).size;
+
     return `${distanceKm}km • ${durationMin}min • ${roadTypes} roads`;
   }
 
@@ -201,7 +203,7 @@ class LocalRoutingService {
     if (route.segments.length === 0) return "Local Route";
 
     // Find the segment with the longest distance
-    const primarySegment = route.segments.reduce((longest, current) => 
+    const primarySegment = route.segments.reduce((longest, current) =>
       current.distance > longest.distance ? current : longest
     );
 
@@ -217,7 +219,7 @@ class LocalRoutingService {
       north: 6.95,
       south: 6.88,
       east: 122.15,
-      west: 122.02
+      west: 122.02,
     };
 
     return (
@@ -238,7 +240,7 @@ class LocalRoutingService {
       });
 
       if (!response.ok) return false;
-      
+
       const data = await response.json();
       return data.success;
     } catch (error) {
@@ -268,14 +270,19 @@ export async function shouldUseLocalRouting(
   endLng: number
 ): Promise<boolean> {
   // Use local routing if both points are within Zamboanga bounds
-  const withinBounds = 
+  const withinBounds =
     localRoutingService.isWithinZamboangaBounds(startLat, startLng) &&
     localRoutingService.isWithinZamboangaBounds(endLat, endLng);
 
   if (!withinBounds) return false;
 
   // Check if local routing is available for this route
-  return await localRoutingService.isAvailableForRoute(startLat, startLng, endLat, endLng);
+  return await localRoutingService.isAvailableForRoute(
+    startLat,
+    startLng,
+    endLat,
+    endLng
+  );
 }
 
 // Helper function to get route with fallback strategy
@@ -288,13 +295,18 @@ export async function getRouteWithFallback(
 ): Promise<{ route: any[]; source: string; success: boolean }> {
   // Try local routing first
   if (await shouldUseLocalRouting(startLat, startLng, endLat, endLng)) {
-    const localRoute = await localRoutingService.calculateRoute(startLat, startLng, endLat, endLng);
-    
+    const localRoute = await localRoutingService.calculateRoute(
+      startLat,
+      startLng,
+      endLat,
+      endLng
+    );
+
     if (localRoute?.success && localRoute.route.length > 0) {
       return {
         route: localRoutingService.convertToLatLng(localRoute.route),
         source: "local_geojson",
-        success: true
+        success: true,
       };
     }
   }
@@ -306,11 +318,11 @@ export async function getRouteWithFallback(
         { lat: startLat, lng: startLng },
         { lat: endLat, lng: endLng }
       );
-      
+
       return {
         route: fallbackRoute || [],
         source: "external_api",
-        success: !!(fallbackRoute && fallbackRoute.length > 0)
+        success: !!(fallbackRoute && fallbackRoute.length > 0),
       };
     } catch (error) {
       console.error("Fallback routing failed:", error);
@@ -320,6 +332,6 @@ export async function getRouteWithFallback(
   return {
     route: [],
     source: "none",
-    success: false
+    success: false,
   };
 }

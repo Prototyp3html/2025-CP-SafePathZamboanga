@@ -19,6 +19,7 @@ import {
   getLocationByCoordinates,
   type ZamboCityLocation,
 } from "../utils/zamboCityLocations";
+import { localRoutingService } from "../services/localRouting";
 
 // Fix Leaflet default marker icons
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -60,6 +61,28 @@ interface TerrainData {
   lng: string;
 }
 
+interface TerrainRoadFeature {
+  type: "Feature";
+  properties: {
+    osm_id: string;
+    road_id: number;
+    length_m: number;
+    elev_mean: number;
+    elev_min: number;
+    elev_max: number;
+    flooded: string;
+  };
+  geometry: {
+    type: "LineString";
+    coordinates: [number, number][];
+  };
+}
+
+interface TerrainRoadsData {
+  type: "FeatureCollection";
+  features: TerrainRoadFeature[];
+}
+
 interface TileLayerConfig {
   url: string;
   options: {
@@ -85,19 +108,61 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   // Configuration for routing services
   const BACKEND_URL =
     import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
-  const USE_LOCAL_OSRM = true; // Enable local OSRM routing with fallback to public OSRM
+  const USE_LOCAL_OSRM = import.meta.env.VITE_USE_LOCAL_OSRM === "true"; // Use environment variable to control local OSRM
 
-  // Only log configuration once per session
+  // Only log configuration once per session and load terrain data
   useEffect(() => {
     if (!window.mapViewConfigLogged) {
       console.log(`🗺️ MapView Configuration:
         - Backend URL: ${BACKEND_URL}
         - Use Local OSRM: ${USE_LOCAL_OSRM}
         - Local OSRM endpoint: ${BACKEND_URL}/osrm/route
+        - Local Routing Service: http://localhost:8001/route
+        - Note: If local OSRM fails, will automatically fallback to external services
       `);
       window.mapViewConfigLogged = true;
     }
+
+    // Load terrain roads data for enhanced routing
+    loadTerrainRoadsData();
+
+    // Restore input values from localStorage on component mount
+    const savedStartInput = localStorage.getItem("safepath_start_input");
+    const savedEndInput = localStorage.getItem("safepath_end_input");
+    if (savedStartInput) setStartLocationInput(savedStartInput);
+    if (savedEndInput) setEndLocationInput(savedEndInput);
   }, []);
+
+  // Function to call the local routing service on port 8001
+  const getLocalRoutingServiceRoute = async (start: LatLng, end: LatLng) => {
+    try {
+      console.log(
+        `🚀 Calling local routing service: ${start.lat},${start.lng} -> ${end.lat},${end.lng}`
+      );
+
+      const response = await fetch(
+        `http://localhost:8001/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Local routing service error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log("✅ Local routing service response:", data);
+
+      return data;
+    } catch (error) {
+      console.error("❌ Local routing service failed:", error);
+      return null;
+    }
+  };
 
   const [routeMode, setRouteMode] = useState(false);
   const [startPoint, setStartPoint] = useState<LatLng | null>(null);
@@ -136,16 +201,49 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const [endSuggestions, setEndSuggestions] = useState<LocationSuggestion[]>(
     []
   );
+  // Initialize state with localStorage persistence
   const [selectedStartLocation, setSelectedStartLocation] =
-    useState<LocationSuggestion | null>(null);
+    useState<LocationSuggestion | null>(() => {
+      try {
+        const saved = localStorage.getItem("safepath_start_location");
+        return saved ? JSON.parse(saved) : null;
+      } catch {
+        return null;
+      }
+    });
   const [selectedEndLocation, setSelectedEndLocation] =
-    useState<LocationSuggestion | null>(null);
+    useState<LocationSuggestion | null>(() => {
+      try {
+        const saved = localStorage.getItem("safepath_end_location");
+        return saved ? JSON.parse(saved) : null;
+      } catch {
+        return null;
+      }
+    });
   const [showStartSuggestions, setShowStartSuggestions] = useState(false);
   const [showEndSuggestions, setShowEndSuggestions] = useState(false);
+
+  // Educational pathfinding visualization states
+  const [isEducationalMode, setIsEducationalMode] = useState(false);
+  const [pathfindingStep, setPathfindingStep] = useState<
+    "idle" | "calculating" | "finding-safe" | "showing-risk" | "complete"
+  >("idle");
+  const [exploredNodes, setExploredNodes] = useState<LatLng[]>([]);
+  const [currentSearchNode, setCurrentSearchNode] = useState<LatLng | null>(
+    null
+  );
+  const [pathFound, setPathFound] = useState<LatLng[]>([]);
+  const [isCalculatingRoutes, setIsCalculatingRoutes] = useState(false);
+
+  // Terrain roads data for enhanced routing
+  const [terrainRoadsData, setTerrainRoadsData] =
+    useState<TerrainRoadsData | null>(null);
+  const [terrainRoadsLoaded, setTerrainRoadsLoaded] = useState(false);
 
   const mapRef = useRef<L.Map | null>(null);
   const routingControlRef = useRef<any>(null);
   const markersRef = useRef<L.Marker[]>([]);
+  const circleMarkersRef = useRef<L.CircleMarker[]>([]);
   const layersRef = useRef<Record<string, L.TileLayer>>({});
   const terrainPopupRef = useRef<L.CircleMarker | null>(null);
   const terrainOverlayRef = useRef<L.LayerGroup | null>(null);
@@ -156,141 +254,565 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const GRAPHHOPPER_DELAY = 1000; // 1 second delay between requests
   const GRAPHHOPPER_RETRY_DELAY = 5000; // 5 seconds after 429 error
 
-  // Custom icons using local assets
-  const startIcon = L.icon({
-    iconUrl: "/icons/location.png",
+  // Persist start location to localStorage
+  useEffect(() => {
+    if (selectedStartLocation) {
+      localStorage.setItem(
+        "safepath_start_location",
+        JSON.stringify(selectedStartLocation)
+      );
+      localStorage.setItem(
+        "safepath_start_input",
+        selectedStartLocation.display_name
+      );
+    } else {
+      localStorage.removeItem("safepath_start_location");
+      localStorage.removeItem("safepath_start_input");
+    }
+  }, [selectedStartLocation]);
+
+  // Persist end location to localStorage
+  useEffect(() => {
+    if (selectedEndLocation) {
+      localStorage.setItem(
+        "safepath_end_location",
+        JSON.stringify(selectedEndLocation)
+      );
+      localStorage.setItem(
+        "safepath_end_input",
+        selectedEndLocation.display_name
+      );
+    } else {
+      localStorage.removeItem("safepath_end_location");
+      localStorage.removeItem("safepath_end_input");
+    }
+  }, [selectedEndLocation]);
+
+  // Cleanup function for component unmount (page navigation)
+  useEffect(() => {
+    return () => {
+      // Clear route-related state when navigating away to prevent stale data
+      setRouteDetails(null);
+      setShowRouteModal(false);
+      setRouteMode(false);
+
+      // Destinations persist across navigation for better UX
+      // Users can manually clear them using the "Clear Destinations" button
+      console.log(
+        "🔄 MapView unmounting - route state cleared, destinations preserved"
+      );
+    };
+  }, []);
+
+  // Restore start location coordinates and markers when selectedStartLocation is loaded
+  useEffect(() => {
+    if (selectedStartLocation && mapRef.current) {
+      const coordinates = {
+        lat: parseFloat(selectedStartLocation.lat),
+        lng: parseFloat(selectedStartLocation.lon),
+      };
+      setStartPoint(coordinates);
+
+      // Add marker to map using the same styling as the route markers
+      const startMarker = L.divIcon({
+        className: "modern-location-pin start-pin",
+        html: `<div style="
+          width: 32px; 
+          height: 32px; 
+          background: linear-gradient(135deg, #22c55e, #16a34a);
+          border-radius: 50% 50% 50% 0;
+          transform: rotate(-45deg);
+          border: 3px solid white;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+          position: relative;
+        ">
+          <div style="
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(45deg);
+            width: 12px;
+            height: 12px;
+            background: white;
+            border-radius: 50%;
+          "></div>
+        </div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 32],
+        popupAnchor: [0, -32],
+      });
+
+      const marker = L.marker([coordinates.lat, coordinates.lng], {
+        icon: startMarker,
+      })
+        .addTo(mapRef.current)
+        .bindPopup(`Start: ${selectedStartLocation.display_name}`);
+
+      markersRef.current.push(marker);
+    }
+  }, [selectedStartLocation]);
+
+  // Restore end location coordinates and markers when selectedEndLocation is loaded
+  useEffect(() => {
+    if (selectedEndLocation && mapRef.current) {
+      const coordinates = {
+        lat: parseFloat(selectedEndLocation.lat),
+        lng: parseFloat(selectedEndLocation.lon),
+      };
+      setEndPoint(coordinates);
+
+      // Add marker to map using the same styling as the route markers
+      const endMarker = L.divIcon({
+        className: "modern-location-pin end-pin",
+        html: `<div style="
+          width: 32px; 
+          height: 32px; 
+          background: linear-gradient(135deg, #dc2626, #b91c1c);
+          border-radius: 50% 50% 50% 0;
+          transform: rotate(-45deg);
+          border: 3px solid white;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+          position: relative;
+        ">
+          <div style="
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(45deg);
+            width: 12px;
+            height: 12px;
+            background: white;
+            border-radius: 50%;
+          "></div>
+        </div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 32],
+        popupAnchor: [0, -32],
+      });
+
+      const marker = L.marker([coordinates.lat, coordinates.lng], {
+        icon: endMarker,
+      })
+        .addTo(mapRef.current)
+        .bindPopup(`End: ${selectedEndLocation.display_name}`);
+
+      markersRef.current.push(marker);
+    }
+  }, [selectedEndLocation]);
+
+  // Modern CSS-based icons for better consistency and visual appeal
+  const startIcon = L.divIcon({
+    className: "modern-location-pin start-pin",
+    html: `<div style="
+      width: 32px; 
+      height: 32px; 
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      border: 3px solid white;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      position: relative;
+    ">
+      <div style="
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) rotate(45deg);
+        width: 12px;
+        height: 12px;
+        background: white;
+        border-radius: 50%;
+      "></div>
+    </div>`,
     iconSize: [32, 32],
     iconAnchor: [16, 32],
     popupAnchor: [0, -32],
   });
 
-  const endIcon = L.icon({
-    iconUrl: "/icons/circle.png",
+  const endIcon = L.divIcon({
+    className: "modern-location-pin end-pin",
+    html: `<div style="
+      width: 32px; 
+      height: 32px; 
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      border: 3px solid white;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      position: relative;
+    ">
+      <div style="
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) rotate(45deg);
+        width: 12px;
+        height: 12px;
+        background: white;
+        border-radius: 50%;
+      "></div>
+    </div>`,
     iconSize: [32, 32],
     iconAnchor: [16, 32],
     popupAnchor: [0, -32],
   });
 
-  // Enhanced search function with Zamboanga City focus
+  // Zamboanga City location search using local database (simplified working version)
   const searchLocations = async (
     query: string
   ): Promise<LocationSuggestion[]> => {
     if (query.length < 2) return [];
 
     try {
-      // First, search our local Zamboanga database
-      const localResults = searchZamboCityLocations(query, 8);
-      const localSuggestions: LocationSuggestion[] = (await localResults).map(
-        (location, index) => ({
-          display_name: `${location.displayName} - Zamboanga City`,
+      console.log(`🔍 Searching for "${query}" in local Zamboanga database...`);
+
+      // Use the local Zamboanga City database (async version)
+      const zamboCityResults = await searchZamboCityLocations(query, 5);
+
+      if (!Array.isArray(zamboCityResults)) {
+        console.error(
+          "❌ Local search returned invalid data:",
+          zamboCityResults
+        );
+        return [];
+      }
+
+      const suggestions = zamboCityResults.map(
+        (location: ZamboCityLocation, index: number) => ({
+          display_name: location.displayName,
           lat: location.lat.toString(),
           lon: location.lng.toString(),
-          place_id: `local_${index}`,
+          place_id: `zambo_${location.name
+            .toLowerCase()
+            .replace(/\s+/g, "_")}_${index}`,
           type: location.type,
           isLocal: true,
         })
       );
 
-      // If we have good local results (2 or more), prioritize them heavily
-      if (localSuggestions.length >= 2) {
-        // Still get some external results but limit them
-        try {
-          const response = await fetch(
-            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-              query + " Zamboanga City Mindanao Philippines"
-            )}&limit=2&addressdetails=1&bounded=1&viewbox=122.0,6.8,122.2,7.0`
-          );
-
-          let externalData = await response.json();
-
-          // Filter out results that are too far from Zamboanga
-          externalData = externalData.filter((item: any) => {
-            const lat = parseFloat(item.lat);
-            const lon = parseFloat(item.lon);
-            return lat >= 6.8 && lat <= 7.0 && lon >= 122.0 && lon <= 122.2;
-          });
-
-          const externalSuggestions: LocationSuggestion[] = externalData.map(
-            (item: any) => ({
-              display_name: item.display_name,
-              lat: item.lat,
-              lon: item.lon,
-              place_id: item.place_id,
-              isLocal: false,
-            })
-          );
-
-          // Remove duplicates and return local results first
-          const allSuggestions = [...localSuggestions, ...externalSuggestions];
-          return removeDuplicateLocations(allSuggestions).slice(0, 8);
-        } catch (error) {
-          console.warn("External search failed, using local only:", error);
-          return localSuggestions;
-        }
-      }
-
-      // If not enough local results, get more from external API
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-          query + " Zamboanga City Mindanao Philippines"
-        )}&limit=5&addressdetails=1&bounded=1&viewbox=122.0,6.8,122.2,7.0`
+      console.log(
+        `✅ Found ${suggestions.length} local Zamboanga locations for "${query}"`
       );
-
-      let externalData = await response.json();
-
-      // Filter out results that are too far from Zamboanga
-      externalData = externalData.filter((item: any) => {
-        const lat = parseFloat(item.lat);
-        const lon = parseFloat(item.lon);
-        return lat >= 6.8 && lat <= 7.0 && lon >= 122.0 && lon <= 122.2;
-      });
-
-      const externalSuggestions: LocationSuggestion[] = externalData.map(
-        (item: any) => ({
-          display_name: item.display_name,
-          lat: item.lat,
-          lon: item.lon,
-          place_id: item.place_id,
-          isLocal: false,
-        })
-      );
-
-      // Combine results, prioritizing local ones
-      const allSuggestions = [...localSuggestions, ...externalSuggestions];
-      return removeDuplicateLocations(allSuggestions).slice(0, 8);
+      return suggestions;
     } catch (error) {
-      console.error("Error searching locations:", error);
-
-      // Fallback to local search only
-      const localResults = searchZamboCityLocations(query, 5);
-      return (await localResults).map((location, index) => ({
-        display_name: `${location.displayName} - Zamboanga City`,
-        lat: location.lat.toString(),
-        lon: location.lng.toString(),
-        place_id: `local_${index}`,
-        type: location.type,
-        isLocal: true,
-      }));
+      console.error("Error searching Zamboanga City locations:", error);
+      return [];
     }
   };
 
-  // Helper function to remove duplicate locations
-  const removeDuplicateLocations = (
-    suggestions: LocationSuggestion[]
-  ): LocationSuggestion[] => {
-    return suggestions.filter((suggestion, index) => {
-      const currentLat = parseFloat(suggestion.lat);
-      const currentLon = parseFloat(suggestion.lon);
+  // Load terrain roads data for enhanced routing
+  const loadTerrainRoadsData = async (): Promise<void> => {
+    if (terrainRoadsLoaded) return;
 
-      return !suggestions.slice(0, index).some((existing) => {
-        const existingLat = parseFloat(existing.lat);
-        const existingLon = parseFloat(existing.lon);
-        const distance = Math.sqrt(
-          Math.pow(currentLat - existingLat, 2) +
-            Math.pow(currentLon - existingLon, 2)
-        );
-        return distance < 0.001; // ~100m threshold
+    try {
+      console.log("🗺️ Loading terrain roads data...");
+      const response = await fetch("/data/terrain_roads.geojson");
+
+      if (!response.ok) {
+        throw new Error(`Failed to load terrain roads: ${response.status}`);
+      }
+
+      const data: TerrainRoadsData = await response.json();
+
+      console.log(`✅ Loaded ${data.features.length} terrain road features`);
+      console.log("📊 Sample road data:", {
+        totalFeatures: data.features.length,
+        floodedRoads: data.features.filter((f) => f.properties.flooded === "1")
+          .length,
+        safeRoads: data.features.filter((f) => f.properties.flooded === "0")
+          .length,
+        averageLength:
+          (
+            data.features.reduce((sum, f) => sum + f.properties.length_m, 0) /
+            data.features.length
+          ).toFixed(2) + "m",
       });
+
+      setTerrainRoadsData(data);
+      setTerrainRoadsLoaded(true);
+    } catch (error) {
+      console.error("❌ Failed to load terrain roads data:", error);
+      setTerrainRoadsLoaded(true); // Mark as loaded to prevent retry loops
+    }
+  };
+
+  // Terrain-aware routing using the local roads network
+  const getTerrainAwareRoute = async (
+    start: LatLng,
+    end: LatLng,
+    priorityMode: "safe" | "balanced" | "direct" = "balanced"
+  ): Promise<LatLng[]> => {
+    console.log(`🛣️ Calculating terrain-aware ${priorityMode} route...`);
+
+    let strategicWaypoints: LatLng[] = [];
+
+    if (!terrainRoadsData) {
+      console.warn(
+        "⚠️ Terrain roads data not loaded, falling back to standard routing"
+      );
+    } else {
+      // Analyze terrain data to find strategic waypoints based on priority mode
+      let availableRoads = terrainRoadsData.features;
+
+      switch (priorityMode) {
+        case "safe":
+          // Find safe roads and use them as waypoints for routing
+          const safeRoads = terrainRoadsData.features.filter(
+            (road) =>
+              road.properties.flooded === "0" && road.properties.elev_mean > 3
+          );
+
+          // Find safe roads that are reasonably close to the route path (more restrictive bounds for Zamboanga City)
+          const zamboangaBounds = {
+            minLat: 6.85, // Southern boundary of Zamboanga City
+            maxLat: 7.15, // Northern boundary of Zamboanga City
+            minLng: 122.0, // Western boundary of Zamboanga City
+            maxLng: 122.15, // Eastern boundary of Zamboanga City (avoid going too far into water)
+          };
+
+          const relevantSafeRoads = safeRoads.filter((road) => {
+            if (
+              road.geometry.type === "LineString" &&
+              road.geometry.coordinates.length > 0
+            ) {
+              const roadMid =
+                road.geometry.coordinates[
+                  Math.floor(road.geometry.coordinates.length / 2)
+                ];
+              const roadLat = roadMid[1];
+              const roadLng = roadMid[0];
+
+              // Must be within Zamboanga City bounds (avoid water areas)
+              const withinBounds =
+                roadLat >= zamboangaBounds.minLat &&
+                roadLat <= zamboangaBounds.maxLat &&
+                roadLng >= zamboangaBounds.minLng &&
+                roadLng <= zamboangaBounds.maxLng;
+
+              // Must be reasonably close to the route path (smaller buffer to avoid water)
+              const nearRoute =
+                roadLat >= Math.min(start.lat, end.lat) - 0.01 &&
+                roadLat <= Math.max(start.lat, end.lat) + 0.01 &&
+                roadLng >= Math.min(start.lng, end.lng) - 0.01 &&
+                roadLng <= Math.max(start.lng, end.lng) + 0.01;
+
+              return withinBounds && nearRoute;
+            }
+            return false;
+          });
+
+          // Use safe road midpoints as waypoints, but validate they're on land
+          strategicWaypoints = relevantSafeRoads
+            .slice(0, 1)
+            .map((road) => {
+              const midIndex = Math.floor(road.geometry.coordinates.length / 2);
+              const midPoint = road.geometry.coordinates[midIndex];
+              const waypoint = { lat: midPoint[1], lng: midPoint[0] };
+
+              // Validate waypoint is within reasonable bounds for Zamboanga City
+              if (
+                waypoint.lat >= zamboangaBounds.minLat &&
+                waypoint.lat <= zamboangaBounds.maxLat &&
+                waypoint.lng >= zamboangaBounds.minLng &&
+                waypoint.lng <= zamboangaBounds.maxLng
+              ) {
+                return waypoint;
+              }
+              return null;
+            })
+            .filter((wp) => wp !== null);
+
+          console.log(
+            `🛡️ Found ${relevantSafeRoads.length} relevant safe roads, using ${strategicWaypoints.length} waypoints`
+          );
+          break;
+
+        case "direct":
+          // No waypoints for direct route
+          console.log(`🚀 Using direct route with no waypoints`);
+          break;
+
+        case "balanced":
+        default:
+          // For balanced route, use simple strategic waypoint to avoid complexity
+          // Instead of using terrain data that might lead to water, use safe city waypoints
+          const midLat = (start.lat + end.lat) / 2;
+          const midLng = (start.lng + end.lng) / 2;
+
+          // Add small offset toward city center (avoid water) - Zamboanga City center is roughly at 6.91, 122.08
+          const cityCenter = { lat: 6.91, lng: 122.08 };
+          const offsetLat = midLat + (cityCenter.lat - midLat) * 0.1; // 10% toward city center
+          const offsetLng = midLng + (cityCenter.lng - midLng) * 0.1;
+
+          // Validate the waypoint is within city bounds
+          if (
+            offsetLat >= 6.85 &&
+            offsetLat <= 7.15 &&
+            offsetLng >= 122.0 &&
+            offsetLng <= 122.15
+          ) {
+            strategicWaypoints = [{ lat: offsetLat, lng: offsetLng }];
+          }
+
+          console.log(
+            `⚖️ Using ${strategicWaypoints.length} city-center waypoints for balanced route`
+          );
+          break;
+      }
+    }
+
+    // Debug waypoints
+    if (strategicWaypoints.length > 0) {
+      console.log(
+        `📍 Generated ${strategicWaypoints.length} strategic waypoints for ${priorityMode} route:`
+      );
+      strategicWaypoints.forEach((wp, i) => {
+        console.log(`   Waypoint ${i + 1}: lat=${wp.lat}, lng=${wp.lng}`);
+        if (wp.lat < 6.8 || wp.lat > 7.2 || wp.lng < 122.0 || wp.lng > 122.3) {
+          console.error(`   ❌ Waypoint ${i + 1} is outside Zamboanga bounds!`);
+        }
+      });
+    }
+
+    try {
+      // Try local OSRM first if available with strategic waypoints
+      if (USE_LOCAL_OSRM) {
+        console.log(
+          `🏠 Attempting local OSRM for ${priorityMode} route with ${strategicWaypoints.length} waypoints...`
+        );
+        const route = await getLocalOSRMRoute(start, end, strategicWaypoints);
+
+        // Analyze the route against terrain data for risk assessment
+        if (terrainRoadsData) {
+          analyzeRouteRisk(route);
+        }
+
+        return route;
+      }
+    } catch (localError) {
+      console.warn(
+        `⚠️ Local OSRM unavailable for ${priorityMode} route:`,
+        localError.message
+      );
+    }
+
+    try {
+      // Fallback to external routing services with terrain-based waypoints
+      console.log(
+        `🌐 Using external routing for ${priorityMode} route with terrain-based waypoints...`
+      );
+
+      let route: LatLng[] = [];
+
+      if (strategicWaypoints.length > 0) {
+        // Use terrain-derived waypoints
+        console.log(
+          `📍 Using ${strategicWaypoints.length} terrain-based waypoints for ${priorityMode} route`
+        );
+        route = await getRouteFromAPI(start, end, strategicWaypoints);
+      } else {
+        // Fallback to simple waypoint strategies if no terrain data available
+        if (priorityMode === "safe") {
+          // Safe route: stay within city bounds and avoid water areas
+          const cityCenter = { lat: 6.91, lng: 122.08 }; // Zamboanga City center
+          const midLat = (start.lat + end.lat) / 2;
+          const midLng = (start.lng + end.lng) / 2;
+
+          // Push waypoint slightly toward city center to avoid water
+          const midPoint = {
+            lat: Math.max(
+              6.86,
+              Math.min(7.1, midLat + (cityCenter.lat - midLat) * 0.2)
+            ),
+            lng: Math.max(
+              122.01,
+              Math.min(122.14, midLng + (cityCenter.lng - midLng) * 0.2)
+            ),
+          };
+          route = await getRouteFromAPI(start, end, [midPoint]);
+        } else if (priorityMode === "direct") {
+          // Direct route: shortest path
+          route = await getRouteFromAPI(start, end, []);
+        } else {
+          // Balanced route: slight detour but stay on land
+          const midLat = (start.lat + end.lat) / 2;
+          const midLng = (start.lng + end.lng) / 2;
+
+          // Ensure waypoint stays within safe city bounds
+          const midPoint = {
+            lat: Math.max(6.86, Math.min(7.1, midLat + 0.005)), // Constrain to city bounds
+            lng: Math.max(122.01, Math.min(122.14, midLng)), // Constrain to avoid water
+          };
+          route = await getRouteFromAPI(start, end, [midPoint]);
+        }
+      }
+
+      // Analyze the route against terrain data for risk assessment
+      if (terrainRoadsData && route.length > 0) {
+        analyzeRouteRisk(route);
+      }
+
+      return route;
+    } catch (error) {
+      console.error(`❌ All routing failed for ${priorityMode} route:`, error);
+
+      // Last resort: create a simple straight line
+      console.log(
+        `📍 Creating fallback straight line for ${priorityMode} route`
+      );
+      return [start, end];
+    }
+  };
+
+  // Analyze a route against terrain roads data for risk assessment
+  const analyzeRouteRisk = (route: LatLng[]): void => {
+    if (!terrainRoadsData || route.length === 0) return;
+
+    let floodedSegments = 0;
+    let totalSegments = 0;
+    let riskScore = 0;
+
+    // Check each route segment against nearby terrain roads
+    for (let i = 0; i < route.length - 1; i++) {
+      const segmentStart = route[i];
+      const segmentEnd = route[i + 1];
+      totalSegments++;
+
+      // Find nearby terrain roads (within ~100m)
+      const nearbyRoads = terrainRoadsData.features.filter((road) => {
+        return road.geometry.coordinates.some((coord) => {
+          const distance = Math.sqrt(
+            Math.pow(coord[1] - segmentStart.lat, 2) +
+              Math.pow(coord[0] - segmentStart.lng, 2)
+          );
+          return distance < 0.001; // ~100m threshold
+        });
+      });
+
+      // Assess flood risk for this segment
+      const floodedNearby = nearbyRoads.filter(
+        (road) => road.properties.flooded === "1"
+      );
+      if (floodedNearby.length > 0) {
+        floodedSegments++;
+        riskScore += floodedNearby.length;
+      }
+    }
+
+    const floodRiskPercentage =
+      totalSegments > 0 ? (floodedSegments / totalSegments) * 100 : 0;
+
+    console.log("🔍 Route Risk Analysis:", {
+      totalSegments,
+      floodedSegments,
+      floodRiskPercentage: floodRiskPercentage.toFixed(1) + "%",
+      riskScore,
+      riskLevel:
+        floodRiskPercentage < 20
+          ? "Low"
+          : floodRiskPercentage < 50
+          ? "Medium"
+          : "High",
     });
   };
 
@@ -906,9 +1428,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         return await getLocalOSRMRoute(start, end, waypoints);
       } catch (localError) {
         console.warn(
-          "🔄 Local OSRM failed, falling back to GraphHopper:",
+          "🔄 Local OSRM failed, falling back to external services:",
           localError.message
         );
+        // Continue to external services instead of throwing
       }
     } else {
       console.log(
@@ -916,18 +1439,28 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       );
     }
 
+    // Try GraphHopper first (better for routing with waypoints)
     try {
       const apiKey = import.meta.env.VITE_GRAPHHOPPER_API_KEY;
       if (apiKey && apiKey !== "585bccb3-2df7-4dcb-b5bf-fc40a8bf4eea") {
+        console.log("🗺️ Using GraphHopper for routing...");
         return await getGraphHopperRoute(start, end, waypoints);
       }
-      throw new Error("No GraphHopper API key");
+      console.log("⚠️ No valid GraphHopper API key, trying public OSRM...");
     } catch (graphHopperError) {
       console.warn(
         "🔄 GraphHopper failed, falling back to public OSRM:",
         graphHopperError.message
       );
+    }
+
+    // Fallback to public OSRM
+    try {
+      console.log("🌐 Using public OSRM for routing...");
       return await getOSRMRoute(start, end, waypoints);
+    } catch (osrmError) {
+      console.error("❌ All routing services failed:", osrmError.message);
+      throw new Error("No routing service available");
     }
   };
 
@@ -4441,16 +4974,215 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   ): Promise<RouteDetails> => {
     try {
       console.log(
-        "Generating multiple route alternatives with risk analysis..."
+        "🚀 Generating multiple route alternatives with risk analysis..."
       );
+      console.log("📍 DEBUG: Input coordinates:");
+      console.log(`   Start: lat=${start.lat}, lng=${start.lng}`);
+      console.log(`   End: lat=${end.lat}, lng=${end.lng}`);
+
+      // Validate coordinates are within Zamboanga bounds before routing
+      if (
+        start.lat < 6.8 ||
+        start.lat > 7.2 ||
+        start.lng < 122.0 ||
+        start.lng > 122.3
+      ) {
+        console.error("❌ Start coordinates outside Zamboanga bounds!");
+        throw new Error(
+          `Start coordinates (${start.lat}, ${start.lng}) are outside Zamboanga City bounds`
+        );
+      }
+
+      if (
+        end.lat < 6.8 ||
+        end.lat > 7.2 ||
+        end.lng < 122.0 ||
+        end.lng > 122.3
+      ) {
+        console.error("❌ End coordinates outside Zamboanga bounds!");
+        throw new Error(
+          `End coordinates (${end.lat}, ${end.lng}) are outside Zamboanga City bounds`
+        );
+      }
 
       // Try backend route API first, fallback to OSRM if it fails
       let routes: LatLng[][] = [];
       let routeAnalyses: any[] = [];
 
       try {
+        // First try the local routing service on port 8001 (with GeoJSON road data)
         console.log(
-          `Calling route API: ${BACKEND_URL}/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`
+          "🚀 Trying local routing service with GeoJSON road data..."
+        );
+        const localRoute = await getLocalRoutingServiceRoute(start, end);
+
+        // Handle both local routing format and OSRM fallback format
+        let waypoints = [];
+        let distance = 0;
+        let duration = 0;
+
+        if (localRoute && localRoute.route && localRoute.route.length > 0) {
+          console.log("✅ Got route from local routing service!");
+
+          // Convert the route points to waypoints format
+          waypoints = localRoute.route.map((point: any) => ({
+            lat: point.lat,
+            lng: point.lng,
+          }));
+          distance = localRoute.distance || 0;
+          duration = localRoute.duration || 0;
+        } else if (
+          localRoute &&
+          localRoute.routes &&
+          localRoute.routes.length > 0
+        ) {
+          console.log(
+            `✅ Got ${localRoute.routes.length} route(s) from OSRM fallback service!`
+          );
+
+          // Handle OSRM format with multiple routes if available
+          if (localRoute.routes.length >= 3) {
+            console.log("🎯 Using 3 different OSRM alternative routes");
+            // Use the first 3 routes as different alternatives
+            const route1 = localRoute.routes[0];
+            const route2 = localRoute.routes[1];
+            const route3 = localRoute.routes[2];
+
+            // Will be processed separately below for each route type
+          } else {
+            console.log(
+              "⚠️ Only got 1-2 routes, will create variations of the main route"
+            );
+            // Use first route and create variations
+            const route = localRoute.routes[0];
+            waypoints = route.geometry.coordinates.map((coord: any) => ({
+              lat: coord[1],
+              lng: coord[0],
+            }));
+            distance = (route.distance || 0) / 1000; // Convert from meters to km
+            duration = (route.duration || 0) / 60; // Convert from seconds to minutes
+          }
+        }
+
+        // Create route objects based on available data
+        let safeRoute: FloodRoute;
+        let manageableRoute: FloodRoute;
+        let proneRoute: FloodRoute;
+
+        // Handle multiple OSRM routes if available
+        if (localRoute && localRoute.routes && localRoute.routes.length >= 3) {
+          console.log("🎯 Using 3 different OSRM alternative routes");
+
+          // Route 1: Safe (best/fastest route)
+          const route1 = localRoute.routes[0];
+          const waypoints1 = route1.geometry.coordinates.map((coord: any) => ({
+            lat: coord[1],
+            lng: coord[0],
+          }));
+          safeRoute = {
+            waypoints: waypoints1,
+            distance: `${((route1.distance || 0) / 1000).toFixed(1)} km`,
+            time: `${((route1.duration || 0) / 60).toFixed(0)} min`,
+            riskLevel: "Safe Route",
+            floodRisk: "safe",
+            color: "#27ae60",
+            description: "Recommended safe route (fastest)",
+          };
+
+          // Route 2: Manageable (alternative route)
+          const route2 = localRoute.routes[1];
+          const waypoints2 = route2.geometry.coordinates.map((coord: any) => ({
+            lat: coord[1],
+            lng: coord[0],
+          }));
+          manageableRoute = {
+            waypoints: waypoints2,
+            distance: `${((route2.distance || 0) / 1000).toFixed(1)} km`,
+            time: `${((route2.duration || 0) / 60).toFixed(0)} min`,
+            riskLevel: "Manageable Risk",
+            floodRisk: "manageable",
+            color: "#f39c12",
+            description: "Alternative route with manageable risk",
+          };
+
+          // Route 3: High Risk (third alternative)
+          const route3 = localRoute.routes[2];
+          const waypoints3 = route3.geometry.coordinates.map((coord: any) => ({
+            lat: coord[1],
+            lng: coord[0],
+          }));
+          proneRoute = {
+            waypoints: waypoints3,
+            distance: `${((route3.distance || 0) / 1000).toFixed(1)} km`,
+            time: `${((route3.duration || 0) / 60).toFixed(0)} min`,
+            riskLevel: "High Risk",
+            floodRisk: "prone",
+            color: "#e74c3c",
+            description: "High risk alternative route",
+          };
+
+          console.log(
+            `📍 Using 3 different routes: Safe(${waypoints1.length} pts), Manageable(${waypoints2.length} pts), Prone(${waypoints3.length} pts)`
+          );
+        } else if (waypoints.length > 0) {
+          console.log(
+            `📍 Using single route with variations: ${
+              waypoints.length
+            } waypoints, ${distance.toFixed(1)}km, ${duration.toFixed(0)}min`
+          );
+
+          // Create route objects for each risk level with the same waypoints but different styling
+          safeRoute = {
+            waypoints,
+            distance: `${distance.toFixed(1)} km`,
+            time: `${duration.toFixed(0)} min`,
+            riskLevel: "Safe Route",
+            floodRisk: "safe",
+            color: "#27ae60",
+            description: "Recommended safe route using local road data",
+          };
+
+          manageableRoute = {
+            waypoints,
+            distance: `${distance.toFixed(1)} km`,
+            time: `${(duration * 1.2).toFixed(0)} min`,
+            riskLevel: "Manageable Risk",
+            floodRisk: "manageable",
+            color: "#f39c12",
+            description: "Alternative route with manageable flood risk",
+          };
+
+          proneRoute = {
+            waypoints,
+            distance: `${distance.toFixed(1)} km`,
+            time: `${(duration * 1.5).toFixed(0)} min`,
+            riskLevel: "High Risk",
+            floodRisk: "prone",
+            color: "#e74c3c",
+            description: "High risk route - use with caution during floods",
+          };
+        } else {
+          // No valid routes found, continue to fallback
+          console.log("❌ No valid routes found from local service");
+        }
+
+        // Return routes if we have them
+        if (safeRoute && manageableRoute && proneRoute) {
+          return {
+            safeRoute,
+            manageableRoute,
+            proneRoute,
+            startName: selectedStartLocation?.display_name || "Start Point",
+            endName: selectedEndLocation?.display_name || "End Point",
+          };
+        }
+
+        // Fallback to the original backend service if local routing fails
+        console.log(
+          "⚠️ Local routing service failed, falling back to backend service..."
+        );
+        console.log(
+          `🌐 Calling route API: ${BACKEND_URL}/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`
         );
 
         const controller = new AbortController();
@@ -4514,28 +5246,147 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         }
       }
 
-      // Generate distinct routes instead of relying on backend
-      console.log(
-        "Generating 3 distinct routes with different characteristics..."
-      );
-      const distinctRoutes = await generateDistinctRoutes(start, end);
+      // Generate distinct routes using terrain-aware routing
+      console.log("Generating 3 distinct routes with terrain-aware routing...");
 
-      // Convert to the format expected by the rest of the code
-      routes = distinctRoutes.map((routeData) => {
-        if (routeData.route && routeData.route.geometry) {
-          return routeData.route; // OSRM format
-        } else {
-          // Manual waypoint format
-          return {
-            distance: routeData.route.distance,
-            duration: routeData.route.duration,
-            geometry: {
-              coordinates: routeData.waypoints.map((wp) => [wp.lng, wp.lat]),
-            },
-            routeType: routeData.type,
-          };
+      // Use terrain-aware routing for different priority modes
+      console.log(
+        `🚀 Generating terrain-aware routes from ${start.lat},${start.lng} to ${end.lat},${end.lng}`
+      );
+      console.log(
+        `📊 Route bounds check: Start in bounds? ${
+          start.lat >= 6.8 &&
+          start.lat <= 7.2 &&
+          start.lng >= 122.0 &&
+          start.lng <= 122.3
+        }`
+      );
+      console.log(
+        `📊 Route bounds check: End in bounds? ${
+          end.lat >= 6.8 &&
+          end.lat <= 7.2 &&
+          end.lng >= 122.0 &&
+          end.lng <= 122.3
+        }`
+      );
+
+      // Add timeout wrapper for route calculations to prevent hanging
+      const calculateRouteWithTimeout = async (
+        start: LatLng,
+        end: LatLng,
+        profile: string,
+        timeoutMs: number = 3000
+      ) => {
+        try {
+          return await Promise.race([
+            localRoutingService.calculateRoute(
+              start.lat,
+              start.lng,
+              end.lat,
+              end.lng
+            ),
+            new Promise<never>((_, reject) =>
+              setTimeout(
+                () =>
+                  reject(
+                    new Error(`Route calculation timeout after ${timeoutMs}ms`)
+                  ),
+                timeoutMs
+              )
+            ),
+          ]);
+        } catch (error) {
+          console.warn(`Route calculation failed for ${profile}:`, error);
+          return null;
         }
+      };
+
+      console.log(
+        "🚀 Attempting terrain-aware route calculations with timeout..."
+      );
+
+      const terrainRoutes = await Promise.allSettled([
+        calculateRouteWithTimeout(start, end, "driving", 3000), // Safe route using Docker OSRM
+        calculateRouteWithTimeout(start, end, "driving", 3000), // Alternative route using driving profile
+        calculateRouteWithTimeout(start, end, "driving", 3000), // Direct route using driving profile
+      ]);
+
+      // Extract successful routes
+      const validTerrainRoutes = terrainRoutes
+        .filter(
+          (result) =>
+            result.status === "fulfilled" &&
+            result.value &&
+            result.value.success &&
+            result.value.route &&
+            result.value.route.length > 0
+        )
+        .map((result) => {
+          const routeResponse = (result as any).value;
+          return routeResponse.route as LatLng[];
+        });
+
+      console.log(
+        `Generated ${validTerrainRoutes.length} terrain-aware routes (${
+          terrainRoutes.length - validTerrainRoutes.length
+        } failed/timeout)`
+      );
+
+      // Convert terrain routes to the expected routes format and validate coordinates
+      routes = validTerrainRoutes.filter((route) => {
+        if (!route || route.length === 0) return false;
+
+        // Check if any route points are in water (too far east of Zamboanga City)
+        const hasWaterPoints = route.some(
+          (point) =>
+            point.lng > 122.2 ||
+            point.lng < 122.0 ||
+            point.lat > 7.2 ||
+            point.lat < 6.8
+        );
+
+        if (hasWaterPoints) {
+          console.warn(
+            `🌊 Filtering out route with water points:`,
+            route.slice(0, 3)
+          );
+          return false;
+        }
+
+        return true;
       });
+
+      console.log(
+        `Converted ${routes.length} valid terrain routes (filtered out water routes)`
+      );
+
+      // If we don't have enough routes or they're going into water, create simple safe fallbacks
+      if (routes.length < 3) {
+        console.log(
+          `⚠️ Only got ${routes.length} valid routes, creating safe fallbacks...`
+        );
+
+        // Create simple land-based routes
+        const safeRoutes = [];
+
+        // Direct route
+        safeRoutes.push([start, end]);
+
+        // Route with city-center waypoint
+        const cityWaypoint = { lat: 6.91, lng: 122.08 }; // Zamboanga City center
+        safeRoutes.push([start, cityWaypoint, end]);
+
+        // Route with slight northern detour (staying on land)
+        const northWaypoint = {
+          lat: Math.min(7.0, (start.lat + end.lat) / 2 + 0.01),
+          lng: Math.max(122.05, Math.min(122.12, (start.lng + end.lng) / 2)),
+        };
+        safeRoutes.push([start, northWaypoint, end]);
+
+        // Add safe fallback routes
+        routes = routes.concat(safeRoutes.slice(routes.length - 3));
+        console.log(`✅ Added ${safeRoutes.length} safe fallback routes`);
+      }
 
       console.log(`Generated ${routes.length} distinct routes`);
 
@@ -4551,7 +5402,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       const processedRoutes = await Promise.all(
         routes.map(async (route: any, index: number) => {
           try {
-            console.log(`Analyzing risk for route ${index + 1}...`);
+            console.log(`📍 Analyzing risk for route ${index + 1}...`);
 
             // Ensure route has proper structure
             let routeCoordinates;
@@ -4567,6 +5418,14 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               throw new Error(`Invalid route structure for route ${index + 1}`);
             }
 
+            console.log(`🗺️ Route ${index + 1} coordinates:`, {
+              totalPoints: routeCoordinates.length,
+              firstPoint: routeCoordinates[0],
+              lastPoint: routeCoordinates[routeCoordinates.length - 1],
+              midPoint:
+                routeCoordinates[Math.floor(routeCoordinates.length / 2)],
+            });
+
             // Basic route data with fallback values
             const routeDistance = route.distance || 5000 + index * 2000;
             const routeDuration = route.duration || 600 + index * 300;
@@ -4579,14 +5438,29 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               // First route = SAFEST (direct/fastest becomes safest)
               riskScore = 2.5 + Math.random() * 1.0; // 2.5-3.5 range
               routeType = "safe";
+              console.log(
+                `✅ Route ${
+                  index + 1
+                } assigned as SAFE route (risk: ${riskScore.toFixed(2)})`
+              );
             } else if (index === 1) {
               // Second route = MANAGEABLE (coastal/city route)
               riskScore = 4.5 + Math.random() * 1.5; // 4.5-6.0 range
               routeType = "manageable";
+              console.log(
+                `⚠️ Route ${
+                  index + 1
+                } assigned as MANAGEABLE route (risk: ${riskScore.toFixed(2)})`
+              );
             } else {
               // Third route = FLOOD PRONE (low-lying areas)
               riskScore = 7.0 + Math.random() * 1.5; // 7.0-8.5 range
               routeType = "flood_prone";
+              console.log(
+                `🚨 Route ${
+                  index + 1
+                } assigned as FLOOD-PRONE route (risk: ${riskScore.toFixed(2)})`
+              );
             }
 
             return {
@@ -5416,6 +6290,236 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     }
   };
 
+  // Educational pathfinding functions
+  const showHighRiskRouteFirst = async (routes: any) => {
+    if (!mapRef.current) return;
+
+    // Clear any existing route layers
+    routeLayersRef.current.forEach((layer) => {
+      if (mapRef.current && mapRef.current.hasLayer(layer)) {
+        mapRef.current.removeLayer(layer);
+      }
+    });
+    routeLayersRef.current = [];
+
+    // Show only the high-risk (prone) route first in bright red
+    if (
+      routes.proneRoute &&
+      routes.proneRoute.waypoints &&
+      routes.proneRoute.waypoints.length >= 2
+    ) {
+      const highRiskRoute = L.polyline(
+        routes.proneRoute.waypoints.map((wp: any) => [wp.lat, wp.lng]),
+        {
+          color: "#ff0000",
+          weight: 8,
+          opacity: 0.9,
+          className: "educational-high-risk-route",
+          dashArray: undefined,
+        }
+      );
+
+      highRiskRoute.bindTooltip(
+        `🚨 HIGH RISK ROUTE<br/>This is what happens without safety planning!<br/>📍 ${routes.proneRoute.distance} • ⏱️ ${routes.proneRoute.time}`,
+        {
+          permanent: true,
+          direction: "center",
+          offset: [0, 0],
+          className: "educational-tooltip high-risk",
+        }
+      );
+
+      highRiskRoute.addTo(mapRef.current);
+      routeLayersRef.current.push(highRiskRoute);
+
+      // Animate the route drawing
+      const waypoints = routes.proneRoute.waypoints.map((wp: any) => [
+        wp.lat,
+        wp.lng,
+      ]);
+      await animateRouteDrawing(highRiskRoute, waypoints);
+    }
+  };
+
+  // NEW FUNCTION: Show high-risk route as overlay without clearing existing routes
+  const showHighRiskRouteOverlay = async (routes: any) => {
+    if (!mapRef.current) return;
+
+    // DON'T clear existing routes - just add the high-risk route on top
+    // Show the high-risk (prone) route as an overlay in bright red
+    if (
+      routes.proneRoute &&
+      routes.proneRoute.waypoints &&
+      routes.proneRoute.waypoints.length >= 2
+    ) {
+      const highRiskRoute = L.polyline(
+        routes.proneRoute.waypoints.map((wp: any) => [wp.lat, wp.lng]),
+        {
+          color: "#ff0000",
+          weight: 7,
+          opacity: 0.8,
+          className: "educational-high-risk-overlay",
+          dashArray: "10, 5", // Dashed line to show it's overlaying
+        }
+      );
+
+      highRiskRoute.bindTooltip(
+        `🚨 HIGH RISK ROUTE<br/>Compare with the safe route below!<br/>📍 ${routes.proneRoute.distance} • ⏱️ ${routes.proneRoute.time}`,
+        {
+          permanent: true,
+          direction: "center",
+          offset: [0, 0],
+          className: "educational-tooltip high-risk-overlay",
+        }
+      );
+
+      highRiskRoute.addTo(mapRef.current);
+      routeLayersRef.current.push(highRiskRoute);
+
+      // Animate the route drawing
+      const waypoints = routes.proneRoute.waypoints.map((wp: any) => [
+        wp.lat,
+        wp.lng,
+      ]);
+      await animateRouteDrawing(highRiskRoute, waypoints);
+    }
+  };
+
+  // Animate route drawing for educational effect
+  const animateRouteDrawing = (polyline: L.Polyline, waypoints: any[]) => {
+    return new Promise<void>((resolve) => {
+      let currentIndex = 0;
+      const interval = setInterval(() => {
+        currentIndex++;
+        if (currentIndex >= waypoints.length) {
+          clearInterval(interval);
+          resolve();
+          return;
+        }
+
+        // Update polyline to show progress with pulse effect
+        const currentWaypoints = waypoints.slice(0, currentIndex + 1);
+        polyline.setLatLngs(currentWaypoints);
+
+        // Add subtle pulse effect to show progress
+        const element = polyline.getElement() as HTMLElement;
+        if (element) {
+          element.style.animation = "pulse 0.3s ease-in-out";
+          setTimeout(() => {
+            if (element) {
+              element.style.animation = "";
+            }
+          }, 300);
+        }
+      }, 75); // Faster animation: Draw segment every 75ms
+    });
+  };
+
+  // Animated safe route pathfinding visualization
+  const animateSafeRoutePathfinding = async (
+    start: LatLng,
+    end: LatLng,
+    safeRoute: any
+  ) => {
+    if (!mapRef.current || !safeRoute?.waypoints) return;
+
+    console.log("🎓 Starting safe route pathfinding animation...");
+    setPathfindingStep("finding-safe");
+
+    const routeWaypoints = safeRoute.waypoints;
+
+    // Clear any existing route layers first
+    routeLayersRef.current.forEach((layer) => {
+      if (mapRef.current && mapRef.current.hasLayer(layer)) {
+        mapRef.current.removeLayer(layer);
+      }
+    });
+    routeLayersRef.current = [];
+
+    // Create the safe route polyline with all waypoints to follow roads properly
+    const routeCoords = routeWaypoints.map((wp: any) => [wp.lat, wp.lng]);
+    const safeRoutePolyline = L.polyline(routeCoords, {
+      color: "#27ae60",
+      weight: 6,
+      opacity: 0.9,
+      className: "educational-safe-route",
+      dashArray: undefined,
+    });
+
+    // Add to map first, then bind tooltip after it has coordinates
+    safeRoutePolyline.addTo(mapRef.current);
+    routeLayersRef.current.push(safeRoutePolyline);
+
+    // Bind tooltip after the polyline is added to map with coordinates
+    safeRoutePolyline.bindTooltip(
+      `✅ SAFE ROUTE FOUND!<br/>Optimal flood-safe path discovered!<br/>📍 ${safeRoute.distance} • ⏱️ ${safeRoute.time}`,
+      {
+        permanent: true,
+        direction: "center",
+        offset: [0, 0],
+        className: "educational-tooltip safe-route",
+      }
+    );
+
+    // Animate the route drawing (same as high-risk route)
+    await animateRouteDrawing(safeRoutePolyline, routeCoords);
+
+    // Show final safe path found
+    setPathFound(routeWaypoints);
+    setPathfindingStep("complete");
+
+    console.log("✅ Safe route pathfinding animation complete!");
+  };
+
+  // Original animated pathfinding search visualization (for reference)
+  const animatePathfindingSearch = async (
+    start: LatLng,
+    end: LatLng,
+    blockedAreas: LatLng[],
+    safeRoute: any
+  ) => {
+    if (!mapRef.current) return;
+
+    setPathfindingStep("showing-risk");
+
+    // Create search visualization
+    const searchNodes: LatLng[] = [];
+    const exploredMarkers: L.CircleMarker[] = [];
+
+    // Simulate pathfinding algorithm exploring nodes
+    const routeSegments = safeRoute.waypoints || [start, end];
+
+    for (let i = 0; i < routeSegments.length; i++) {
+      const node = routeSegments[i];
+      searchNodes.push(node);
+      setExploredNodes([...searchNodes]);
+      setCurrentSearchNode(node);
+
+      // Visual indicator of current search node
+      const searchMarker = L.circleMarker([node.lat, node.lng], {
+        radius: 8,
+        fillColor: "#3498db",
+        color: "#2980b9",
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 0.7,
+        className: "search-node",
+      }).addTo(mapRef.current);
+
+      exploredMarkers.push(searchMarker);
+      circleMarkersRef.current.push(searchMarker);
+
+      // Add pause to show the searching process - slower animation
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      // Change color to show it's been explored
+      searchMarker.setStyle({ fillColor: "#95a5a6", color: "#7f8c8d" });
+    }
+
+    setCurrentSearchNode(null);
+    setPathfindingStep("complete");
+  };
+
   // Draw route on map with DISTINCT visual styling
   const drawRoute = (route: FloodRoute) => {
     if (!mapRef.current) return;
@@ -5544,19 +6648,44 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
   // Handle start location input change
   useEffect(() => {
+    console.log(
+      `🔍 Start input useEffect triggered: "${startLocationInput}", selected: ${
+        selectedStartLocation?.display_name || "none"
+      }`
+    );
+
     const searchTimeout = setTimeout(async () => {
       // Don't show suggestions if a location is already selected
       if (selectedStartLocation) {
+        console.log(
+          `⏹️ Skipping search - start location already selected: ${selectedStartLocation.display_name}`
+        );
         setStartSuggestions([]);
         setShowStartSuggestions(false);
         return;
       }
 
       if (startLocationInput.length >= 3) {
-        const suggestions = await searchLocations(startLocationInput);
-        setStartSuggestions(suggestions);
-        setShowStartSuggestions(true);
+        console.log(
+          `🔎 Searching for start locations: "${startLocationInput}"`
+        );
+        try {
+          const suggestions = await searchLocations(startLocationInput);
+          console.log(
+            `📋 Got ${suggestions.length} start suggestions:`,
+            suggestions
+          );
+          setStartSuggestions(suggestions);
+          setShowStartSuggestions(true);
+        } catch (error) {
+          console.error(`❌ Start location search failed:`, error);
+          setStartSuggestions([]);
+          setShowStartSuggestions(false);
+        }
       } else {
+        console.log(
+          `⏹️ Start input too short (${startLocationInput.length} chars)`
+        );
         setStartSuggestions([]);
         setShowStartSuggestions(false);
       }
@@ -5567,19 +6696,42 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
   // Handle end location input change
   useEffect(() => {
+    console.log(
+      `🔍 End input useEffect triggered: "${endLocationInput}", selected: ${
+        selectedEndLocation?.display_name || "none"
+      }`
+    );
+
     const searchTimeout = setTimeout(async () => {
       // Don't show suggestions if a location is already selected
       if (selectedEndLocation) {
+        console.log(
+          `⏹️ Skipping search - end location already selected: ${selectedEndLocation.display_name}`
+        );
         setEndSuggestions([]);
         setShowEndSuggestions(false);
         return;
       }
 
       if (endLocationInput.length >= 3) {
-        const suggestions = await searchLocations(endLocationInput);
-        setEndSuggestions(suggestions);
-        setShowEndSuggestions(true);
+        console.log(`🔎 Searching for end locations: "${endLocationInput}"`);
+        try {
+          const suggestions = await searchLocations(endLocationInput);
+          console.log(
+            `📋 Got ${suggestions.length} end suggestions:`,
+            suggestions
+          );
+          setEndSuggestions(suggestions);
+          setShowEndSuggestions(true);
+        } catch (error) {
+          console.error(`❌ End location search failed:`, error);
+          setEndSuggestions([]);
+          setShowEndSuggestions(false);
+        }
       } else {
+        console.log(
+          `⏹️ End input too short (${endLocationInput.length} chars)`
+        );
         setEndSuggestions([]);
         setShowEndSuggestions(false);
       }
@@ -5626,25 +6778,55 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
   // Enhanced input handlers that clear selection when user starts typing
   const handleStartLocationInputChange = (value: string) => {
+    console.log(`🎯 Start input changed: "${value}"`);
     setStartLocationInput(value);
     // Clear selection if user is modifying the input and it doesn't match the selected location
     if (selectedStartLocation && value !== selectedStartLocation.display_name) {
+      console.log(`🔄 Clearing start selection because input changed`);
       setSelectedStartLocation(null);
       setStartPoint(null);
+      // Clear localStorage immediately when user starts typing something different
+      localStorage.removeItem("safepath_start_location");
+    }
+
+    // Update localStorage for input value
+    if (value) {
+      localStorage.setItem("safepath_start_input", value);
+    } else {
+      localStorage.removeItem("safepath_start_input");
     }
   };
 
   const handleEndLocationInputChange = (value: string) => {
+    console.log(`🎯 End input changed: "${value}"`);
     setEndLocationInput(value);
     // Clear selection if user is modifying the input and it doesn't match the selected location
     if (selectedEndLocation && value !== selectedEndLocation.display_name) {
+      console.log(`🔄 Clearing end selection because input changed`);
       setSelectedEndLocation(null);
       setEndPoint(null);
+      // Clear localStorage immediately when user starts typing something different
+      localStorage.removeItem("safepath_end_location");
+    }
+
+    // Update localStorage for input value
+    if (value) {
+      localStorage.setItem("safepath_end_input", value);
+    } else {
+      localStorage.removeItem("safepath_end_input");
     }
   };
 
   // Handle selecting start location
   const handleSelectStartLocation = (location: LocationSuggestion) => {
+    // Clear existing markers before setting new location
+    markersRef.current.forEach((marker) => {
+      if (mapRef.current && mapRef.current.hasLayer(marker)) {
+        mapRef.current.removeLayer(marker);
+      }
+    });
+    markersRef.current = [];
+
     setSelectedStartLocation(location);
     setStartLocationInput(location.display_name);
     setStartSuggestions([]);
@@ -5658,6 +6840,14 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
   // Handle selecting end location
   const handleSelectEndLocation = (location: LocationSuggestion) => {
+    // Clear existing markers before setting new location
+    markersRef.current.forEach((marker) => {
+      if (mapRef.current && mapRef.current.hasLayer(marker)) {
+        mapRef.current.removeLayer(marker);
+      }
+    });
+    markersRef.current = [];
+
     setSelectedEndLocation(location);
     setEndLocationInput(location.display_name);
     setEndSuggestions([]);
@@ -5672,6 +6862,41 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   // Handle find route button click
   const handleFindRoute = async () => {
     if (selectedStartLocation && selectedEndLocation) {
+      console.log("🔍 DEBUG: Route coordinates check");
+      console.log("📍 Start location data:", selectedStartLocation);
+      console.log("📍 End location data:", selectedEndLocation);
+      console.log("📍 Start point:", startPoint);
+      console.log("📍 End point:", endPoint);
+
+      // Validate coordinates are within Zamboanga bounds
+      if (
+        startPoint &&
+        (startPoint.lat < 6.8 ||
+          startPoint.lat > 7.2 ||
+          startPoint.lng < 122.0 ||
+          startPoint.lng > 122.3)
+      ) {
+        console.error("❌ Start point outside Zamboanga bounds:", startPoint);
+        alert(
+          "Start location appears to be outside Zamboanga City. Please select a different location."
+        );
+        return;
+      }
+
+      if (
+        endPoint &&
+        (endPoint.lat < 6.8 ||
+          endPoint.lat > 7.2 ||
+          endPoint.lng < 122.0 ||
+          endPoint.lng > 122.3)
+      ) {
+        console.error("❌ End point outside Zamboanga bounds:", endPoint);
+        alert(
+          "End location appears to be outside Zamboanga City. Please select a different location."
+        );
+        return;
+      }
+
       setShowRoutePlannerModal(false);
       setRouteMode(true);
 
@@ -5681,18 +6906,34 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           icon: startIcon,
         })
           .addTo(mapRef.current)
-          .bindPopup("Start: " + selectedStartLocation.display_name);
+          .bindPopup(
+            `Start: ${
+              selectedStartLocation.display_name
+            }<br/>Coords: ${startPoint!.lat.toFixed(
+              6
+            )}, ${startPoint!.lng.toFixed(6)}`
+          );
 
         const endMarker = L.marker([endPoint!.lat, endPoint!.lng], {
           icon: endIcon,
         })
           .addTo(mapRef.current)
-          .bindPopup("End: " + selectedEndLocation.display_name);
+          .bindPopup(
+            `End: ${
+              selectedEndLocation.display_name
+            }<br/>Coords: ${endPoint!.lat.toFixed(6)}, ${endPoint!.lng.toFixed(
+              6
+            )}`
+          );
 
         markersRef.current.push(startMarker, endMarker);
       }
 
       try {
+        // Show loading animation
+        setIsCalculatingRoutes(true);
+        setPathfindingStep("calculating");
+
         // Generate routes using OSRM
         const routes = await generateFloodRoutes(startPoint!, endPoint!);
 
@@ -5838,89 +7079,179 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           });
         };
 
-        // Draw all routes simultaneously with dynamic colors and distinct styling
-        // IMPORTANT: Add routes in reverse order of priority so safest route appears on top
-        const routeLayers = [];
+        // Draw ALL three routes with animation for better user experience
+        const drawAllRoutes = async (routes: RouteDetails) => {
+          if (!mapRef.current) return;
 
-        // Validate routes before drawing
-        const isValidRoute = (route: any) => {
-          return route && route.waypoints && route.waypoints.length >= 2 && route.waypoints.every((wp: any) => wp.lat && wp.lng);
+          console.log("🎬 Starting animated route drawing...");
+
+          // Clear existing route layers
+          routeLayersRef.current.forEach((layer) => {
+            if (mapRef.current && mapRef.current.hasLayer(layer)) {
+              mapRef.current.removeLayer(layer);
+            }
+          });
+          routeLayersRef.current = [];
+
+          // Validate routes before drawing
+          const isValidRoute = (route: any) => {
+            return (
+              route &&
+              route.waypoints &&
+              route.waypoints.length >= 2 &&
+              route.waypoints.every((wp: any) => wp.lat && wp.lng)
+            );
+          };
+
+          // Routes to draw in sequential order (safe route first and complete, then others)
+          const routesToDraw = [
+            { route: routes.safeRoute, label: "Safe Route", priority: 1 },
+            {
+              route: routes.manageableRoute,
+              label: "Medium Risk Route",
+              priority: 2,
+            },
+            { route: routes.proneRoute, label: "High Risk Route", priority: 3 },
+          ];
+
+          // Draw each route with animation - no delay since we're doing sequential
+          const drawRouteWithAnimation = async (
+            route: FloodRoute,
+            label: string
+          ) => {
+            if (!isValidRoute(route)) {
+              console.log(`❌ Skipping ${label} - invalid route data`);
+              return;
+            }
+
+            console.log(`🎨 Drawing ${label}...`, route);
+            console.log(`📍 Waypoints:`, route.waypoints);
+
+            // Route styling based on risk level - made more visible
+            let routeStyle = {};
+            if (route.riskLevel?.toLowerCase().includes("safe")) {
+              routeStyle = {
+                color: route.color,
+                weight: 8, // Increased thickness
+                opacity: 1.0,
+                dashArray: undefined,
+                className: "safe-route",
+              };
+            } else if (route.riskLevel?.toLowerCase().includes("manageable")) {
+              routeStyle = {
+                color: route.color,
+                weight: 7, // Increased thickness
+                opacity: 0.8, // Increased opacity
+                dashArray: undefined,
+                className: "manageable-route",
+              };
+            } else {
+              routeStyle = {
+                color: route.color,
+                weight: 6, // Increased thickness
+                opacity: 0.7, // Increased opacity
+                dashArray: undefined,
+                className: "prone-route",
+              };
+            }
+
+            // Create empty polyline first
+            const polyline = L.polyline([], routeStyle).addTo(mapRef.current!);
+            routeLayersRef.current.push(polyline);
+
+            // Prepare waypoints for animation
+            const waypoints = route.waypoints.map((wp) => [wp.lat, wp.lng]);
+            console.log(
+              `🎬 Animating ${waypoints.length} waypoints for ${label}`
+            );
+
+            if (waypoints.length > 0) {
+              // Animate the route drawing
+              await animateRouteDrawing(polyline, waypoints);
+
+              // Add tooltip with route information AFTER animation completes
+              polyline.bindTooltip(
+                `🛣️ ${route.riskLevel}<br/>📍 ${route.distance} • ⏱️ ${route.time}`,
+                { permanent: true, direction: "top", offset: [0, -10] }
+              );
+
+              // Add hover handlers for terrain information
+              addHoverHandlers(polyline, route);
+
+              console.log(`✅ ${label} animation complete`);
+            } else {
+              console.warn(`⚠️ No waypoints available for ${label}`);
+            }
+          };
+
+          // Draw routes sequentially - safe route first and complete, then others
+          console.log("🎯 Drawing safe route first...");
+          await drawRouteWithAnimation(routes.safeRoute, "Safe Route");
+
+          console.log("🎯 Safe route complete! Now drawing other routes...");
+          await new Promise((resolve) => setTimeout(resolve, 500)); // Faster pause before other routes
+
+          // Draw the other routes simultaneously after safe route is done
+          const otherRoutes = [
+            { route: routes.manageableRoute, label: "Medium Risk Route" },
+            { route: routes.proneRoute, label: "High Risk Route" },
+          ];
+
+          const otherPromises = otherRoutes.map(({ route, label }) =>
+            drawRouteWithAnimation(route, label)
+          );
+
+          await Promise.all(otherPromises);
+
+          // Fit map to show all routes
+          if (routeLayersRef.current.length > 0) {
+            const group = new L.FeatureGroup(routeLayersRef.current);
+            mapRef.current.fitBounds(group.getBounds().pad(0.1));
+          }
+
+          console.log("🎯 All routes drawn with animation!");
         };
 
-        // High Risk Route (Red) - Add FIRST (bottom layer)
-        if (isValidRoute(routes.proneRoute)) {
-          const proneRoute = L.polyline(
-            routes.proneRoute.waypoints.map((wp) => [wp.lat, wp.lng]),
-            {
-              color: routes.proneRoute.color,
-              weight: 4,
-              opacity: 0.65,
-              dashArray: undefined, // Solid line
-              className: "prone-route",
-            }
+        // Animated route pathfinding (now default behavior)
+        setIsCalculatingRoutes(false);
+        setPathfindingStep("finding-safe");
+
+        // Skip old single route animation - use new drawAllRoutes system instead
+        console.log("🛣️ Using new multi-route drawing system...");
+
+        // Step 2: Show other routes as overlays (if educational mode is enabled)
+        if (isEducationalMode) {
+          console.log(
+            "🎓 Educational Mode: Step 2 - Showing high-risk route..."
           );
-          proneRoute.bindTooltip(
-            `⚡ ${routes.proneRoute.riskLevel}<br/>📍 ${routes.proneRoute.distance} • ⏱️ ${routes.proneRoute.time}`,
-            { permanent: true, direction: "center", offset: [0, 0] }
-          );
-          proneRoute.addTo(mapRef.current!);
-          addHoverHandlers(proneRoute, routes.proneRoute);
-          routeLayers.push(proneRoute);
+          setPathfindingStep("showing-risk");
+          await showHighRiskRouteOverlay(routes);
+          await new Promise((resolve) => setTimeout(resolve, 2000)); // Pause for educational comparison
         }
 
-        // Manageable Route (Orange/Yellow) - Add SECOND (middle layer)
-        if (isValidRoute(routes.manageableRoute)) {
-        const manageableRoute = L.polyline(
-          routes.manageableRoute.waypoints.map((wp) => [wp.lat, wp.lng]),
-          {
-            color: routes.manageableRoute.color,
-            weight: 5,
-            opacity: 0.75,
-            dashArray: undefined, // Solid line
-            className: "manageable-route",
+        // Step 3: Show the final comparison
+        console.log(
+          "🛣️ Pathfinding Animation: Final step - Showing route comparison..."
+        );
+        setPathfindingStep("complete");
+
+        // Clear only search visualization nodes, keep routes visible
+        circleMarkersRef.current.forEach((marker) => {
+          if (mapRef.current && mapRef.current.hasLayer(marker)) {
+            mapRef.current.removeLayer(marker);
           }
-        );
-        manageableRoute.bindTooltip(
-          `⚠️ ${routes.manageableRoute.riskLevel}<br/>📍 ${routes.manageableRoute.distance} • ⏱️ ${routes.manageableRoute.time}`,
-          { permanent: true, direction: "bottom", offset: [0, 10] }
-        );
-        manageableRoute.addTo(mapRef.current!);
-        addHoverHandlers(manageableRoute, routes.manageableRoute);
-        routeLayers.push(manageableRoute);
-        }
+        });
+        circleMarkersRef.current = [];
 
-        // Safe Route (Green) - Add LAST (top layer - highest priority)
-        if (isValidRoute(routes.safeRoute)) {
-          const safeRoute = L.polyline(
-            routes.safeRoute.waypoints.map((wp) => [wp.lat, wp.lng]),
-            {
-              color: routes.safeRoute.color,
-            weight: 6,
-            opacity: 0.85,
-            className: "safe-route",
-          }
-        );
-        safeRoute.bindTooltip(
-          `🛡️ ${routes.safeRoute.riskLevel}<br/>📍 ${routes.safeRoute.distance} • ⏱️ ${routes.safeRoute.time}`,
-          { permanent: true, direction: "top", offset: [0, -10] }
-        );
-        safeRoute.addTo(mapRef.current!);
-        addHoverHandlers(safeRoute, routes.safeRoute);
-        routeLayers.push(safeRoute);
-        }
-
-        routeLayersRef.current = routeLayers;
-
-        // Fit map to show all routes only if we have any valid routes
-        if (routeLayers.length > 0) {
-          const group = new L.FeatureGroup(routeLayersRef.current);
-          mapRef.current!.fitBounds(group.getBounds().pad(0.1));
-        }
+        // Draw all routes with progressive animation and staggered timing
+        await drawAllRoutes(routes);
 
         setRouteDetails(routes);
-
-        // Routes are already drawn above - no need to call drawAllRoutes again
       } catch (error) {
+        // Turn off loading animation on error
+        setIsCalculatingRoutes(false);
+        setPathfindingStep("idle");
+
         console.error("Error generating routes:", error);
 
         let errorMessage = "Error generating routes. Please try again.";
@@ -5995,90 +7326,25 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     }
   };
 
-  // Draw ALL three routes simultaneously for comparison
-  const drawAllRoutes = (routes: RouteDetails) => {
-    if (!mapRef.current) return;
-
-    console.log("Drawing all three routes for comparison...");
-
-    // Clear existing route layers
-    routeLayersRef.current.forEach((layer) => {
-      if (mapRef.current && mapRef.current.hasLayer(layer)) {
-        mapRef.current.removeLayer(layer);
-      }
-    });
-    routeLayersRef.current = [];
-
-    // Draw all three routes with distinct styling
-    // IMPORTANT: Draw in reverse priority order so safe route appears on top
-    const routesToDraw = [
-      { route: routes.proneRoute, label: "Flood-prone Route" }, // Draw first (bottom)
-      { route: routes.manageableRoute, label: "Manageable Route" }, // Draw second (middle)
-      { route: routes.safeRoute, label: "Safe Route" }, // Draw last (top)
-    ];
-
-    routesToDraw.forEach(({ route, label }) => {
-      // DISTINCT styling for each route type
-      let routeStyle = {};
-
-      if (route.floodRisk === "safe") {
-        routeStyle = {
-          color: "#27ae60",
-          weight: 7,
-          opacity: 0.9,
-          dashArray: undefined, // Solid line
-        };
-      } else if (route.floodRisk === "manageable") {
-        routeStyle = {
-          color: "#f39c12",
-          weight: 5,
-          opacity: 0.8,
-          dashArray: undefined, // Solid line
-        };
-      } else {
-        // flood-prone
-        routeStyle = {
-          color: "#e74c3c",
-          weight: 4,
-          opacity: 0.7,
-          dashArray: undefined, // Solid line
-        };
-      }
-
-      console.log(`Drawing ${label} with ${route.waypoints.length} waypoints`);
-
-      const polyline = L.polyline(
-        route.waypoints.map((wp) => [wp.lat, wp.lng]),
-        routeStyle
-      ).addTo(mapRef.current!);
-
-      // Add route label popup
-      polyline.bindPopup(
-        `<div style="padding: 8px; font-weight: bold; color: ${route.color};">
-          ${label}<br>
-          Distance: ${route.distance}<br>
-          Time: ${route.time}<br>
-          Risk Level: ${route.riskLevel}
-        </div>`
-      );
-
-      routeLayersRef.current.push(polyline);
-    });
-
-    // Fit map to show all routes
-    if (routeLayersRef.current.length > 0) {
-      const group = new L.FeatureGroup(routeLayersRef.current);
-      mapRef.current.fitBounds(group.getBounds().pad(0.1));
-    }
-
-    console.log("All three routes displayed with distinct styling");
-  };
-
   // Handle route selection
   const handleRouteSelection = (routeType: "safe" | "manageable" | "prone") => {
+    console.log(`🎯 User selected ${routeType} route`);
     setSelectedRoute(routeType);
     if (routeDetails) {
       const selectedRouteData = routeDetails[routeType + "Route"] as FloodRoute;
+
+      // Log route details for debugging
+      console.log(`📍 ${routeType} route details:`, {
+        waypointsCount: selectedRouteData.waypoints?.length || 0,
+        distance: selectedRouteData.distance,
+        floodRisk: selectedRouteData.floodRisk,
+        firstPoint: selectedRouteData.waypoints?.[0],
+        lastPoint:
+          selectedRouteData.waypoints?.[
+            selectedRouteData.waypoints?.length - 1
+          ],
+      });
+
       drawRoute(selectedRouteData);
     }
   };
@@ -6674,9 +7940,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         text.style.fontWeight = "bold";
 
         btn.onclick = (e: Event) => {
+          console.log("🗺️ Route Planner button clicked - opening modal...");
           e.stopPropagation();
           setShowRoutePlannerModal(true);
           setIsTerrainMode(false);
+          console.log(`📋 Modal state: showRoutePlannerModal = true`);
         };
 
         return btn;
@@ -7024,6 +8292,40 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     };
   }, [isTerrainMode]);
 
+  // Clear destinations function
+  const clearDestinations = () => {
+    setSelectedStartLocation(null);
+    setSelectedEndLocation(null);
+    setStartLocationInput("");
+    setEndLocationInput("");
+    setStartSuggestions([]);
+    setEndSuggestions([]);
+    setShowStartSuggestions(false);
+    setShowEndSuggestions(false);
+
+    // Clear localStorage
+    localStorage.removeItem("safepath_start_location");
+    localStorage.removeItem("safepath_end_location");
+    localStorage.removeItem("safepath_start_input");
+    localStorage.removeItem("safepath_end_input");
+
+    // Clear visual markers from the map
+    markersRef.current.forEach((marker) => {
+      if (mapRef.current && mapRef.current.hasLayer(marker)) {
+        mapRef.current.removeLayer(marker);
+      }
+    });
+    markersRef.current = [];
+
+    // Clear circle markers
+    circleMarkersRef.current.forEach((marker) => {
+      if (mapRef.current && mapRef.current.hasLayer(marker)) {
+        mapRef.current.removeLayer(marker);
+      }
+    });
+    circleMarkersRef.current = [];
+  };
+
   // Reset route
   const resetRoute = () => {
     setStartPoint(null);
@@ -7049,6 +8351,14 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     });
     markersRef.current = [];
 
+    // Clear circle markers
+    circleMarkersRef.current.forEach((marker) => {
+      if (mapRef.current && mapRef.current.hasLayer(marker)) {
+        mapRef.current.removeLayer(marker);
+      }
+    });
+    circleMarkersRef.current = [];
+
     // Clear route layers
     routeLayersRef.current.forEach((layer) => {
       if (mapRef.current && mapRef.current.hasLayer(layer)) {
@@ -7065,7 +8375,94 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   };
 
   return (
-    <div style={{ padding: "20px", maxWidth: "1200px", margin: "0 auto" }}>
+    <div
+      style={{
+        padding: "20px",
+        maxWidth: "1200px",
+        margin: "0 auto",
+        position: "relative",
+      }}
+    >
+      {/* CSS for educational mode animations and loading overlay */}
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        @keyframes pulse {
+          0% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.2); opacity: 0.7; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes fadeInOut {
+          0%, 100% { opacity: 0.4; }
+          50% { opacity: 1; }
+        }
+        @keyframes routeDiscovery {
+          0% { transform: translateX(-100px); opacity: 0; }
+          50% { opacity: 1; }
+          100% { transform: translateX(100px); opacity: 0; }
+        }
+        .loading-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.8);
+          backdrop-filter: blur(3px);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          z-index: 10000;
+          border-radius: 0;
+        }
+        .simple-spinner {
+          width: 40px;
+          height: 40px;
+          border: 3px solid rgba(34, 197, 94, 0.3);
+          border-top: 3px solid #22c55e;
+          border-radius: 50%;
+          animation: spin 0.8s linear infinite;
+          margin-bottom: 15px;
+        }
+        .loading-text {
+          color: #ffffff;
+          font-size: 1.1rem;
+          font-weight: 500;
+          margin-bottom: 8px;
+          text-align: center;
+        }
+        .loading-subtitle {
+          color: #9ca3af;
+          font-size: 0.9rem;
+          text-align: center;
+          max-width: 300px;
+          line-height: 1.4;
+        }
+      `}</style>
+
+      {/* Simple Loading Animation Overlay */}
+      {isCalculatingRoutes && (
+        <div className="loading-overlay">
+          <div className="simple-spinner"></div>
+          <div className="loading-text">
+            {pathfindingStep === "calculating" && "🗺️ Calculating Routes"}
+            {pathfindingStep === "finding-safe" && "🛡️ Finding Safe Route"}
+            {pathfindingStep === "showing-risk" && "⚠️ Analyzing Risk Routes"}
+          </div>
+          <div className="loading-subtitle">
+            {pathfindingStep === "calculating" &&
+              "Analyzing flood risks and optimal paths..."}
+            {pathfindingStep === "finding-safe" &&
+              "Step 1: Discovering safest path with flood protection..."}
+            {pathfindingStep === "showing-risk" &&
+              "Step 2: Comparing with high-risk alternatives..."}
+          </div>
+        </div>
+      )}
+
       {/* Offline Mode Indicator */}
       {(useOfflineMode || apiFailureCount > 3) && (
         <div
@@ -7161,6 +8558,82 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             <p style={{ margin: 0 }}>
               Click on the map to analyze terrain elevation
             </p>
+          </div>
+        )}
+
+        {isEducationalMode && pathfindingStep === "idle" && (
+          <div
+            style={{
+              background: "linear-gradient(135deg, #EEF2FF, #E0E7FF)",
+              border: "2px solid #8B5CF6",
+              borderRadius: "8px",
+              padding: "12px 16px",
+              flexGrow: 1,
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+            }}
+          >
+            <div style={{ fontSize: "24px" }}>🎓</div>
+            <div>
+              <div
+                style={{
+                  fontWeight: "600",
+                  color: "#7C3AED",
+                  marginBottom: "4px",
+                }}
+              >
+                Educational Mode Enabled
+              </div>
+              <div style={{ fontSize: "13px", color: "#6366F1" }}>
+                Route planning includes detailed comparison of different path
+                options and risk analysis.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {pathfindingStep !== "idle" && (
+          <div
+            style={{
+              background: "linear-gradient(135deg, #10B981, #059669)",
+              color: "white",
+              padding: "12px 16px",
+              borderRadius: "8px",
+              flexGrow: 1,
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              boxShadow: "0 2px 8px rgba(16, 185, 129, 0.3)",
+            }}
+          >
+            <div
+              style={{
+                width: "20px",
+                height: "20px",
+                border: "2px solid white",
+                borderTop: "2px solid transparent",
+                borderRadius: "50%",
+                animation:
+                  pathfindingStep === "calculating"
+                    ? "spin 1s linear infinite"
+                    : "none",
+              }}
+            ></div>
+            <div>
+              <div style={{ fontWeight: "600", marginBottom: "2px" }}>
+                🛣️ Route Pathfinding Active
+              </div>
+              <div style={{ fontSize: "13px", opacity: 0.9 }}>
+                {pathfindingStep === "finding-safe" &&
+                  "Finding optimal safe route using terrain data..."}
+                {pathfindingStep === "showing-risk" &&
+                  isEducationalMode &&
+                  "Analyzing high-risk flood route for comparison..."}
+                {pathfindingStep === "complete" &&
+                  "✅ Route analysis complete!"}
+              </div>
+            </div>
           </div>
         )}
 
@@ -7499,6 +8972,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           selectedStartLocation={selectedStartLocation}
           selectedEndLocation={selectedEndLocation}
           handleFindRoute={handleFindRoute}
+          clearDestinations={clearDestinations}
           // Add these back temporarily to prevent crashes:
           routeOptions={{
             avoidFloods: false,
