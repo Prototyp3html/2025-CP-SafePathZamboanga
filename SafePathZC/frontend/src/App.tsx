@@ -7,7 +7,6 @@ import Alerts from "./pages/Alerts";
 import Community from "./pages/CommunityForum";
 import Settings from "./pages/Settings";
 import Profile from "./pages/Profile";
-import RiskAnalysis from "./pages/RiskAnalysis";
 
 function App() {
   return (
@@ -20,7 +19,6 @@ function App() {
         <Route path="/community" element={<Community />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/profile" element={<Profile />} />
-        <Route path="/risk-analysis" element={<RiskAnalysis />} />
       </Routes>
     </Router>
   );

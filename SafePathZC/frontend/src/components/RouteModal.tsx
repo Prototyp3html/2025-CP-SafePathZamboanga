@@ -38,9 +38,7 @@ interface RouteModalProps {
   setRouteOptions: (
     options: RouteOptions | ((prev: RouteOptions) => RouteOptions)
   ) => void;
-  // NEW: Transportation mode props
-  transportationMode: "car" | "motorcycle" | "walking";
-  setTransportationMode: (mode: "car" | "motorcycle" | "walking") => void;
+  clearDestinations?: () => void;
 }
 
 export const RouteModal = ({
@@ -63,9 +61,7 @@ export const RouteModal = ({
   handleFindRoute,
   routeOptions,
   setRouteOptions,
-  // NEW: Transportation mode props
-  transportationMode,
-  setTransportationMode,
+  clearDestinations,
 }: RouteModalProps) => {
   return (
     <div
@@ -237,7 +233,23 @@ export const RouteModal = ({
                 {startSuggestions.map((suggestion, index) => (
                   <div
                     key={index}
-                    onClick={() => handleSelectStartLocation(suggestion)}
+                    onClick={(e) => {
+                      console.log("🖱️ START dropdown clicked!", suggestion);
+                      console.log("📋 Event details:", {
+                        type: e.type,
+                        target: e.target,
+                        currentTarget: e.currentTarget,
+                      });
+                      e.preventDefault();
+                      e.stopPropagation();
+                      console.log(
+                        "🚀 About to call handleSelectStartLocation..."
+                      );
+                      handleSelectStartLocation(suggestion);
+                      console.log(
+                        "✅ handleSelectStartLocation call completed"
+                      );
+                    }}
                     style={{
                       padding: "12px",
                       borderBottom:
@@ -366,7 +378,21 @@ export const RouteModal = ({
                 {endSuggestions.map((suggestion, index) => (
                   <div
                     key={index}
-                    onClick={() => handleSelectEndLocation(suggestion)}
+                    onClick={(e) => {
+                      console.log("🖱️ END dropdown clicked!", suggestion);
+                      console.log("📋 Event details:", {
+                        type: e.type,
+                        target: e.target,
+                        currentTarget: e.currentTarget,
+                      });
+                      e.preventDefault();
+                      e.stopPropagation();
+                      console.log(
+                        "🚀 About to call handleSelectEndLocation..."
+                      );
+                      handleSelectEndLocation(suggestion);
+                      console.log("✅ handleSelectEndLocation call completed");
+                    }}
                     style={{
                       padding: "12px",
                       borderBottom:
@@ -428,104 +454,6 @@ export const RouteModal = ({
             )}
           </div>
 
-          {/* Transportation Mode Selection */}
-          <div style={{ marginBottom: "20px" }}>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "12px",
-                fontWeight: "bold",
-                color: "#333",
-                fontSize: "14px",
-              }}
-            >
-              🚗 Transportation Mode
-            </label>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr 1fr",
-                gap: "8px",
-              }}
-            >
-              <button
-                onClick={() => setTransportationMode("car")}
-                style={{
-                  padding: "12px 8px",
-                  border: `2px solid ${transportationMode === "car" ? "#667eea" : "#e5e7eb"}`,
-                  borderRadius: "8px",
-                  background: transportationMode === "car" ? "#667eea" : "white",
-                  color: transportationMode === "car" ? "white" : "#374151",
-                  fontSize: "12px",
-                  fontWeight: "600",
-                  cursor: "pointer",
-                  transition: "all 0.2s ease",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: "4px",
-                }}
-              >
-                <span style={{ fontSize: "20px" }}>🚗</span>
-                <span>Car</span>
-              </button>
-              <button
-                onClick={() => setTransportationMode("motorcycle")}
-                style={{
-                  padding: "12px 8px",
-                  border: `2px solid ${transportationMode === "motorcycle" ? "#667eea" : "#e5e7eb"}`,
-                  borderRadius: "8px",
-                  background: transportationMode === "motorcycle" ? "#667eea" : "white",
-                  color: transportationMode === "motorcycle" ? "white" : "#374151",
-                  fontSize: "12px",
-                  fontWeight: "600",
-                  cursor: "pointer",
-                  transition: "all 0.2s ease",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: "4px",
-                }}
-              >
-                <span style={{ fontSize: "20px" }}>🏍️</span>
-                <span>Motorcycle</span>
-              </button>
-              <button
-                onClick={() => setTransportationMode("walking")}
-                style={{
-                  padding: "12px 8px",
-                  border: `2px solid ${transportationMode === "walking" ? "#667eea" : "#e5e7eb"}`,
-                  borderRadius: "8px",
-                  background: transportationMode === "walking" ? "#667eea" : "white",
-                  color: transportationMode === "walking" ? "white" : "#374151",
-                  fontSize: "12px",
-                  fontWeight: "600",
-                  cursor: "pointer",
-                  transition: "all 0.2s ease",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: "4px",
-                }}
-              >
-                <span style={{ fontSize: "20px" }}>🚶</span>
-                <span>Walking</span>
-              </button>
-            </div>
-            <div
-              style={{
-                marginTop: "8px",
-                fontSize: "12px",
-                color: "#6b7280",
-                textAlign: "center",
-              }}
-            >
-              {transportationMode === "car" && "🚗 Road routes optimized for cars"}
-              {transportationMode === "motorcycle" && "🏍️ Flexible routes with smaller roads"}
-              {transportationMode === "walking" && "🚶 Pedestrian-friendly paths"}
-            </div>
-          </div>
-
           {/* Find Route Button */}
           <button
             onClick={handleFindRoute}
@@ -546,7 +474,7 @@ export const RouteModal = ({
                 !selectedStartLocation || !selectedEndLocation
                   ? "not-allowed"
                   : "pointer",
-              marginBottom: "20px",
+              marginBottom: "12px",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -556,6 +484,42 @@ export const RouteModal = ({
           >
             <span>⚡</span> Find Route
           </button>
+
+          {/* Clear Destinations Button */}
+          {clearDestinations &&
+            (selectedStartLocation || selectedEndLocation) && (
+              <button
+                onClick={() => {
+                  clearDestinations();
+                  console.log("🧹 Destinations cleared by user");
+                }}
+                style={{
+                  width: "100%",
+                  padding: "8px",
+                  background: "#ef4444",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "6px",
+                  fontSize: "14px",
+                  fontWeight: "500",
+                  cursor: "pointer",
+                  marginBottom: "20px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  transition: "background 0.2s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#dc2626";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#ef4444";
+                }}
+              >
+                <span>🗑️</span> Clear Destinations
+              </button>
+            )}
 
           {/* Quick Options */}
           <div>
