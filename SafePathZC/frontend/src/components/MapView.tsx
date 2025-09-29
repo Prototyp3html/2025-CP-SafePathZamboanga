@@ -83,6 +83,30 @@ interface TerrainRoadsData {
   features: TerrainRoadFeature[];
 }
 
+type FloodPreference = "prefer" | "avoid" | "neutral";
+
+interface TerrainRouteOptions {
+  excludeRoadIds?: Set<string>;
+}
+
+interface TerrainWaypointPreference {
+  latPreference?: number;
+  lngPreference?: number;
+  floodPreference?: FloodPreference;
+  minElevation?: number;
+  maxElevation?: number;
+  elevationWeight?: number;
+  corridorWidthKm?: number;
+  positionBias?: number;
+}
+
+interface TerrainWaypointCandidate {
+  point: LatLng;
+  roadId: string;
+  elevation: number;
+  flooded: boolean;
+}
+
 interface TileLayerConfig {
   url: string;
   options: {
@@ -103,6 +127,270 @@ interface LocationSuggestion {
 interface MapViewProps {
   onModalOpen?: (modal: "report" | "emergency") => void;
 }
+
+type LatLngBounds = {
+  lat: { min: number; max: number };
+  lng: { min: number; max: number };
+};
+
+const CITY_CENTER: LatLng = { lat: 6.91, lng: 122.08 };
+const BALANCED_CITY_BOUNDS: LatLngBounds = {
+  lat: { min: 6.85, max: 7.15 },
+  lng: { min: 122.0, max: 122.15 },
+};
+const SAFE_CITY_BOUNDS: LatLngBounds = {
+  lat: { min: 6.86, max: 7.1 },
+  lng: { min: 122.01, max: 122.14 },
+};
+
+const clampValue = (value: number, min: number, max: number): number =>
+  Math.max(min, Math.min(max, value));
+
+const clampPointToBounds = (point: LatLng, bounds: LatLngBounds): LatLng => ({
+  lat: clampValue(point.lat, bounds.lat.min, bounds.lat.max),
+  lng: clampValue(point.lng, bounds.lng.min, bounds.lng.max),
+});
+
+const computeMidpoint = (start: LatLng, end: LatLng): LatLng => ({
+  lat: (start.lat + end.lat) / 2,
+  lng: (start.lng + end.lng) / 2,
+});
+
+const biasTowardCityCenter = (point: LatLng, factor: number): LatLng => ({
+  lat: point.lat + (CITY_CENTER.lat - point.lat) * factor,
+  lng: point.lng + (CITY_CENTER.lng - point.lng) * factor,
+});
+
+const isWithinBounds = (point: LatLng, bounds: LatLngBounds): boolean =>
+  point.lat >= bounds.lat.min &&
+  point.lat <= bounds.lat.max &&
+  point.lng >= bounds.lng.min &&
+  point.lng <= bounds.lng.max;
+
+const EARTH_RADIUS_KM = 6371;
+
+const toRadians = (degrees: number): number => (degrees * Math.PI) / 180;
+
+const calculateDistanceMeters = (pointA: LatLng, pointB: LatLng): number => {
+  const dLat = toRadians(pointB.lat - pointA.lat);
+  const dLng = toRadians(pointB.lng - pointA.lng);
+  const lat1 = toRadians(pointA.lat);
+  const lat2 = toRadians(pointB.lat);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return EARTH_RADIUS_KM * c * 1000;
+};
+
+const sampleRoutePoints = (route: LatLng[], samples = 25): LatLng[] => {
+  if (route.length <= samples) {
+    return route;
+  }
+
+  const sampled: LatLng[] = [];
+  const step = (route.length - 1) / (samples - 1);
+
+  for (let i = 0; i < samples; i++) {
+    const index = Math.min(route.length - 1, Math.round(i * step));
+    sampled.push(route[index]);
+  }
+
+  return sampled;
+};
+
+const calculateOverlapRatio = (routeA: LatLng[], routeB: LatLng[]): number => {
+  if (routeA.length < 2 || routeB.length < 2) {
+    return 0;
+  }
+
+  const sampledA = sampleRoutePoints(routeA, 30);
+  const sampledB = sampleRoutePoints(routeB, 30);
+  const thresholdMeters = 120; // Treat anything closer than ~120m as overlapping
+
+  let overlapCount = 0;
+  let totalCount = 0;
+
+  const countOverlaps = (source: LatLng[], target: LatLng[]) => {
+    let count = 0;
+    for (const point of source) {
+      let minDistance = Infinity;
+      for (const candidate of target) {
+        const distance = calculateDistanceMeters(point, candidate);
+        if (distance < minDistance) {
+          minDistance = distance;
+        }
+        if (minDistance <= thresholdMeters) {
+          break;
+        }
+      }
+      if (minDistance <= thresholdMeters) {
+        count++;
+      }
+    }
+    return count;
+  };
+
+  overlapCount += countOverlaps(sampledA, sampledB);
+  totalCount += sampledA.length;
+
+  overlapCount += countOverlaps(sampledB, sampledA);
+  totalCount += sampledB.length;
+
+  return totalCount > 0 ? overlapCount / totalCount : 0;
+};
+
+const pickTerrainWaypoint = (
+  roads: TerrainRoadFeature[],
+  start: LatLng,
+  end: LatLng,
+  options: TerrainWaypointPreference & { excludeRoadIds?: Set<string> }
+): TerrainWaypointCandidate | null => {
+  if (!roads || roads.length === 0) {
+    return null;
+  }
+
+  const {
+    latPreference = 0,
+    lngPreference = 0,
+    floodPreference = "neutral",
+    minElevation,
+    maxElevation,
+    elevationWeight = 0,
+    corridorWidthKm = 1.5,
+    positionBias = 0.5,
+    excludeRoadIds,
+  } = options;
+
+  const midpoint = computeMidpoint(start, end);
+  const averageLat = (start.lat + end.lat) / 2;
+  const kmPerDegree = (EARTH_RADIUS_KM * Math.PI) / 180;
+  const lngFactor = kmPerDegree * Math.cos(toRadians(averageLat));
+
+  const startVec = { x: 0, y: 0 };
+  const endVec = {
+    x: (end.lng - start.lng) * lngFactor,
+    y: (end.lat - start.lat) * kmPerDegree,
+  };
+
+  const segmentLength = Math.sqrt(endVec.x * endVec.x + endVec.y * endVec.y);
+  const segmentLengthSq = segmentLength > 0 ? segmentLength * segmentLength : 1;
+
+  let bestCandidate: TerrainWaypointCandidate | null = null;
+  let bestScore = -Infinity;
+
+  for (const road of roads) {
+    if (
+      road.geometry.type !== "LineString" ||
+      road.geometry.coordinates.length === 0
+    ) {
+      continue;
+    }
+
+    const roadId = String(road.properties.road_id ?? road.properties.osm_id);
+    if (excludeRoadIds && excludeRoadIds.has(roadId)) {
+      continue;
+    }
+
+    const midIndex = Math.floor(road.geometry.coordinates.length / 2);
+    const candidateCoord = road.geometry.coordinates[midIndex];
+    const waypoint = { lat: candidateCoord[1], lng: candidateCoord[0] };
+
+    if (!isWithinBounds(waypoint, SAFE_CITY_BOUNDS)) {
+      continue;
+    }
+
+    const withinLatBand =
+      waypoint.lat >= Math.min(start.lat, end.lat) - 0.03 &&
+      waypoint.lat <= Math.max(start.lat, end.lat) + 0.03;
+    const withinLngBand =
+      waypoint.lng >= Math.min(start.lng, end.lng) - 0.03 &&
+      waypoint.lng <= Math.max(start.lng, end.lng) + 0.03;
+
+    if (!withinLatBand || !withinLngBand) {
+      continue;
+    }
+
+    const pointVec = {
+      x: (waypoint.lng - start.lng) * lngFactor,
+      y: (waypoint.lat - start.lat) * kmPerDegree,
+    };
+
+    const cross = Math.abs(endVec.x * pointVec.y - endVec.y * pointVec.x);
+    const distanceKm = segmentLength > 0 ? cross / segmentLength : 0;
+
+    if (distanceKm > corridorWidthKm) {
+      continue;
+    }
+
+    const projection =
+      (pointVec.x * endVec.x + pointVec.y * endVec.y) / segmentLengthSq;
+    const clampedProjection = Math.max(0, Math.min(1, projection));
+
+    if (clampedProjection < -0.1 || clampedProjection > 1.1) {
+      continue;
+    }
+
+    const elevation = road.properties.elev_mean ?? 0;
+    if (minElevation !== undefined && elevation < minElevation) {
+      continue;
+    }
+    if (maxElevation !== undefined && elevation > maxElevation) {
+      continue;
+    }
+
+    const flooded = road.properties.flooded === "1";
+    if (floodPreference === "avoid" && flooded) {
+      continue;
+    }
+    if (floodPreference === "prefer" && !flooded) {
+      continue;
+    }
+
+    let score = 0;
+    score -= distanceKm * 35;
+    score -= Math.abs(clampedProjection - positionBias) * 40;
+
+    const latDeltaKm = (waypoint.lat - midpoint.lat) * kmPerDegree;
+    const lngDeltaKm =
+      (waypoint.lng - midpoint.lng) * kmPerDegree * Math.cos(toRadians(midpoint.lat));
+
+    score += latPreference * latDeltaKm * 5;
+    score += lngPreference * lngDeltaKm * 5;
+
+    if (elevationWeight !== 0) {
+      score += elevation * elevationWeight;
+    } else if (floodPreference !== "prefer") {
+      score += elevation * 0.5;
+    } else {
+      score -= elevation * 0.3;
+    }
+
+    if (floodPreference === "prefer") {
+      score += flooded ? 25 : -15;
+    } else if (floodPreference === "avoid") {
+      score += flooded ? -25 : 10;
+    }
+
+    const roadLengthKm = (road.properties.length_m ?? 0) / 1000;
+    score += Math.min(roadLengthKm, 3) * 1.5;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestCandidate = {
+        point: clampPointToBounds(waypoint, SAFE_CITY_BOUNDS),
+        roadId,
+        elevation,
+        flooded,
+      };
+    }
+  }
+
+  return bestCandidate;
+};
 
 export const MapView = ({ onModalOpen }: MapViewProps) => {
   // Configuration for routing services
@@ -563,128 +851,181 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const getTerrainAwareRoute = async (
     start: LatLng,
     end: LatLng,
-    priorityMode: "safe" | "balanced" | "direct" = "balanced"
+    priorityMode:
+      | "safe"
+      | "balanced"
+      | "direct"
+      | "manageable"
+      | "flood_prone" = "balanced",
+    options: TerrainRouteOptions = {}
   ): Promise<LatLng[]> => {
     console.log(`🛣️ Calculating terrain-aware ${priorityMode} route...`);
 
+    const { excludeRoadIds } = options;
+    const reservedRoadIds = new Set<string>();
+
+    const registerReservedRoads = () => {
+      if (!excludeRoadIds || reservedRoadIds.size === 0) {
+        return;
+      }
+      reservedRoadIds.forEach((id) => excludeRoadIds.add(id));
+    };
+
+    const selectWaypoint = (
+      preference: TerrainWaypointPreference
+    ): LatLng | null => {
+      if (!terrainRoadsData) {
+        return null;
+      }
+
+      const exclusionSet = new Set<string>();
+      if (excludeRoadIds) {
+        excludeRoadIds.forEach((id) => exclusionSet.add(id));
+      }
+      reservedRoadIds.forEach((id) => exclusionSet.add(id));
+
+      const candidate = pickTerrainWaypoint(
+        terrainRoadsData.features,
+        start,
+        end,
+        {
+          ...preference,
+          excludeRoadIds: exclusionSet,
+        }
+      );
+
+      if (candidate) {
+        reservedRoadIds.add(candidate.roadId);
+        return candidate.point;
+      }
+
+      return null;
+    };
+
     let strategicWaypoints: LatLng[] = [];
 
-    if (!terrainRoadsData) {
-      console.warn(
-        "⚠️ Terrain roads data not loaded, falling back to standard routing"
-      );
-    } else {
-      // Analyze terrain data to find strategic waypoints based on priority mode
-      let availableRoads = terrainRoadsData.features;
-
+    if (terrainRoadsData) {
       switch (priorityMode) {
-        case "safe":
-          // Find safe roads and use them as waypoints for routing
-          const safeRoads = terrainRoadsData.features.filter(
-            (road) =>
-              road.properties.flooded === "0" && road.properties.elev_mean > 3
-          );
-
-          // Find safe roads that are reasonably close to the route path (more restrictive bounds for Zamboanga City)
-          const zamboangaBounds = {
-            minLat: 6.85, // Southern boundary of Zamboanga City
-            maxLat: 7.15, // Northern boundary of Zamboanga City
-            minLng: 122.0, // Western boundary of Zamboanga City
-            maxLng: 122.15, // Eastern boundary of Zamboanga City (avoid going too far into water)
-          };
-
-          const relevantSafeRoads = safeRoads.filter((road) => {
-            if (
-              road.geometry.type === "LineString" &&
-              road.geometry.coordinates.length > 0
-            ) {
-              const roadMid =
-                road.geometry.coordinates[
-                  Math.floor(road.geometry.coordinates.length / 2)
-                ];
-              const roadLat = roadMid[1];
-              const roadLng = roadMid[0];
-
-              // Must be within Zamboanga City bounds (avoid water areas)
-              const withinBounds =
-                roadLat >= zamboangaBounds.minLat &&
-                roadLat <= zamboangaBounds.maxLat &&
-                roadLng >= zamboangaBounds.minLng &&
-                roadLng <= zamboangaBounds.maxLng;
-
-              // Must be reasonably close to the route path (smaller buffer to avoid water)
-              const nearRoute =
-                roadLat >= Math.min(start.lat, end.lat) - 0.01 &&
-                roadLat <= Math.max(start.lat, end.lat) + 0.01 &&
-                roadLng >= Math.min(start.lng, end.lng) - 0.01 &&
-                roadLng <= Math.max(start.lng, end.lng) + 0.01;
-
-              return withinBounds && nearRoute;
-            }
-            return false;
+        case "safe": {
+          const primary = selectWaypoint({
+            floodPreference: "avoid",
+            minElevation: 6,
+            elevationWeight: 2.2,
+            latPreference: 0.9,
+            lngPreference: 0.35,
+            corridorWidthKm: 1.2,
+            positionBias: 0.45,
           });
-
-          // Use safe road midpoints as waypoints, but validate they're on land
-          strategicWaypoints = relevantSafeRoads
-            .slice(0, 1)
-            .map((road) => {
-              const midIndex = Math.floor(road.geometry.coordinates.length / 2);
-              const midPoint = road.geometry.coordinates[midIndex];
-              const waypoint = { lat: midPoint[1], lng: midPoint[0] };
-
-              // Validate waypoint is within reasonable bounds for Zamboanga City
-              if (
-                waypoint.lat >= zamboangaBounds.minLat &&
-                waypoint.lat <= zamboangaBounds.maxLat &&
-                waypoint.lng >= zamboangaBounds.minLng &&
-                waypoint.lng <= zamboangaBounds.maxLng
-              ) {
-                return waypoint;
-              }
-              return null;
-            })
-            .filter((wp) => wp !== null);
-
+          const secondary = selectWaypoint({
+            floodPreference: "avoid",
+            minElevation: 5,
+            elevationWeight: 1.8,
+            latPreference: 0.7,
+            lngPreference: 0.25,
+            corridorWidthKm: 1.4,
+            positionBias: 0.7,
+          });
+          strategicWaypoints = [primary, secondary].filter(
+            Boolean
+          ) as LatLng[];
           console.log(
-            `🛡️ Found ${relevantSafeRoads.length} relevant safe roads, using ${strategicWaypoints.length} waypoints`
+            `🛡️ Safe route waypoints selected: ${strategicWaypoints.length}`
           );
           break;
-
-        case "direct":
-          // No waypoints for direct route
-          console.log(`🚀 Using direct route with no waypoints`);
+        }
+        case "manageable": {
+          const primary = selectWaypoint({
+            floodPreference: "neutral",
+            minElevation: 3,
+            maxElevation: 8,
+            elevationWeight: 0.8,
+            latPreference: 0.25,
+            lngPreference: -0.8,
+            corridorWidthKm: 1.3,
+            positionBias: 0.45,
+          });
+          const secondary = selectWaypoint({
+            floodPreference: "neutral",
+            minElevation: 2,
+            maxElevation: 7,
+            elevationWeight: 0.6,
+            latPreference: 0.15,
+            lngPreference: -0.9,
+            corridorWidthKm: 1.6,
+            positionBias: 0.7,
+          });
+          strategicWaypoints = [primary, secondary].filter(
+            Boolean
+          ) as LatLng[];
+          console.log(
+            `⚠️ Manageable route waypoints selected: ${strategicWaypoints.length}`
+          );
           break;
+        }
+        case "flood_prone": {
+          const primary = selectWaypoint({
+            floodPreference: "prefer",
+            maxElevation: 5,
+            elevationWeight: -1.3,
+            latPreference: -0.8,
+            lngPreference: -0.35,
+            corridorWidthKm: 1.8,
+            positionBias: 0.5,
+          });
+          const secondary = selectWaypoint({
+            floodPreference: "prefer",
+            maxElevation: 6,
+            elevationWeight: -1.0,
+            latPreference: -0.6,
+            lngPreference: -0.65,
+            corridorWidthKm: 2.0,
+            positionBias: 0.75,
+          });
+          strategicWaypoints = [primary, secondary].filter(
+            Boolean
+          ) as LatLng[];
 
-        case "balanced":
-        default:
-          // For balanced route, use simple strategic waypoint to avoid complexity
-          // Instead of using terrain data that might lead to water, use safe city waypoints
-          const midLat = (start.lat + end.lat) / 2;
-          const midLng = (start.lng + end.lng) / 2;
-
-          // Add small offset toward city center (avoid water) - Zamboanga City center is roughly at 6.91, 122.08
-          const cityCenter = { lat: 6.91, lng: 122.08 };
-          const offsetLat = midLat + (cityCenter.lat - midLat) * 0.1; // 10% toward city center
-          const offsetLng = midLng + (cityCenter.lng - midLng) * 0.1;
-
-          // Validate the waypoint is within city bounds
-          if (
-            offsetLat >= 6.85 &&
-            offsetLat <= 7.15 &&
-            offsetLng >= 122.0 &&
-            offsetLng <= 122.15
-          ) {
-            strategicWaypoints = [{ lat: offsetLat, lng: offsetLng }];
+          if (strategicWaypoints.length === 0) {
+            const midpoint = computeMidpoint(start, end);
+            const coastalBias = clampPointToBounds(
+              {
+                lat: Math.max(6.87, Math.min(7.04, midpoint.lat - 0.018)),
+                lng: Math.max(122.02, Math.min(122.13, midpoint.lng - 0.02)),
+              },
+              SAFE_CITY_BOUNDS
+            );
+            strategicWaypoints = [coastalBias];
           }
 
+          console.log(
+            `🚨 Flood-prone route waypoints selected: ${strategicWaypoints.length}`
+          );
+          break;
+        }
+        case "direct": {
+          strategicWaypoints = [];
+          console.log(`🚀 Using direct route with no waypoints`);
+          break;
+        }
+        case "balanced":
+        default: {
+          const midpoint = computeMidpoint(start, end);
+          const cityWaypoint = biasTowardCityCenter(midpoint, 0.1);
+          if (isWithinBounds(cityWaypoint, BALANCED_CITY_BOUNDS)) {
+            strategicWaypoints = [cityWaypoint];
+          }
           console.log(
             `⚖️ Using ${strategicWaypoints.length} city-center waypoints for balanced route`
           );
           break;
+        }
       }
+    } else {
+      console.warn(
+        "⚠️ Terrain roads data not loaded, falling back to standard routing"
+      );
     }
 
-    // Debug waypoints
     if (strategicWaypoints.length > 0) {
       console.log(
         `📍 Generated ${strategicWaypoints.length} strategic waypoints for ${priorityMode} route:`
@@ -698,29 +1039,32 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     }
 
     try {
-      // Try local OSRM first if available with strategic waypoints
       if (USE_LOCAL_OSRM) {
         console.log(
           `🏠 Attempting local OSRM for ${priorityMode} route with ${strategicWaypoints.length} waypoints...`
         );
         const route = await getLocalOSRMRoute(start, end, strategicWaypoints);
 
-        // Analyze the route against terrain data for risk assessment
-        if (terrainRoadsData) {
-          analyzeRouteRisk(route);
+        if (route.length > 1) {
+          if (terrainRoadsData) {
+            analyzeRouteRisk(route);
+          }
+          registerReservedRoads();
+          return route;
         }
 
-        return route;
+        console.warn(
+          `⚠️ Local OSRM returned insufficient data for ${priorityMode}, falling back to external services`
+        );
       }
     } catch (localError) {
       console.warn(
         `⚠️ Local OSRM unavailable for ${priorityMode} route:`,
-        localError.message
+        (localError as Error).message
       );
     }
 
     try {
-      // Fallback to external routing services with terrain-based waypoints
       console.log(
         `🌐 Using external routing for ${priorityMode} route with terrain-based waypoints...`
       );
@@ -728,58 +1072,61 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       let route: LatLng[] = [];
 
       if (strategicWaypoints.length > 0) {
-        // Use terrain-derived waypoints
         console.log(
           `📍 Using ${strategicWaypoints.length} terrain-based waypoints for ${priorityMode} route`
         );
         route = await getRouteFromAPI(start, end, strategicWaypoints);
       } else {
-        // Fallback to simple waypoint strategies if no terrain data available
-        if (priorityMode === "safe") {
-          // Safe route: stay within city bounds and avoid water areas
-          const cityCenter = { lat: 6.91, lng: 122.08 }; // Zamboanga City center
-          const midLat = (start.lat + end.lat) / 2;
-          const midLng = (start.lng + end.lng) / 2;
+        const midpoint = computeMidpoint(start, end);
 
-          // Push waypoint slightly toward city center to avoid water
-          const midPoint = {
-            lat: Math.max(
-              6.86,
-              Math.min(7.1, midLat + (cityCenter.lat - midLat) * 0.2)
-            ),
-            lng: Math.max(
-              122.01,
-              Math.min(122.14, midLng + (cityCenter.lng - midLng) * 0.2)
-            ),
-          };
-          route = await getRouteFromAPI(start, end, [midPoint]);
+        if (priorityMode === "safe") {
+          const safeWaypoint = clampPointToBounds(
+            biasTowardCityCenter(midpoint, 0.2),
+            SAFE_CITY_BOUNDS
+          );
+          route = await getRouteFromAPI(start, end, [safeWaypoint]);
+        } else if (priorityMode === "manageable") {
+          const manageableWaypoint = clampPointToBounds(
+            { lat: midpoint.lat + 0.004, lng: midpoint.lng - 0.02 },
+            SAFE_CITY_BOUNDS
+          );
+          route = await getRouteFromAPI(start, end, [manageableWaypoint]);
+        } else if (priorityMode === "flood_prone") {
+          const floodWaypoint = clampPointToBounds(
+            {
+              lat: Math.max(6.87, midpoint.lat - 0.02),
+              lng: Math.max(122.02, midpoint.lng - 0.03),
+            },
+            SAFE_CITY_BOUNDS
+          );
+          route = await getRouteFromAPI(start, end, [floodWaypoint]);
         } else if (priorityMode === "direct") {
-          // Direct route: shortest path
           route = await getRouteFromAPI(start, end, []);
         } else {
-          // Balanced route: slight detour but stay on land
-          const midLat = (start.lat + end.lat) / 2;
-          const midLng = (start.lng + end.lng) / 2;
-
-          // Ensure waypoint stays within safe city bounds
-          const midPoint = {
-            lat: Math.max(6.86, Math.min(7.1, midLat + 0.005)), // Constrain to city bounds
-            lng: Math.max(122.01, Math.min(122.14, midLng)), // Constrain to avoid water
-          };
-          route = await getRouteFromAPI(start, end, [midPoint]);
+          const balancedWaypoint = clampPointToBounds(
+            { lat: midpoint.lat + 0.005, lng: midpoint.lng },
+            SAFE_CITY_BOUNDS
+          );
+          route = await getRouteFromAPI(start, end, [balancedWaypoint]);
         }
       }
 
-      // Analyze the route against terrain data for risk assessment
       if (terrainRoadsData && route.length > 0) {
         analyzeRouteRisk(route);
       }
 
-      return route;
+      if (route.length > 1) {
+        registerReservedRoads();
+        return route;
+      }
+
+      console.warn(
+        `⚠️ External routing returned insufficient data for ${priorityMode}, returning fallback line`
+      );
+      return [start, end];
     } catch (error) {
       console.error(`❌ All routing failed for ${priorityMode} route:`, error);
 
-      // Last resort: create a simple straight line
       console.log(
         `📍 Creating fallback straight line for ${priorityMode} route`
       );
@@ -2591,52 +2938,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       return createDirectRoute(start, end);
     }
 
-    const analyzeRouteElevation = async (
-      waypoints: LatLng[]
-    ): Promise<{
-      avgElevation: number;
-      lowPoints: number;
-      coastalPoints: number;
-      terrainProfile: number[];
-    }> => {
-      const sampleSize = Math.min(waypoints.length, 20); // Sample points along route
-      const step = Math.max(1, Math.floor(waypoints.length / sampleSize));
-      let elevationSum = 0;
-      let lowPoints = 0;
-      let coastalPoints = 0;
-      const terrainProfile: number[] = [];
-
-      const cityCenter = { lat: 6.9214, lng: 122.079 }; // Zamboanga City center
-
-      for (let i = 0; i < waypoints.length; i += step) {
-        const point = waypoints[i];
-        const elevationData = await getElevationData(point.lat, point.lng);
-
-        if (elevationData) {
-          elevationSum += elevationData.elevation;
-          terrainProfile.push(elevationData.elevation);
-
-          if (elevationData.elevation < 5) lowPoints++;
-
-          // Check if point is coastal
-          const distanceFromCenter =
-            Math.sqrt(
-              Math.pow(point.lat - cityCenter.lat, 2) +
-                Math.pow(point.lng - cityCenter.lng, 2)
-            ) * 111; // Convert to km
-
-          if (distanceFromCenter < 3) coastalPoints++;
-        }
-      }
-
-      return {
-        avgElevation: elevationSum / (terrainProfile.length || 1),
-        lowPoints,
-        coastalPoints,
-        terrainProfile,
-      };
-    };
-
     // Check if route actually starts and ends at the right points
     const threshold = 0.001; // About 100m tolerance
     const startsCorrectly =
@@ -2768,9 +3069,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     curveDirection: "north" | "south" | "east" | "west" | "direct",
     curveIntensity: number = 0.3
   ): LatLng[] => {
-    const midLat = (start.lat + end.lat) / 2;
-    const midLng = (start.lng + end.lng) / 2;
-
     // Calculate route length to scale curve appropriately
     const routeDistance = Math.sqrt(
       Math.pow(end.lat - start.lat, 2) + Math.pow(end.lng - start.lng, 2)
@@ -3594,8 +3892,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     end: LatLng,
     riskPreference: "safe" | "moderate" | "prone"
   ): LatLng[] => {
-    const midLat = (start.lat + end.lat) / 2;
-    const midLng = (start.lng + end.lng) / 2;
+    const { lat: midLat, lng: midLng } = computeMidpoint(start, end);
 
     // Base offset that scales with distance but has minimum for visibility
     const routeDistance = Math.sqrt(
@@ -3682,18 +3979,12 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     let alternativeWaypoints: LatLng[] = [];
 
-    // Calculate dynamic offsets based on route distance for better separation
-    const routeDistance = Math.sqrt(
-      Math.pow(end.lat - start.lat, 2) + Math.pow(end.lng - start.lng, 2)
-    );
-    // Use LARGER offsets for stronger visual separation
-    const baseOffset = 0.045; // Fixed ~5km offset for STRONG visual separation
+    // Fixed offsets for strong visual separation across alternative routes
+    const baseOffset = 0.045; // ~5km offset for STRONG visual separation
+    const { lat: midLat, lng: midLng } = computeMidpoint(start, end);
 
     if (routeType.includes("manageable")) {
       // Try different western waypoints for manageable route with fixed offsets
-      const midLat = (start.lat + end.lat) / 2;
-      const midLng = (start.lng + end.lng) / 2;
-
       const alternatives = [
         [start, { lat: midLat + 0.008, lng: midLng - baseOffset }, end], // Western route
         [start, { lat: midLat - 0.008, lng: midLng - baseOffset * 0.8 }, end], // Southwest route
@@ -3702,9 +3993,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       alternativeWaypoints = alternatives[attemptNumber % alternatives.length];
     } else if (routeType.includes("flood_prone")) {
       // Try different coastal/southern waypoints for flood-prone route with fixed offsets
-      const midLat = (start.lat + end.lat) / 2;
-      const midLng = (start.lng + end.lng) / 2;
-
       const alternatives = [
         [start, { lat: midLat - baseOffset * 0.8, lng: midLng - 0.02 }, end], // Southern coastal route
         [start, { lat: midLat - baseOffset * 0.6, lng: midLng - 0.025 }, end], // Coastal western route
@@ -3713,9 +4001,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       alternativeWaypoints = alternatives[attemptNumber % alternatives.length];
     } else {
       // For safe routes, try northern waypoints with fixed offsets
-      const midLat = (start.lat + end.lat) / 2;
-      const midLng = (start.lng + end.lng) / 2;
-
       const alternatives = [
         [start, { lat: midLat + baseOffset, lng: midLng + 0.01 }, end], // Northern route
         [start, { lat: midLat + baseOffset * 0.8, lng: midLng + 0.025 }, end], // Northeast route
@@ -3754,8 +4039,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       `    Forcing separation for ${routeType} with ${multiplier}x offset...`
     );
 
-    const midLat = (start.lat + end.lat) / 2;
-    const midLng = (start.lng + end.lng) / 2;
+    const { lat: midLat, lng: midLng } = computeMidpoint(start, end);
 
     // Determine STRONG offset direction based on route type with enhanced multiplier
     let offsetLat = 0;
@@ -3801,6 +4085,201 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       )}m lat, ${(offsetLng * 111).toFixed(0)}m lng`
     );
     return separatedRoute;
+  };
+
+  const enforceDistinctRoutes = async (
+    start: LatLng,
+    end: LatLng,
+    routes: {
+      id: number;
+      routeType: string;
+      waypoints: LatLng[];
+      distance: string;
+      duration: number;
+      riskScore: number;
+      warnings: string[];
+      originalRoute: any;
+    }[]
+  ) => {
+    if (routes.length < 2) {
+      return routes;
+    }
+
+    const priority = ["safe", "manageable", "flood_prone"];
+    const midpoint = computeMidpoint(start, end);
+    const quarterPoint = computeMidpoint(start, midpoint);
+    const threeQuarterPoint = computeMidpoint(midpoint, end);
+    const distanceScalar = Math.sqrt(
+      Math.pow(end.lat - start.lat, 2) + Math.pow(end.lng - start.lng, 2)
+    );
+    const latScale = clampValue(distanceScalar * 0.6, 0.008, 0.05);
+    const lngScale = clampValue(distanceScalar * 0.6, 0.008, 0.06);
+
+    type AnchorKey = "start" | "mid" | "end" | "quarter" | "threeQuarter";
+
+    interface BiasStep {
+      anchor: AnchorKey;
+      latOffset: number;
+      lngOffset: number;
+    }
+
+    const anchorPoints: Record<AnchorKey, LatLng> = {
+      start,
+      mid: midpoint,
+      end,
+      quarter: quarterPoint,
+      threeQuarter: threeQuarterPoint,
+    };
+
+    const directionBiases: Record<string, BiasStep[][]> = {
+      safe: [
+        [
+          { anchor: "quarter", latOffset: latScale * 0.7, lngOffset: lngScale * 0.2 },
+          { anchor: "mid", latOffset: latScale * 1.1, lngOffset: lngScale * 0.6 },
+        ],
+        [
+          { anchor: "quarter", latOffset: latScale * 0.6, lngOffset: -lngScale * 0.2 },
+          { anchor: "threeQuarter", latOffset: latScale * 0.8, lngOffset: lngScale * 0.3 },
+        ],
+      ],
+      manageable: [
+        [
+          { anchor: "quarter", latOffset: latScale * 0.2, lngOffset: -lngScale * 0.9 },
+          { anchor: "mid", latOffset: latScale * 0.5, lngOffset: -lngScale * 1.3 },
+        ],
+        [
+          { anchor: "quarter", latOffset: latScale * 0.35, lngOffset: -lngScale * 0.7 },
+          { anchor: "threeQuarter", latOffset: latScale * 0.3, lngOffset: -lngScale * 1.2 },
+        ],
+      ],
+      flood_prone: [
+        [
+          { anchor: "quarter", latOffset: -latScale * 0.6, lngOffset: -lngScale * 0.4 },
+          { anchor: "mid", latOffset: -latScale * 1.0, lngOffset: -lngScale * 0.6 },
+        ],
+        [
+          { anchor: "quarter", latOffset: -latScale * 0.7, lngOffset: lngScale * 0.2 },
+          {
+            anchor: "threeQuarter",
+            latOffset: -latScale * 0.8,
+            lngOffset: -lngScale * 0.9,
+          },
+        ],
+      ],
+    };
+
+    const buildWaypointSet = (biasSteps: BiasStep[]): LatLng[] =>
+      biasSteps.map((step) =>
+        clampPointToBounds(
+          {
+            lat: anchorPoints[step.anchor].lat + step.latOffset,
+            lng: anchorPoints[step.anchor].lng + step.lngOffset,
+          },
+          SAFE_CITY_BOUNDS
+        )
+      );
+
+    const attemptDirectionalReroute = async (
+      routeType: string,
+      originalWaypoints: LatLng[]
+    ): Promise<LatLng[] | null> => {
+      if (!USE_LOCAL_OSRM) {
+        return null;
+      }
+
+      const candidates = directionBiases[routeType] || [];
+
+      for (const bias of candidates) {
+        const waypoints = buildWaypointSet(bias);
+        try {
+          const rerouted = await getLocalOSRMRoute(start, end, waypoints);
+          if (rerouted.length > 1) {
+            const overlapWithOriginal = calculateOverlapRatio(
+              originalWaypoints,
+              rerouted
+            );
+            if (overlapWithOriginal < 0.45) {
+              return rerouted;
+            }
+          }
+        } catch (error) {
+          console.warn(
+            `Directional reroute failed for ${routeType}, trying next preset...`,
+            error
+          );
+        }
+      }
+
+      return null;
+    };
+
+    const clonedRoutes = routes.map((route) => ({
+      ...route,
+      warnings: Array.isArray(route.warnings) ? [...route.warnings] : [],
+    }));
+
+    const maxIterations = 2;
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
+      let adjustmentsMade = false;
+
+      for (let i = 0; i < clonedRoutes.length; i++) {
+        for (let j = i + 1; j < clonedRoutes.length; j++) {
+          const routeA = clonedRoutes[i];
+          const routeB = clonedRoutes[j];
+          const overlap = calculateOverlapRatio(
+            routeA.waypoints,
+            routeB.waypoints
+          );
+
+          if (overlap > 0.55) {
+            const indexToAdjust =
+              priority.indexOf(routeA.routeType) >= priority.indexOf(routeB.routeType)
+                ? i
+                : j;
+
+            const routeToAdjust = clonedRoutes[indexToAdjust];
+            const rerouted = await attemptDirectionalReroute(
+              routeToAdjust.routeType,
+              routeToAdjust.waypoints
+            );
+
+            if (rerouted && rerouted.length > 1) {
+              clonedRoutes[indexToAdjust] = {
+                ...routeToAdjust,
+                waypoints: rerouted,
+              };
+              adjustmentsMade = true;
+              continue;
+            }
+
+            const forcedWaypoints = forceRouteSeparationEnhanced(
+              routeA.waypoints,
+              routeB.waypoints,
+              start,
+              end,
+              routeToAdjust.routeType,
+              1.8
+            );
+
+            clonedRoutes[indexToAdjust] = {
+              ...routeToAdjust,
+              waypoints: forcedWaypoints,
+              warnings: [
+                ...routeToAdjust.warnings,
+                "Route adjusted for clarity to avoid overlapping alternatives",
+              ],
+            };
+            adjustmentsMade = true;
+          }
+        }
+      }
+
+      if (!adjustmentsMade) {
+        break;
+      }
+    }
+
+    return clonedRoutes;
   };
 
   // Check if routes are too similar (ACTUALLY identical - not just similar)
@@ -3891,9 +4370,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     if (!safestRoute) {
       // Fallback with waypoint through major intersection
-      const midLat = (start.lat + end.lat) / 2;
-      const midLng = (start.lng + end.lng) / 2;
-      const majorRoadWaypoint = { lat: midLat + 0.003, lng: midLng }; // Slight offset to major road
+      const midpoint = computeMidpoint(start, end);
+      const majorRoadWaypoint = { lat: midpoint.lat + 0.003, lng: midpoint.lng }; // Slight offset to major road
       safestRoute = await tryRouteFromAPI(
         [start, majorRoadWaypoint, end],
         "Safest with Waypoint",
@@ -3928,11 +4406,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       console.log("Routes too similar, creating distinct variations...");
 
       // Try multiple different waypoints for variation
-      const midLat = (start.lat + end.lat) / 2;
-      const midLng = (start.lng + end.lng) / 2;
+      const midpoint = computeMidpoint(start, end);
 
       // Northern variation for safest route
-      const northWaypoint = { lat: midLat + 0.008, lng: midLng };
+      const northWaypoint = { lat: midpoint.lat + 0.008, lng: midpoint.lng };
       const variedSafestRoute = await tryRouteFromAPI(
         [start, northWaypoint, end],
         "Safest Northern",
@@ -3945,7 +4422,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         safestRoute = variedSafestRoute;
       } else {
         // Southern variation as backup
-        const southWaypoint = { lat: midLat - 0.008, lng: midLng };
+        const southWaypoint = { lat: midpoint.lat - 0.008, lng: midpoint.lng };
         const altVariedRoute = await tryRouteFromAPI(
           [start, southWaypoint, end],
           "Safest Southern",
@@ -3994,12 +4471,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     // GENERATE THIRD DISTINCT ALTERNATIVE ROUTE
     console.log("Generating ALTERNATIVE distinct route...");
-    const midLat = (start.lat + end.lat) / 2;
-    const midLng = (start.lng + end.lng) / 2;
+    const midpoint = computeMidpoint(start, end);
 
     // Try eastern waypoint for different path
     let alternativeRoute = await tryRouteFromAPI(
-      [start, { lat: midLat, lng: midLng + 0.01 }, end],
+      [start, { lat: midpoint.lat, lng: midpoint.lng + 0.01 }, end],
       "Alternative Eastern",
       5000
     );
@@ -4011,7 +4487,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       areRoutesSimilar(alternativeRoute, fastestRoute, 0.001)
     ) {
       alternativeRoute = await tryRouteFromAPI(
-        [start, { lat: midLat, lng: midLng - 0.01 }, end],
+        [start, { lat: midpoint.lat, lng: midpoint.lng - 0.01 }, end],
         "Alternative Western",
         5000
       );
@@ -4024,7 +4500,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       areRoutesSimilar(alternativeRoute, fastestRoute, 0.001)
     ) {
       alternativeRoute = await tryRouteFromAPI(
-        [start, { lat: midLat + 0.006, lng: midLng + 0.006 }, end],
+        [
+          start,
+          { lat: midpoint.lat + 0.006, lng: midpoint.lng + 0.006 },
+          end,
+        ],
         "Alternative Diagonal",
         5000
       );
@@ -5069,7 +5549,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       }
 
       // Try backend route API first, fallback to OSRM if it fails
-      let routes: LatLng[][] = [];
+      let routes: any[] = [];
       let routeAnalyses: any[] = [];
 
       try {
@@ -5365,100 +5845,246 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       };
 
       console.log(
-        "🚀 Attempting terrain-aware route calculations with timeout..."
+        "🚀 Attempting terrain-aware route calculations with terrain scoring..."
       );
 
-      const terrainRoutes = await Promise.allSettled([
-        calculateRouteWithTimeout(start, end, "driving", 3000), // Safe route using Docker OSRM
-        calculateRouteWithTimeout(start, end, "driving", 3000), // Alternative route using driving profile
-        calculateRouteWithTimeout(start, end, "driving", 3000), // Direct route using driving profile
-      ]);
+      const sharedTerrainRoadIds = new Set<string>();
 
-      // Extract successful routes
-      const validTerrainRoutes = terrainRoutes
-        .filter(
-          (result) =>
-            result.status === "fulfilled" &&
-            result.value &&
-            result.value.success &&
-            result.value.route &&
-            result.value.route.length > 0
-        )
-        .map((result) => {
-          const routeResponse = (result as any).value;
-          return routeResponse.route as LatLng[];
-        });
+      const safeTerrainWaypoints = await getTerrainAwareRoute(
+        start,
+        end,
+        "safe",
+        { excludeRoadIds: sharedTerrainRoadIds }
+      );
+      const manageableTerrainWaypoints = await getTerrainAwareRoute(
+        start,
+        end,
+        "manageable",
+        { excludeRoadIds: sharedTerrainRoadIds }
+      );
+      const floodProneTerrainWaypoints = await getTerrainAwareRoute(
+        start,
+        end,
+        "flood_prone",
+        { excludeRoadIds: sharedTerrainRoadIds }
+      );
+
+      const terrainCandidates = [
+        { routeType: "safe" as const, waypoints: safeTerrainWaypoints },
+        {
+          routeType: "manageable" as const,
+          waypoints: manageableTerrainWaypoints,
+        },
+        {
+          routeType: "flood_prone" as const,
+          waypoints: floodProneTerrainWaypoints,
+        },
+      ].filter(
+        (candidate) => candidate.waypoints && candidate.waypoints.length >= 2
+      );
 
       console.log(
-        `Generated ${validTerrainRoutes.length} terrain-aware routes (${
-          terrainRoutes.length - validTerrainRoutes.length
-        } failed/timeout)`
+        `🧭 Terrain candidates generated: ${terrainCandidates.length}`
       );
 
-      // Convert terrain routes to the expected routes format and validate coordinates
-      routes = validTerrainRoutes.filter((route) => {
-        if (!route || route.length === 0) return false;
+      const distinctTerrainCandidates: {
+        routeType: "safe" | "manageable" | "flood_prone";
+        waypoints: LatLng[];
+        forced?: boolean;
+      }[] = [];
 
-        // Check if any route points are in water (too far east of Zamboanga City)
-        const hasWaterPoints = route.some(
-          (point) =>
-            point.lng > 122.2 ||
-            point.lng < 122.0 ||
-            point.lat > 7.2 ||
-            point.lat < 6.8
-        );
+      for (const candidate of terrainCandidates) {
+        let overlappingWith:
+          | (typeof distinctTerrainCandidates)[number]
+          | null = null;
 
-        if (hasWaterPoints) {
-          console.warn(
-            `🌊 Filtering out route with water points:`,
-            route.slice(0, 3)
+        for (const existing of distinctTerrainCandidates) {
+          const overlap = calculateOverlapRatio(
+            existing.waypoints,
+            candidate.waypoints
           );
-          return false;
+          if (overlap > 0.55) {
+            overlappingWith = existing;
+            break;
+          }
         }
 
-        return true;
-      });
-
-      console.log(
-        `Converted ${routes.length} valid terrain routes (filtered out water routes)`
-      );
-
-      // If we don't have enough routes or they're going into water, create simple safe fallbacks
-      if (routes.length < 3) {
-        console.log(
-          `⚠️ Only got ${routes.length} valid routes, creating safe fallbacks...`
-        );
-
-        // Create simple land-based routes
-        const safeRoutes = [];
-
-        // Direct route
-        safeRoutes.push([start, end]);
-
-        // Route with city-center waypoint
-        const cityWaypoint = { lat: 6.91, lng: 122.08 }; // Zamboanga City center
-        safeRoutes.push([start, cityWaypoint, end]);
-
-        // Route with slight northern detour (staying on land)
-        const northWaypoint = {
-          lat: Math.min(7.0, (start.lat + end.lat) / 2 + 0.01),
-          lng: Math.max(122.05, Math.min(122.12, (start.lng + end.lng) / 2)),
-        };
-        safeRoutes.push([start, northWaypoint, end]);
-
-        // Add safe fallback routes
-        routes = routes.concat(safeRoutes.slice(routes.length - 3));
-        console.log(`✅ Added ${safeRoutes.length} safe fallback routes`);
+        if (overlappingWith) {
+          console.log(
+            `⚠️ Terrain candidate for ${candidate.routeType} overlapped ${overlappingWith.routeType}, forcing separation`
+          );
+          const multiplier =
+            candidate.routeType === "manageable"
+              ? 1.8
+              : candidate.routeType === "flood_prone"
+              ? 2.3
+              : 1.4;
+          const separatedWaypoints = forceRouteSeparationEnhanced(
+            overlappingWith.waypoints,
+            candidate.waypoints,
+            start,
+            end,
+            candidate.routeType,
+            multiplier
+          );
+          distinctTerrainCandidates.push({
+            ...candidate,
+            waypoints: separatedWaypoints,
+            forced: true,
+          });
+        } else {
+          distinctTerrainCandidates.push(candidate);
+        }
       }
 
-      console.log(`Generated ${routes.length} distinct routes`);
+      if (distinctTerrainCandidates.length > 0) {
+        const enrichedTerrainRoutes = await Promise.all(
+          distinctTerrainCandidates.map(async (candidate) => {
+            const distanceKm = calculateRouteDistance(candidate.waypoints);
+            const analysis = await analyzeRouteElevation(candidate.waypoints);
+            const elevationData = new Map<string, number>();
+            const rawRisk = calculateDetailedRiskScore(
+              candidate.waypoints,
+              analysis,
+              elevationData
+            );
 
-      // Ensure we have exactly 3 routes
+            let normalizedRisk = rawRisk;
+            if (candidate.routeType === "safe") {
+              normalizedRisk = Math.min(rawRisk, 3.5);
+            } else if (candidate.routeType === "manageable") {
+              normalizedRisk = Math.max(4.5, Math.min(rawRisk, 6.5));
+            } else {
+              normalizedRisk = Math.max(7.0, Math.min(rawRisk, 9.0));
+            }
+
+            const averageSpeedKmH =
+              candidate.routeType === "safe"
+                ? 38
+                : candidate.routeType === "manageable"
+                ? 34
+                : 28;
+
+            return {
+              geometry: {
+                coordinates: candidate.waypoints.map((wp) => [wp.lng, wp.lat]),
+              },
+              distance: Math.round(distanceKm * 1000),
+              duration: Math.max(
+                420,
+                Math.round((distanceKm / averageSpeedKmH) * 3600)
+              ),
+              routeType: candidate.routeType,
+              riskScore: Number(normalizedRisk.toFixed(2)),
+              terrainAnalysis: analysis,
+              waypointSource: candidate.forced ? "forced" : "terrain",
+            };
+          })
+        );
+
+        routes = enrichedTerrainRoutes;
+        console.log(
+          `🛣️ Built ${routes.length} terrain-scored candidate routes from GeoJSON`
+        );
+      } else {
+        console.log(
+          "⚠️ No terrain-scored candidates produced, retaining backend routes"
+        );
+      }
+
+      if (!Array.isArray(routes)) {
+        routes = [];
+      }
+
+      const fallbackBlueprints = [
+        {
+          routeType: "safe" as const,
+          waypoints: [start, end],
+          riskScore: 3.2,
+          speed: 36,
+        },
+        {
+          routeType: "manageable" as const,
+          waypoints: [
+            start,
+            clampPointToBounds(
+              {
+                lat: Math.min(
+                  7.04,
+                  Math.max(6.88, (start.lat + end.lat) / 2 + 0.006)
+                ),
+                lng: Math.max(
+                  122.03,
+                  Math.min(122.12, (start.lng + end.lng) / 2 - 0.02)
+                ),
+              },
+              SAFE_CITY_BOUNDS
+            ),
+            end,
+          ],
+          riskScore: 5.8,
+          speed: 32,
+        },
+        {
+          routeType: "flood_prone" as const,
+          waypoints: [
+            start,
+            clampPointToBounds(
+              {
+                lat: Math.max(
+                  6.87,
+                  Math.min(7.02, (start.lat + end.lat) / 2 - 0.02)
+                ),
+                lng: Math.max(
+                  122.02,
+                  Math.min(122.14, (start.lng + end.lng) / 2 - 0.03)
+                ),
+              },
+              SAFE_CITY_BOUNDS
+            ),
+            end,
+          ],
+          riskScore: 7.6,
+          speed: 26,
+        },
+      ];
+
+      const existingTypes = new Set(
+        routes
+          .map((route: any) =>
+            typeof route.routeType === "string" ? route.routeType : null
+          )
+          .filter(Boolean)
+      );
+
+      for (const blueprint of fallbackBlueprints) {
+        if (existingTypes.has(blueprint.routeType)) {
+          continue;
+        }
+
+        const distanceKm = calculateRouteDistance(blueprint.waypoints);
+        routes.push({
+          geometry: {
+            coordinates: blueprint.waypoints.map((wp) => [wp.lng, wp.lat]),
+          },
+          distance: Math.round(distanceKm * 1000),
+          duration: Math.max(
+            420,
+            Math.round((distanceKm / blueprint.speed) * 3600)
+          ),
+          routeType: blueprint.routeType,
+          riskScore: blueprint.riskScore,
+          waypointSource: "fallback",
+        });
+        existingTypes.add(blueprint.routeType);
+      }
+
+      console.log(`Generated ${routes.length} terrain-informed routes`);
+
       if (routes.length > 3) {
         routes = routes.slice(0, 3);
       }
 
-      // Take up to 5 routes for better variety
       routes = routes.slice(0, 5);
 
       // Process each route with DISTINCT risk characteristics
@@ -5490,39 +6116,48 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             });
 
             // Basic route data with fallback values
-            const routeDistance = route.distance || 5000 + index * 2000;
-            const routeDuration = route.duration || 600 + index * 300;
+            const routeDistance =
+              typeof route.distance === "number"
+                ? route.distance
+                : 5000 + index * 2000;
+            const routeDuration =
+              typeof route.duration === "number"
+                ? route.duration
+                : 600 + index * 300;
 
-            // ASSIGN DISTINCT RISK SCORES based on route type and index
-            let riskScore;
-            let routeType = route.routeType || `route_${index}`;
+            // Determine route type and risk score using provided metadata when possible
+            let routeType: "safe" | "manageable" | "flood_prone";
+            if (
+              typeof route.routeType === "string" &&
+              (route.routeType === "safe" ||
+                route.routeType === "manageable" ||
+                route.routeType === "flood_prone")
+            ) {
+              routeType = route.routeType;
+            } else {
+              routeType =
+                index === 0 ? "safe" : index === 1 ? "manageable" : "flood_prone";
+            }
 
-            if (index === 0) {
-              // First route = SAFEST (direct/fastest becomes safest)
-              riskScore = 2.5 + Math.random() * 1.0; // 2.5-3.5 range
-              routeType = "safe";
+            let riskScore =
+              typeof route.riskScore === "number" ? route.riskScore : undefined;
+
+            if (riskScore === undefined) {
+              if (routeType === "safe") {
+                riskScore = 2.8 + Math.random() * 0.9;
+              } else if (routeType === "manageable") {
+                riskScore = 4.9 + Math.random() * 1.1;
+              } else {
+                riskScore = 7.3 + Math.random() * 1.0;
+              }
               console.log(
-                `✅ Route ${
-                  index + 1
-                } assigned as SAFE route (risk: ${riskScore.toFixed(2)})`
-              );
-            } else if (index === 1) {
-              // Second route = MANAGEABLE (coastal/city route)
-              riskScore = 4.5 + Math.random() * 1.5; // 4.5-6.0 range
-              routeType = "manageable";
-              console.log(
-                `⚠️ Route ${
-                  index + 1
-                } assigned as MANAGEABLE route (risk: ${riskScore.toFixed(2)})`
+                `ℹ️ Derived ${routeType} risk from fallback range: ${riskScore.toFixed(
+                  2
+                )}`
               );
             } else {
-              // Third route = FLOOD PRONE (low-lying areas)
-              riskScore = 7.0 + Math.random() * 1.5; // 7.0-8.5 range
-              routeType = "flood_prone";
               console.log(
-                `🚨 Route ${
-                  index + 1
-                } assigned as FLOOD-PRONE route (risk: ${riskScore.toFixed(2)})`
+                `✅ Using provided ${routeType} risk score: ${riskScore.toFixed(2)}`
               );
             }
 
@@ -5607,58 +6242,56 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         throw new Error("No valid routes generated");
       }
 
+      const distinctRoutes = await enforceDistinctRoutes(start, end, validRoutes);
+
       // Sort routes by risk score (lowest to highest - safest first)
-      const sortedRoutes = validRoutes.sort((a, b) => {
+      const sortedRoutes = [...distinctRoutes].sort((a, b) => {
         const riskA = typeof a.riskScore === "number" ? a.riskScore : 5.0;
         const riskB = typeof b.riskScore === "number" ? b.riskScore : 5.0;
         return riskA - riskB;
       });
 
-      // Ensure we have at least 3 routes by creating variations if necessary
-      while (sortedRoutes.length < 3) {
-        const baseRoute = sortedRoutes[sortedRoutes.length - 1];
-
-        // Create a variation with slightly different waypoints to ensure visual distinction
-        const variedWaypoints = [...baseRoute.waypoints];
-
-        // Add subtle variations to middle section of the route for distinctness
-        const startIdx = Math.floor(variedWaypoints.length * 0.2);
-        const endIdx = Math.floor(variedWaypoints.length * 0.8);
-
-        for (
-          let i = startIdx;
-          i < endIdx;
-          i += Math.max(1, Math.floor((endIdx - startIdx) / 5))
-        ) {
-          if (variedWaypoints[i]) {
-            // Apply small offset (about 50-100m) to create visual separation
-            const offsetDistance = 0.0005 + Math.random() * 0.0005; // ~50-100m
-            const offsetAngle = Math.random() * 2 * Math.PI;
-            variedWaypoints[i] = {
-              ...variedWaypoints[i],
-              lat:
-                variedWaypoints[i].lat + offsetDistance * Math.cos(offsetAngle),
-              lng:
-                variedWaypoints[i].lng + offsetDistance * Math.sin(offsetAngle),
-            };
-          }
+      const ensureRouteForType = (
+        routeType: "safe" | "manageable" | "flood_prone"
+      ) => {
+        if (sortedRoutes.some((route) => route.routeType === routeType)) {
+          return;
         }
 
-        const duplicatedRoute = {
-          ...baseRoute,
-          id: sortedRoutes.length + 1,
-          waypoints: variedWaypoints, // Use varied waypoints instead of identical ones
-          riskScore: baseRoute.riskScore + 1.0 + Math.random() * 0.5,
-          warnings: [
-            ...(baseRoute.warnings || []),
-            "Variation of existing route for diversity",
-          ],
-        };
-        sortedRoutes.push(duplicatedRoute);
-        console.log(
-          `Created route variation with ${variedWaypoints.length} modified waypoints`
+        const referenceRoute = sortedRoutes[0];
+        const multiplier =
+          routeType === "manageable" ? 1.6 : routeType === "flood_prone" ? 2.0 : 1.2;
+
+        const forcedWaypoints = forceRouteSeparationEnhanced(
+          referenceRoute.waypoints,
+          referenceRoute.waypoints,
+          start,
+          end,
+          routeType,
+          multiplier
         );
-      }
+
+        sortedRoutes.push({
+          ...referenceRoute,
+          id: sortedRoutes.length + 1,
+          routeType,
+          waypoints: forcedWaypoints,
+          riskScore:
+            routeType === "safe"
+              ? Math.min(referenceRoute.riskScore, 3.2)
+              : routeType === "manageable"
+              ? referenceRoute.riskScore + 1.5
+              : referenceRoute.riskScore + 3,
+          warnings: [
+            ...referenceRoute.warnings,
+            `Generated fallback ${routeType.replace("_", " ")} route for coverage`,
+          ],
+        });
+      };
+
+      ensureRouteForType("safe");
+      ensureRouteForType("manageable");
+      ensureRouteForType("flood_prone");
 
       // SMART ROUTE ASSIGNMENT: Safe route should be shortest/fastest
       sortedRoutes.sort((a, b) => {
