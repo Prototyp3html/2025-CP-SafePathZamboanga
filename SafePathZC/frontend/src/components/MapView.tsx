@@ -110,6 +110,121 @@ interface MapViewProps {
   onModalOpen?: (modal: "report" | "emergency") => void;
 }
 
+type LatLngBounds = {
+  lat: { min: number; max: number };
+  lng: { min: number; max: number };
+};
+
+const CITY_CENTER: LatLng = { lat: 6.91, lng: 122.08 };
+const BALANCED_CITY_BOUNDS: LatLngBounds = {
+  lat: { min: 6.85, max: 7.15 },
+  lng: { min: 122.0, max: 122.15 },
+};
+const SAFE_CITY_BOUNDS: LatLngBounds = {
+  lat: { min: 6.86, max: 7.1 },
+  lng: { min: 122.01, max: 122.14 },
+};
+
+const clampValue = (value: number, min: number, max: number): number =>
+  Math.max(min, Math.min(max, value));
+
+const clampPointToBounds = (point: LatLng, bounds: LatLngBounds): LatLng => ({
+  lat: clampValue(point.lat, bounds.lat.min, bounds.lat.max),
+  lng: clampValue(point.lng, bounds.lng.min, bounds.lng.max),
+});
+
+const computeMidpoint = (start: LatLng, end: LatLng): LatLng => ({
+  lat: (start.lat + end.lat) / 2,
+  lng: (start.lng + end.lng) / 2,
+});
+
+const biasTowardCityCenter = (point: LatLng, factor: number): LatLng => ({
+  lat: point.lat + (CITY_CENTER.lat - point.lat) * factor,
+  lng: point.lng + (CITY_CENTER.lng - point.lng) * factor,
+});
+
+const isWithinBounds = (point: LatLng, bounds: LatLngBounds): boolean =>
+  point.lat >= bounds.lat.min &&
+  point.lat <= bounds.lat.max &&
+  point.lng >= bounds.lng.min &&
+  point.lng <= bounds.lng.max;
+
+const EARTH_RADIUS_KM = 6371;
+
+const toRadians = (degrees: number): number => (degrees * Math.PI) / 180;
+
+const calculateDistanceMeters = (pointA: LatLng, pointB: LatLng): number => {
+  const dLat = toRadians(pointB.lat - pointA.lat);
+  const dLng = toRadians(pointB.lng - pointA.lng);
+  const lat1 = toRadians(pointA.lat);
+  const lat2 = toRadians(pointB.lat);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return EARTH_RADIUS_KM * c * 1000;
+};
+
+const sampleRoutePoints = (route: LatLng[], samples = 25): LatLng[] => {
+  if (route.length <= samples) {
+    return route;
+  }
+
+  const sampled: LatLng[] = [];
+  const step = (route.length - 1) / (samples - 1);
+
+  for (let i = 0; i < samples; i++) {
+    const index = Math.min(route.length - 1, Math.round(i * step));
+    sampled.push(route[index]);
+  }
+
+  return sampled;
+};
+
+const calculateOverlapRatio = (routeA: LatLng[], routeB: LatLng[]): number => {
+  if (routeA.length < 2 || routeB.length < 2) {
+    return 0;
+  }
+
+  const sampledA = sampleRoutePoints(routeA, 30);
+  const sampledB = sampleRoutePoints(routeB, 30);
+  const thresholdMeters = 120; // Treat anything closer than ~120m as overlapping
+
+  let overlapCount = 0;
+  let totalCount = 0;
+
+  const countOverlaps = (source: LatLng[], target: LatLng[]) => {
+    let count = 0;
+    for (const point of source) {
+      let minDistance = Infinity;
+      for (const candidate of target) {
+        const distance = calculateDistanceMeters(point, candidate);
+        if (distance < minDistance) {
+          minDistance = distance;
+        }
+        if (minDistance <= thresholdMeters) {
+          break;
+        }
+      }
+      if (minDistance <= thresholdMeters) {
+        count++;
+      }
+    }
+    return count;
+  };
+
+  overlapCount += countOverlaps(sampledA, sampledB);
+  totalCount += sampledA.length;
+
+  overlapCount += countOverlaps(sampledB, sampledA);
+  totalCount += sampledB.length;
+
+  return totalCount > 0 ? overlapCount / totalCount : 0;
+};
+
 export const MapView = ({ onModalOpen }: MapViewProps) => {
   // Configuration for routing services
   const BACKEND_URL =
@@ -642,22 +757,12 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         default:
           // For balanced route, use simple strategic waypoint to avoid complexity
           // Instead of using terrain data that might lead to water, use safe city waypoints
-          const midLat = (start.lat + end.lat) / 2;
-          const midLng = (start.lng + end.lng) / 2;
-
-          // Add small offset toward city center (avoid water) - Zamboanga City center is roughly at 6.91, 122.08
-          const cityCenter = { lat: 6.91, lng: 122.08 };
-          const offsetLat = midLat + (cityCenter.lat - midLat) * 0.1; // 10% toward city center
-          const offsetLng = midLng + (cityCenter.lng - midLng) * 0.1;
+          const midpoint = computeMidpoint(start, end);
+          const cityWaypoint = biasTowardCityCenter(midpoint, 0.1);
 
           // Validate the waypoint is within city bounds
-          if (
-            offsetLat >= 6.85 &&
-            offsetLat <= 7.15 &&
-            offsetLng >= 122.0 &&
-            offsetLng <= 122.15
-          ) {
-            strategicWaypoints = [{ lat: offsetLat, lng: offsetLng }];
+          if (isWithinBounds(cityWaypoint, BALANCED_CITY_BOUNDS)) {
+            strategicWaypoints = [cityWaypoint];
           }
 
           console.log(
@@ -720,35 +825,22 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         // Fallback to simple waypoint strategies if no terrain data available
         if (priorityMode === "safe") {
           // Safe route: stay within city bounds and avoid water areas
-          const cityCenter = { lat: 6.91, lng: 122.08 }; // Zamboanga City center
-          const midLat = (start.lat + end.lat) / 2;
-          const midLng = (start.lng + end.lng) / 2;
-
-          // Push waypoint slightly toward city center to avoid water
-          const midPoint = {
-            lat: Math.max(
-              6.86,
-              Math.min(7.1, midLat + (cityCenter.lat - midLat) * 0.2)
-            ),
-            lng: Math.max(
-              122.01,
-              Math.min(122.14, midLng + (cityCenter.lng - midLng) * 0.2)
-            ),
-          };
+          const midpoint = computeMidpoint(start, end);
+          const midPoint = clampPointToBounds(
+            biasTowardCityCenter(midpoint, 0.2),
+            SAFE_CITY_BOUNDS
+          );
           route = await getRouteFromAPI(start, end, [midPoint]);
         } else if (priorityMode === "direct") {
           // Direct route: shortest path
           route = await getRouteFromAPI(start, end, []);
         } else {
           // Balanced route: slight detour but stay on land
-          const midLat = (start.lat + end.lat) / 2;
-          const midLng = (start.lng + end.lng) / 2;
-
-          // Ensure waypoint stays within safe city bounds
-          const midPoint = {
-            lat: Math.max(6.86, Math.min(7.1, midLat + 0.005)), // Constrain to city bounds
-            lng: Math.max(122.01, Math.min(122.14, midLng)), // Constrain to avoid water
-          };
+          const midpoint = computeMidpoint(start, end);
+          const midPoint = clampPointToBounds(
+            { lat: midpoint.lat + 0.005, lng: midpoint.lng },
+            SAFE_CITY_BOUNDS
+          );
           route = await getRouteFromAPI(start, end, [midPoint]);
         }
       }
@@ -2554,52 +2646,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       return createDirectRoute(start, end);
     }
 
-    const analyzeRouteElevation = async (
-      waypoints: LatLng[]
-    ): Promise<{
-      avgElevation: number;
-      lowPoints: number;
-      coastalPoints: number;
-      terrainProfile: number[];
-    }> => {
-      const sampleSize = Math.min(waypoints.length, 20); // Sample points along route
-      const step = Math.max(1, Math.floor(waypoints.length / sampleSize));
-      let elevationSum = 0;
-      let lowPoints = 0;
-      let coastalPoints = 0;
-      const terrainProfile: number[] = [];
-
-      const cityCenter = { lat: 6.9214, lng: 122.079 }; // Zamboanga City center
-
-      for (let i = 0; i < waypoints.length; i += step) {
-        const point = waypoints[i];
-        const elevationData = await getElevationData(point.lat, point.lng);
-
-        if (elevationData) {
-          elevationSum += elevationData.elevation;
-          terrainProfile.push(elevationData.elevation);
-
-          if (elevationData.elevation < 5) lowPoints++;
-
-          // Check if point is coastal
-          const distanceFromCenter =
-            Math.sqrt(
-              Math.pow(point.lat - cityCenter.lat, 2) +
-                Math.pow(point.lng - cityCenter.lng, 2)
-            ) * 111; // Convert to km
-
-          if (distanceFromCenter < 3) coastalPoints++;
-        }
-      }
-
-      return {
-        avgElevation: elevationSum / (terrainProfile.length || 1),
-        lowPoints,
-        coastalPoints,
-        terrainProfile,
-      };
-    };
-
     // Check if route actually starts and ends at the right points
     const threshold = 0.001; // About 100m tolerance
     const startsCorrectly =
@@ -2731,9 +2777,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     curveDirection: "north" | "south" | "east" | "west" | "direct",
     curveIntensity: number = 0.3
   ): LatLng[] => {
-    const midLat = (start.lat + end.lat) / 2;
-    const midLng = (start.lng + end.lng) / 2;
-
     // Calculate route length to scale curve appropriately
     const routeDistance = Math.sqrt(
       Math.pow(end.lat - start.lat, 2) + Math.pow(end.lng - start.lng, 2)
@@ -3557,8 +3600,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     end: LatLng,
     riskPreference: "safe" | "moderate" | "prone"
   ): LatLng[] => {
-    const midLat = (start.lat + end.lat) / 2;
-    const midLng = (start.lng + end.lng) / 2;
+    const { lat: midLat, lng: midLng } = computeMidpoint(start, end);
 
     // Base offset that scales with distance but has minimum for visibility
     const routeDistance = Math.sqrt(
@@ -3645,18 +3687,12 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     let alternativeWaypoints: LatLng[] = [];
 
-    // Calculate dynamic offsets based on route distance for better separation
-    const routeDistance = Math.sqrt(
-      Math.pow(end.lat - start.lat, 2) + Math.pow(end.lng - start.lng, 2)
-    );
-    // Use LARGER offsets for stronger visual separation
-    const baseOffset = 0.045; // Fixed ~5km offset for STRONG visual separation
+    // Fixed offsets for strong visual separation across alternative routes
+    const baseOffset = 0.045; // ~5km offset for STRONG visual separation
+    const { lat: midLat, lng: midLng } = computeMidpoint(start, end);
 
     if (routeType.includes("manageable")) {
       // Try different western waypoints for manageable route with fixed offsets
-      const midLat = (start.lat + end.lat) / 2;
-      const midLng = (start.lng + end.lng) / 2;
-
       const alternatives = [
         [start, { lat: midLat + 0.008, lng: midLng - baseOffset }, end], // Western route
         [start, { lat: midLat - 0.008, lng: midLng - baseOffset * 0.8 }, end], // Southwest route
@@ -3665,9 +3701,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       alternativeWaypoints = alternatives[attemptNumber % alternatives.length];
     } else if (routeType.includes("flood_prone")) {
       // Try different coastal/southern waypoints for flood-prone route with fixed offsets
-      const midLat = (start.lat + end.lat) / 2;
-      const midLng = (start.lng + end.lng) / 2;
-
       const alternatives = [
         [start, { lat: midLat - baseOffset * 0.8, lng: midLng - 0.02 }, end], // Southern coastal route
         [start, { lat: midLat - baseOffset * 0.6, lng: midLng - 0.025 }, end], // Coastal western route
@@ -3676,9 +3709,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       alternativeWaypoints = alternatives[attemptNumber % alternatives.length];
     } else {
       // For safe routes, try northern waypoints with fixed offsets
-      const midLat = (start.lat + end.lat) / 2;
-      const midLng = (start.lng + end.lng) / 2;
-
       const alternatives = [
         [start, { lat: midLat + baseOffset, lng: midLng + 0.01 }, end], // Northern route
         [start, { lat: midLat + baseOffset * 0.8, lng: midLng + 0.025 }, end], // Northeast route
@@ -3717,8 +3747,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       `    Forcing separation for ${routeType} with ${multiplier}x offset...`
     );
 
-    const midLat = (start.lat + end.lat) / 2;
-    const midLng = (start.lng + end.lng) / 2;
+    const { lat: midLat, lng: midLng } = computeMidpoint(start, end);
 
     // Determine STRONG offset direction based on route type with enhanced multiplier
     let offsetLat = 0;
@@ -3764,6 +3793,201 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       )}m lat, ${(offsetLng * 111).toFixed(0)}m lng`
     );
     return separatedRoute;
+  };
+
+  const enforceDistinctRoutes = async (
+    start: LatLng,
+    end: LatLng,
+    routes: {
+      id: number;
+      routeType: string;
+      waypoints: LatLng[];
+      distance: string;
+      duration: number;
+      riskScore: number;
+      warnings: string[];
+      originalRoute: any;
+    }[]
+  ) => {
+    if (routes.length < 2) {
+      return routes;
+    }
+
+    const priority = ["safe", "manageable", "flood_prone"];
+    const midpoint = computeMidpoint(start, end);
+    const quarterPoint = computeMidpoint(start, midpoint);
+    const threeQuarterPoint = computeMidpoint(midpoint, end);
+    const distanceScalar = Math.sqrt(
+      Math.pow(end.lat - start.lat, 2) + Math.pow(end.lng - start.lng, 2)
+    );
+    const latScale = clampValue(distanceScalar * 0.6, 0.008, 0.05);
+    const lngScale = clampValue(distanceScalar * 0.6, 0.008, 0.06);
+
+    type AnchorKey = "start" | "mid" | "end" | "quarter" | "threeQuarter";
+
+    interface BiasStep {
+      anchor: AnchorKey;
+      latOffset: number;
+      lngOffset: number;
+    }
+
+    const anchorPoints: Record<AnchorKey, LatLng> = {
+      start,
+      mid: midpoint,
+      end,
+      quarter: quarterPoint,
+      threeQuarter: threeQuarterPoint,
+    };
+
+    const directionBiases: Record<string, BiasStep[][]> = {
+      safe: [
+        [
+          { anchor: "quarter", latOffset: latScale * 0.7, lngOffset: lngScale * 0.2 },
+          { anchor: "mid", latOffset: latScale * 1.1, lngOffset: lngScale * 0.6 },
+        ],
+        [
+          { anchor: "quarter", latOffset: latScale * 0.6, lngOffset: -lngScale * 0.2 },
+          { anchor: "threeQuarter", latOffset: latScale * 0.8, lngOffset: lngScale * 0.3 },
+        ],
+      ],
+      manageable: [
+        [
+          { anchor: "quarter", latOffset: latScale * 0.2, lngOffset: -lngScale * 0.9 },
+          { anchor: "mid", latOffset: latScale * 0.5, lngOffset: -lngScale * 1.3 },
+        ],
+        [
+          { anchor: "quarter", latOffset: latScale * 0.35, lngOffset: -lngScale * 0.7 },
+          { anchor: "threeQuarter", latOffset: latScale * 0.3, lngOffset: -lngScale * 1.2 },
+        ],
+      ],
+      flood_prone: [
+        [
+          { anchor: "quarter", latOffset: -latScale * 0.6, lngOffset: -lngScale * 0.4 },
+          { anchor: "mid", latOffset: -latScale * 1.0, lngOffset: -lngScale * 0.6 },
+        ],
+        [
+          { anchor: "quarter", latOffset: -latScale * 0.7, lngOffset: lngScale * 0.2 },
+          {
+            anchor: "threeQuarter",
+            latOffset: -latScale * 0.8,
+            lngOffset: -lngScale * 0.9,
+          },
+        ],
+      ],
+    };
+
+    const buildWaypointSet = (biasSteps: BiasStep[]): LatLng[] =>
+      biasSteps.map((step) =>
+        clampPointToBounds(
+          {
+            lat: anchorPoints[step.anchor].lat + step.latOffset,
+            lng: anchorPoints[step.anchor].lng + step.lngOffset,
+          },
+          SAFE_CITY_BOUNDS
+        )
+      );
+
+    const attemptDirectionalReroute = async (
+      routeType: string,
+      originalWaypoints: LatLng[]
+    ): Promise<LatLng[] | null> => {
+      if (!USE_LOCAL_OSRM) {
+        return null;
+      }
+
+      const candidates = directionBiases[routeType] || [];
+
+      for (const bias of candidates) {
+        const waypoints = buildWaypointSet(bias);
+        try {
+          const rerouted = await getLocalOSRMRoute(start, end, waypoints);
+          if (rerouted.length > 1) {
+            const overlapWithOriginal = calculateOverlapRatio(
+              originalWaypoints,
+              rerouted
+            );
+            if (overlapWithOriginal < 0.45) {
+              return rerouted;
+            }
+          }
+        } catch (error) {
+          console.warn(
+            `Directional reroute failed for ${routeType}, trying next preset...`,
+            error
+          );
+        }
+      }
+
+      return null;
+    };
+
+    const clonedRoutes = routes.map((route) => ({
+      ...route,
+      warnings: Array.isArray(route.warnings) ? [...route.warnings] : [],
+    }));
+
+    const maxIterations = 2;
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
+      let adjustmentsMade = false;
+
+      for (let i = 0; i < clonedRoutes.length; i++) {
+        for (let j = i + 1; j < clonedRoutes.length; j++) {
+          const routeA = clonedRoutes[i];
+          const routeB = clonedRoutes[j];
+          const overlap = calculateOverlapRatio(
+            routeA.waypoints,
+            routeB.waypoints
+          );
+
+          if (overlap > 0.55) {
+            const indexToAdjust =
+              priority.indexOf(routeA.routeType) >= priority.indexOf(routeB.routeType)
+                ? i
+                : j;
+
+            const routeToAdjust = clonedRoutes[indexToAdjust];
+            const rerouted = await attemptDirectionalReroute(
+              routeToAdjust.routeType,
+              routeToAdjust.waypoints
+            );
+
+            if (rerouted && rerouted.length > 1) {
+              clonedRoutes[indexToAdjust] = {
+                ...routeToAdjust,
+                waypoints: rerouted,
+              };
+              adjustmentsMade = true;
+              continue;
+            }
+
+            const forcedWaypoints = forceRouteSeparationEnhanced(
+              routeA.waypoints,
+              routeB.waypoints,
+              start,
+              end,
+              routeToAdjust.routeType,
+              1.8
+            );
+
+            clonedRoutes[indexToAdjust] = {
+              ...routeToAdjust,
+              waypoints: forcedWaypoints,
+              warnings: [
+                ...routeToAdjust.warnings,
+                "Route adjusted for clarity to avoid overlapping alternatives",
+              ],
+            };
+            adjustmentsMade = true;
+          }
+        }
+      }
+
+      if (!adjustmentsMade) {
+        break;
+      }
+    }
+
+    return clonedRoutes;
   };
 
   // Check if routes are too similar (ACTUALLY identical - not just similar)
@@ -3854,9 +4078,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     if (!safestRoute) {
       // Fallback with waypoint through major intersection
-      const midLat = (start.lat + end.lat) / 2;
-      const midLng = (start.lng + end.lng) / 2;
-      const majorRoadWaypoint = { lat: midLat + 0.003, lng: midLng }; // Slight offset to major road
+      const midpoint = computeMidpoint(start, end);
+      const majorRoadWaypoint = { lat: midpoint.lat + 0.003, lng: midpoint.lng }; // Slight offset to major road
       safestRoute = await tryRouteFromAPI(
         [start, majorRoadWaypoint, end],
         "Safest with Waypoint",
@@ -3891,11 +4114,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       console.log("Routes too similar, creating distinct variations...");
 
       // Try multiple different waypoints for variation
-      const midLat = (start.lat + end.lat) / 2;
-      const midLng = (start.lng + end.lng) / 2;
+      const midpoint = computeMidpoint(start, end);
 
       // Northern variation for safest route
-      const northWaypoint = { lat: midLat + 0.008, lng: midLng };
+      const northWaypoint = { lat: midpoint.lat + 0.008, lng: midpoint.lng };
       const variedSafestRoute = await tryRouteFromAPI(
         [start, northWaypoint, end],
         "Safest Northern",
@@ -3908,7 +4130,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         safestRoute = variedSafestRoute;
       } else {
         // Southern variation as backup
-        const southWaypoint = { lat: midLat - 0.008, lng: midLng };
+        const southWaypoint = { lat: midpoint.lat - 0.008, lng: midpoint.lng };
         const altVariedRoute = await tryRouteFromAPI(
           [start, southWaypoint, end],
           "Safest Southern",
@@ -3957,12 +4179,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     // GENERATE THIRD DISTINCT ALTERNATIVE ROUTE
     console.log("Generating ALTERNATIVE distinct route...");
-    const midLat = (start.lat + end.lat) / 2;
-    const midLng = (start.lng + end.lng) / 2;
+    const midpoint = computeMidpoint(start, end);
 
     // Try eastern waypoint for different path
     let alternativeRoute = await tryRouteFromAPI(
-      [start, { lat: midLat, lng: midLng + 0.01 }, end],
+      [start, { lat: midpoint.lat, lng: midpoint.lng + 0.01 }, end],
       "Alternative Eastern",
       5000
     );
@@ -3974,7 +4195,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       areRoutesSimilar(alternativeRoute, fastestRoute, 0.001)
     ) {
       alternativeRoute = await tryRouteFromAPI(
-        [start, { lat: midLat, lng: midLng - 0.01 }, end],
+        [start, { lat: midpoint.lat, lng: midpoint.lng - 0.01 }, end],
         "Alternative Western",
         5000
       );
@@ -3987,7 +4208,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       areRoutesSimilar(alternativeRoute, fastestRoute, 0.001)
     ) {
       alternativeRoute = await tryRouteFromAPI(
-        [start, { lat: midLat + 0.006, lng: midLng + 0.006 }, end],
+        [
+          start,
+          { lat: midpoint.lat + 0.006, lng: midpoint.lng + 0.006 },
+          end,
+        ],
         "Alternative Diagonal",
         5000
       );
@@ -5570,58 +5795,56 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         throw new Error("No valid routes generated");
       }
 
+      const distinctRoutes = await enforceDistinctRoutes(start, end, validRoutes);
+
       // Sort routes by risk score (lowest to highest - safest first)
-      const sortedRoutes = validRoutes.sort((a, b) => {
+      const sortedRoutes = [...distinctRoutes].sort((a, b) => {
         const riskA = typeof a.riskScore === "number" ? a.riskScore : 5.0;
         const riskB = typeof b.riskScore === "number" ? b.riskScore : 5.0;
         return riskA - riskB;
       });
 
-      // Ensure we have at least 3 routes by creating variations if necessary
-      while (sortedRoutes.length < 3) {
-        const baseRoute = sortedRoutes[sortedRoutes.length - 1];
-
-        // Create a variation with slightly different waypoints to ensure visual distinction
-        const variedWaypoints = [...baseRoute.waypoints];
-
-        // Add subtle variations to middle section of the route for distinctness
-        const startIdx = Math.floor(variedWaypoints.length * 0.2);
-        const endIdx = Math.floor(variedWaypoints.length * 0.8);
-
-        for (
-          let i = startIdx;
-          i < endIdx;
-          i += Math.max(1, Math.floor((endIdx - startIdx) / 5))
-        ) {
-          if (variedWaypoints[i]) {
-            // Apply small offset (about 50-100m) to create visual separation
-            const offsetDistance = 0.0005 + Math.random() * 0.0005; // ~50-100m
-            const offsetAngle = Math.random() * 2 * Math.PI;
-            variedWaypoints[i] = {
-              ...variedWaypoints[i],
-              lat:
-                variedWaypoints[i].lat + offsetDistance * Math.cos(offsetAngle),
-              lng:
-                variedWaypoints[i].lng + offsetDistance * Math.sin(offsetAngle),
-            };
-          }
+      const ensureRouteForType = (
+        routeType: "safe" | "manageable" | "flood_prone"
+      ) => {
+        if (sortedRoutes.some((route) => route.routeType === routeType)) {
+          return;
         }
 
-        const duplicatedRoute = {
-          ...baseRoute,
-          id: sortedRoutes.length + 1,
-          waypoints: variedWaypoints, // Use varied waypoints instead of identical ones
-          riskScore: baseRoute.riskScore + 1.0 + Math.random() * 0.5,
-          warnings: [
-            ...(baseRoute.warnings || []),
-            "Variation of existing route for diversity",
-          ],
-        };
-        sortedRoutes.push(duplicatedRoute);
-        console.log(
-          `Created route variation with ${variedWaypoints.length} modified waypoints`
+        const referenceRoute = sortedRoutes[0];
+        const multiplier =
+          routeType === "manageable" ? 1.6 : routeType === "flood_prone" ? 2.0 : 1.2;
+
+        const forcedWaypoints = forceRouteSeparationEnhanced(
+          referenceRoute.waypoints,
+          referenceRoute.waypoints,
+          start,
+          end,
+          routeType,
+          multiplier
         );
-      }
+
+        sortedRoutes.push({
+          ...referenceRoute,
+          id: sortedRoutes.length + 1,
+          routeType,
+          waypoints: forcedWaypoints,
+          riskScore:
+            routeType === "safe"
+              ? Math.min(referenceRoute.riskScore, 3.2)
+              : routeType === "manageable"
+              ? referenceRoute.riskScore + 1.5
+              : referenceRoute.riskScore + 3,
+          warnings: [
+            ...referenceRoute.warnings,
+            `Generated fallback ${routeType.replace("_", " ")} route for coverage`,
+          ],
+        });
+      };
+
+      ensureRouteForType("safe");
+      ensureRouteForType("manageable");
+      ensureRouteForType("flood_prone");
 
       // SMART ROUTE ASSIGNMENT: Safe route should be shortest/fastest
       sortedRoutes.sort((a, b) => {
