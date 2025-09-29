@@ -245,7 +245,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const [terrainRoadsData, setTerrainRoadsData] =
     useState<TerrainRoadsData | null>(null);
   const [terrainRoadsLoaded, setTerrainRoadsLoaded] = useState(false);
-  const [isMapReady, setIsMapReady] = useState(false);
 
   const mapRef = useRef<L.Map | null>(null);
   const routingControlRef = useRef<any>(null);
@@ -313,9 +312,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
   // Restore start location coordinates and markers when selectedStartLocation is loaded
   useEffect(() => {
-    if (!selectedStartLocation || !mapRef.current || !isMapReady) return;
-
-    try {
+    if (selectedStartLocation && mapRef.current) {
       const coordinates = {
         lat: parseFloat(selectedStartLocation.lat),
         lng: parseFloat(selectedStartLocation.lon),
@@ -353,28 +350,17 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
       const marker = L.marker([coordinates.lat, coordinates.lng], {
         icon: startMarker,
-      });
+      })
+        .addTo(mapRef.current)
+        .bindPopup(`Start: ${selectedStartLocation.display_name}`);
 
-      const mapInstance = mapRef.current;
-      if (mapInstance && mapInstance.getContainer()) {
-        try {
-          marker.addTo(mapInstance);
-          marker.bindPopup(`Start: ${selectedStartLocation.display_name}`);
-          markersRef.current.push(marker);
-        } catch (markerError) {
-          console.error("Error adding start marker:", markerError);
-        }
-      }
-    } catch (error) {
-      console.error("Error in start location useEffect:", error);
+      markersRef.current.push(marker);
     }
-  }, [selectedStartLocation, isMapReady]);
+  }, [selectedStartLocation]);
 
   // Restore end location coordinates and markers when selectedEndLocation is loaded
   useEffect(() => {
-    if (!selectedEndLocation || !mapRef.current || !isMapReady) return;
-
-    try {
+    if (selectedEndLocation && mapRef.current) {
       const coordinates = {
         lat: parseFloat(selectedEndLocation.lat),
         lng: parseFloat(selectedEndLocation.lon),
@@ -412,22 +398,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
       const marker = L.marker([coordinates.lat, coordinates.lng], {
         icon: endMarker,
-      });
+      })
+        .addTo(mapRef.current)
+        .bindPopup(`End: ${selectedEndLocation.display_name}`);
 
-      const mapInstance = mapRef.current;
-      if (mapInstance && mapInstance.getContainer()) {
-        try {
-          marker.addTo(mapInstance);
-          marker.bindPopup(`End: ${selectedEndLocation.display_name}`);
-          markersRef.current.push(marker);
-        } catch (markerError) {
-          console.error("Error adding end marker:", markerError);
-        }
-      }
-    } catch (error) {
-      console.error("Error in end location useEffect:", error);
+      markersRef.current.push(marker);
     }
-  }, [selectedEndLocation, isMapReady]);
+  }, [selectedEndLocation]);
 
   // Modern CSS-based icons for better consistency and visual appeal
   const startIcon = L.divIcon({
@@ -1068,132 +1045,92 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       console.log("  Strategy 2: Direct route for safe path...");
       routes.safe = await getLocalOSRMRoute(start, end, []);
 
-      // Strategy 3: EXTREME Northern arc route for manageable
-      console.log("  Strategy 3: Extreme northern arc for manageable path...");
+      // Strategy 3: Northern waypoint route for manageable (via higher elevation areas)
+      console.log("  Strategy 3: Northern waypoint for manageable path...");
       const distance = Math.sqrt(
         Math.pow(end.lat - start.lat, 2) + Math.pow(end.lng - start.lng, 2)
       );
 
-      // Create a wide northern arc with multiple waypoints for guaranteed divergence
-      const northWaypoints = [];
-      const arcRadius = distance * 0.8; // Much larger arc - 80% of distance
+      // FORCE IMMEDIATE DIVERGENCE: Place waypoints much further apart to force truly different routes
+      const earlyNorthWaypoint = {
+        lat: start.lat + distance * 0.35, // 35% north - strong early divergence
+        lng: start.lng + distance * 0.25, // 25% east - clear separation
+      };
+      const northWaypoint2 = {
+        lat: (start.lat + end.lat) / 2 + distance * 0.4, // Strong northern curve
+        lng: (start.lng + end.lng) / 2 + distance * 0.3, // Strong eastern deviation
+      };
+      routes.manageable = await getLocalOSRMRoute(start, end, [
+        earlyNorthWaypoint,
+        northWaypoint2,
+      ]);
 
-      // Early divergence point - force route north immediately
-      northWaypoints.push({
-        lat: start.lat + arcRadius * 0.6, // Strong northward push from start
-        lng: start.lng + (end.lng - start.lng) * 0.2, // 20% progress eastward
-      });
-
-      // Mid-route northern peak
-      northWaypoints.push({
-        lat: (start.lat + end.lat) / 2 + arcRadius * 0.7, // Peak of northern arc
-        lng: (start.lng + end.lng) / 2, // Centered longitude
-      });
-
-      // Late northern waypoint before destination
-      northWaypoints.push({
-        lat: end.lat + arcRadius * 0.4, // Still north of destination
-        lng: start.lng + (end.lng - start.lng) * 0.8, // 80% progress eastward
-      });
-
-      routes.manageable = await getLocalOSRMRoute(start, end, northWaypoints);
-
-      // Strategy 4: EXTREME Southern arc route for prone
-      console.log("  Strategy 4: Extreme southern arc for flood-prone path...");
-
-      const southWaypoints = [];
-
-      // Early southern divergence - force route south immediately
-      southWaypoints.push({
-        lat: start.lat - arcRadius * 0.5, // Strong southward push from start
-        lng: start.lng + (end.lng - start.lng) * 0.25, // 25% progress eastward
-      });
-
-      // Mid-route southern dip
-      southWaypoints.push({
-        lat: (start.lat + end.lat) / 2 - arcRadius * 0.6, // Deep southern dip
-        lng: (start.lng + end.lng) / 2 + arcRadius * 0.2, // Slight eastern offset
-      });
-
-      // Late southern waypoint before destination
-      southWaypoints.push({
-        lat: end.lat - arcRadius * 0.3, // Still south of destination
-        lng: start.lng + (end.lng - start.lng) * 0.75, // 75% progress eastward
-      });
-
-      routes.prone = await getLocalOSRMRoute(start, end, southWaypoints);
+      // Strategy 4: Southern/coastal waypoint route for prone (via lower areas near coast)
+      console.log(
+        "  Strategy 4: Southern/coastal waypoint for flood-prone path..."
+      );
+      const earlySouthWaypoint = {
+        lat: start.lat - distance * 0.3, // 30% south - strong early divergence
+        lng: start.lng - distance * 0.25, // 25% west - clear separation
+      };
+      const coastalWaypoint2 = {
+        lat: (start.lat + end.lat) / 2 - distance * 0.35, // Strong southern curve
+        lng: (start.lng + end.lng) / 2 - distance * 0.3, // Strong western coastal deviation
+      };
+      routes.prone = await getLocalOSRMRoute(start, end, [
+        earlySouthWaypoint,
+        coastalWaypoint2,
+      ]);
     } catch (error) {
       console.warn("Some local OSRM routes failed, will use fallbacks:", error);
     }
 
-    // Fill in any missing routes with EXTREME alternative strategies
+    // Fill in any missing routes with alternative strategies
     if (!routes.manageable && routes.safe) {
-      console.log(
-        "  Fallback: Using EXTREME eastern detour for manageable route..."
-      );
+      console.log("  Fallback: Using eastern waypoint for manageable route...");
       try {
         const distance = Math.sqrt(
           Math.pow(end.lat - start.lat, 2) + Math.pow(end.lng - start.lng, 2)
         );
-
-        // Create extreme eastern detour with multiple waypoints
-        const extremeEastWaypoints = [
-          {
-            lat: start.lat + distance * 0.3, // North-east from start
-            lng: start.lng + distance * 1.0, // WAY east - 100% of distance
-          },
-          {
-            lat: (start.lat + end.lat) / 2, // Mid-route
-            lng: Math.max(start.lng, end.lng) + distance * 0.8, // Far eastern detour
-          },
-          {
-            lat: end.lat - distance * 0.2, // Approach from south-east
-            lng: end.lng + distance * 0.6, // Still far east
-          },
-        ];
-
-        routes.manageable = await getLocalOSRMRoute(
-          start,
-          end,
-          extremeEastWaypoints
-        );
+        const earlyEastWaypoint = {
+          lat: start.lat + distance * 0.15, // Stronger northern deviation - early turn
+          lng: start.lng + distance * 0.45, // Very strong eastern deviation for clear separation
+        };
+        const eastWaypoint2 = {
+          lat: (start.lat + end.lat) / 2 + distance * 0.1,
+          lng: end.lng + distance * 0.4, // Push route far east
+        };
+        routes.manageable = await getLocalOSRMRoute(start, end, [
+          earlyEastWaypoint,
+          eastWaypoint2,
+        ]);
       } catch (error) {
-        console.log("  Extreme eastern fallback failed");
+        console.log("  Eastern waypoint fallback failed");
       }
     }
 
     if (!routes.prone && routes.safe) {
       console.log(
-        "  Fallback: Using EXTREME western coastal detour for flood-prone route..."
+        "  Fallback: Using western coastal waypoint for flood-prone route..."
       );
       try {
         const distance = Math.sqrt(
           Math.pow(end.lat - start.lat, 2) + Math.pow(end.lng - start.lng, 2)
         );
-
-        // Create extreme western coastal detour with multiple waypoints
-        const extremeWestWaypoints = [
-          {
-            lat: start.lat - distance * 0.4, // South-west from start
-            lng: start.lng - distance * 0.9, // WAY west - 90% of distance
-          },
-          {
-            lat: (start.lat + end.lat) / 2 - distance * 0.3, // Deep southern dip
-            lng: Math.min(start.lng, end.lng) - distance * 0.7, // Far western coastal
-          },
-          {
-            lat: end.lat + distance * 0.1, // Approach from north-west
-            lng: end.lng - distance * 0.5, // Still west of destination
-          },
-        ];
-
-        routes.prone = await getLocalOSRMRoute(
-          start,
-          end,
-          extremeWestWaypoints
-        );
+        const earlyWestWaypoint = {
+          lat: start.lat - distance * 0.25, // Strong southern deviation - early turn
+          lng: start.lng - distance * 0.4, // Very strong western deviation
+        };
+        const westWaypoint2 = {
+          lat: end.lat - distance * 0.2, // Push route far south
+          lng: (start.lng + end.lng) / 2 - distance * 0.35, // Strong western coastal route
+        };
+        routes.prone = await getLocalOSRMRoute(start, end, [
+          earlyWestWaypoint,
+          westWaypoint2,
+        ]);
       } catch (error) {
-        console.log("  Extreme western fallback failed");
+        console.log("  Western waypoint fallback failed");
       }
     }
 
@@ -8102,9 +8039,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     // Add default layer
     layersRef.current[mapLayer].addTo(map);
-
-    // Set map as ready after initialization
-    setTimeout(() => setIsMapReady(true), 100);
 
     // 1. FIRST: Add geocoder (search bar)
     const geocoder = (L.Control as any)
