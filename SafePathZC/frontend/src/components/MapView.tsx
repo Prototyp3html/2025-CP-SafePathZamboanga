@@ -909,6 +909,17 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const [endSuggestions, setEndSuggestions] = useState<LocationSuggestion[]>(
     []
   );
+  const [mapSearchQuery, setMapSearchQuery] = useState("");
+  const [mapSearchResults, setMapSearchResults] = useState<
+    LocationSuggestion[]
+  >([]);
+  const [mapSearchError, setMapSearchError] = useState<string | null>(null);
+  const [showMapSearchResults, setShowMapSearchResults] = useState(false);
+  const [isSearchingMapLocations, setIsSearchingMapLocations] =
+    useState(false);
+  const latestMapSearchQueryRef = useRef<string>("");
+  const mapSearchDebounceRef = useRef<number | null>(null);
+  const mapSearchBlurTimeoutRef = useRef<number | null>(null);
   // Initialize state with localStorage persistence
   const [selectedStartLocation, setSelectedStartLocation] =
     useState<LocationSuggestion | null>(() => {
@@ -6385,6 +6396,19 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         );
       }
 
+      if (!terrainRoadsData || terrainRoadsMetaRef.current.length === 0) {
+        console.log(
+          "⏳ Terrain data not ready, loading GeoJSON terrain roads before routing..."
+        );
+        await loadTerrainRoadsData();
+      }
+
+      if (!terrainRoadsData || terrainRoadsMetaRef.current.length === 0) {
+        throw new Error(
+          "Terrain road risk data is required to build distinct flood-aware routes"
+        );
+      }
+
       // Try backend route API first, fallback to OSRM if it fails
       let routes: any[] = [];
       let routeAnalyses: any[] = [];
@@ -10009,6 +10033,28 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         );
       });
 
+      return marker;
+    };
+
+    const syncMarkers = (placesToRender: ZamboangaPlace[]) => {
+      if (isCancelled || !poiLayerRef.current) {
+        return;
+      }
+
+      poiLayerRef.current.clearLayers();
+
+      if (placesToRender.length === 0) {
+        return;
+      }
+
+      placesToRender.forEach((place) => {
+        const marker = renderPlaceMarker(place);
+        poiLayerRef.current!.addLayer(marker);
+      });
+
+      if (!mapInstance.hasLayer(poiLayerRef.current)) {
+        poiLayerRef.current.addTo(mapInstance);
+      }
     };
 
     const loadPlaces = async () => {
@@ -10022,7 +10068,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         }
 
         setPlaces(fetchedPlaces);
-        poiLayerRef.current?.clearLayers();
+        syncMarkers(fetchedPlaces);
 
         const usingFallback =
           fetchedPlaces.length > 0 &&
@@ -10053,9 +10099,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       isCancelled = true;
 
       if (poiLayerRef.current && mapInstance) {
+        poiLayerRef.current.clearLayers();
         mapInstance.removeLayer(poiLayerRef.current);
       }
     };
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMapReady]);
 
 
   // Handle layer switching
@@ -10104,7 +10154,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           terrainPopupRef.current = elevationMarker;
         }
         return;
-
+      }
       setActivePlace(null);
       const { lat, lng } = e.latlng;
       removeDroppedPinMarker();
