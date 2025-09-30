@@ -20,6 +20,11 @@ import {
   type ZamboCityLocation,
 } from "../utils/zamboCityLocations";
 import { localRoutingService } from "../services/localRouting";
+import {
+  fetchZamboangaPlaces,
+  type ZamboangaPlace,
+  type ZamboangaPlaceGroup,
+} from "../utils/zamboangaPlaces";
 
 // Fix Leaflet default marker icons
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -189,6 +194,78 @@ const biasTowardCityCenter = (point: LatLng, factor: number): LatLng => ({
   lat: point.lat + (CITY_CENTER.lat - point.lat) * factor,
   lng: point.lng + (CITY_CENTER.lng - point.lng) * factor,
 });
+
+const escapeHtml = (value: string): string =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+const POI_GROUP_STYLES: Record<
+  ZamboangaPlaceGroup,
+  { color: string; accent: string; emoji: string; label: string }
+> = {
+  food: {
+    color: "#f97316",
+    accent: "#fb923c",
+    emoji: "🍽️",
+    label: "Food & Drinks",
+  },
+  lodging: {
+    color: "#7c3aed",
+    accent: "#a78bfa",
+    emoji: "🛏️",
+    label: "Hotels & Stays",
+  },
+  shopping: {
+    color: "#2563eb",
+    accent: "#60a5fa",
+    emoji: "🛍️",
+    label: "Shops & Malls",
+  },
+  health: {
+    color: "#dc2626",
+    accent: "#f87171",
+    emoji: "🩺",
+    label: "Health Services",
+  },
+  education: {
+    color: "#059669",
+    accent: "#34d399",
+    emoji: "🎓",
+    label: "Schools & Universities",
+  },
+  services: {
+    color: "#4b5563",
+    accent: "#9ca3af",
+    emoji: "🏢",
+    label: "City Services",
+  },
+  finance: {
+    color: "#b45309",
+    accent: "#f59e0b",
+    emoji: "💱",
+    label: "Banks & Money",
+  },
+  leisure: {
+    color: "#db2777",
+    accent: "#f472b6",
+    emoji: "🎡",
+    label: "Leisure Spots",
+  },
+  worship: {
+    color: "#9333ea",
+    accent: "#c084fc",
+    emoji: "🕌",
+    label: "Places of Worship",
+  },
+  transport: {
+    color: "#0f766e",
+    accent: "#14b8a6",
+    emoji: "🚌",
+    label: "Transport Hubs",
+  },
+};
 
 const isWithinBounds = (point: LatLng, bounds: LatLngBounds): boolean =>
   point.lat >= bounds.lat.min &&
@@ -805,6 +882,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     "safe" | "manageable" | "prone" | null
   >(null);
   const [showWeatherDashboard, setShowWeatherDashboard] = useState(false);
+  const [places, setPlaces] = useState<ZamboangaPlace[]>([]);
+  const [isLoadingPlaces, setIsLoadingPlaces] = useState(false);
+  const [placesError, setPlacesError] = useState<string | null>(null);
+  const [activePlace, setActivePlace] = useState<ZamboangaPlace | null>(null);
 
   // Identical terrain notification
   const [
@@ -895,8 +976,12 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const circleMarkersRef = useRef<L.CircleMarker[]>([]);
   const layersRef = useRef<Record<string, L.TileLayer>>({});
   const terrainPopupRef = useRef<L.CircleMarker | null>(null);
+  const droppedPinMarkerRef = useRef<L.Marker | null>(null);
+  const autoRoutePendingRef = useRef(false);
   const terrainOverlayRef = useRef<L.LayerGroup | null>(null);
   const routeLayersRef = useRef<L.Polyline[]>([]);
+  const poiLayerRef = useRef<L.LayerGroup | null>(null);
+  const poiIconCacheRef = useRef<Record<string, L.DivIcon>>({});
 
   // GraphHopper rate limiting
   const lastGraphHopperRequest = useRef<number>(0);
@@ -1103,8 +1188,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const endIcon = L.divIcon({
     className: "modern-location-pin end-pin",
     html: `<div style="
-      width: 32px; 
-      height: 32px; 
+      width: 32px;
+      height: 32px;
       background: linear-gradient(135deg, #ef4444, #dc2626);
       border-radius: 50% 50% 50% 0;
       transform: rotate(-45deg);
@@ -1126,6 +1211,34 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     iconSize: [32, 32],
     iconAnchor: [16, 32],
     popupAnchor: [0, -32],
+  });
+
+  const droppedPinIcon = L.divIcon({
+    className: "modern-location-pin dropped-pin",
+    html: `<div style="
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      border: 3px solid white;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+      position: relative;
+    ">
+      <div style="
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) rotate(45deg);
+        width: 10px;
+        height: 10px;
+        background: white;
+        border-radius: 50%;
+      "></div>
+    </div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 28],
+    popupAnchor: [0, -24],
   });
 
   // Zamboanga City location search using local database (simplified working version)
@@ -8102,6 +8215,26 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     }
   };
 
+  const removeDroppedPinMarker = () => {
+    if (
+      droppedPinMarkerRef.current &&
+      mapRef.current &&
+      mapRef.current.hasLayer(droppedPinMarkerRef.current)
+    ) {
+      mapRef.current.removeLayer(droppedPinMarkerRef.current);
+    }
+    droppedPinMarkerRef.current = null;
+  };
+
+  const placeToSuggestion = (place: ZamboangaPlace): LocationSuggestion => ({
+    display_name: place.name,
+    lat: place.lat.toString(),
+    lon: place.lng.toString(),
+    place_id: place.id,
+    type: place.categoryLabel.toLowerCase().replace(/\s+/g, "_"),
+    isLocal: true,
+  });
+
   // Handle selecting start location
   const handleSelectStartLocation = (location: LocationSuggestion) => {
     // Clear existing markers before setting new location
@@ -8121,6 +8254,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       lng: parseFloat(location.lon),
     });
     console.log("Start location selected:", location.display_name);
+    removeDroppedPinMarker();
   };
 
   // Handle selecting end location
@@ -8142,6 +8276,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       lng: parseFloat(location.lon),
     });
     console.log("End location selected:", location.display_name);
+    removeDroppedPinMarker();
   };
 
   // Handle find route button click
@@ -8610,6 +8745,25 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       alert("Geolocation is not supported by this browser");
     }
   };
+
+  useEffect(() => {
+    if (
+      autoRoutePendingRef.current &&
+      selectedStartLocation &&
+      selectedEndLocation &&
+      startPoint &&
+      endPoint
+    ) {
+      autoRoutePendingRef.current = false;
+      handleFindRoute();
+    }
+  }, [
+    selectedStartLocation,
+    selectedEndLocation,
+    startPoint,
+    endPoint,
+    handleFindRoute,
+  ]);
 
   // Handle route selection
   const handleRouteSelection = (routeType: "safe" | "manageable" | "prone") => {
@@ -9525,6 +9679,206 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isMapReady || !mapRef.current) {
+      return;
+    }
+
+    let isCancelled = false;
+    const mapInstance = mapRef.current;
+
+    if (!poiLayerRef.current) {
+      poiLayerRef.current = L.layerGroup();
+    } else {
+      poiLayerRef.current.clearLayers();
+    }
+
+    poiLayerRef.current.addTo(mapInstance);
+
+    const iconCache = poiIconCacheRef.current;
+
+    const renderPlaceMarker = (place: ZamboangaPlace) => {
+      const style = POI_GROUP_STYLES[place.group];
+      const cacheKey = place.group;
+
+      if (!iconCache[cacheKey]) {
+        iconCache[cacheKey] = L.divIcon({
+          className: "zambo-poi-marker",
+          html: `<div style="
+              width: 32px;
+              height: 32px;
+              border-radius: 12px;
+              background: ${style.color};
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: #ffffff;
+              font-size: 18px;
+              border: 2px solid #ffffff;
+              box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+            ">${style.emoji}</div>`,
+          iconSize: [32, 32],
+          iconAnchor: [16, 32],
+          popupAnchor: [0, -28],
+        });
+      }
+
+      const marker = L.marker([place.lat, place.lng], {
+        icon: iconCache[cacheKey],
+        bubblingMouseEvents: false,
+      });
+
+      const coordsText = `${place.lat.toFixed(5)}, ${place.lng.toFixed(5)}`;
+      const suggestion = placeToSuggestion(place);
+      const popupId = Math.random().toString(36).slice(2, 10);
+      const setStartId = `poi-set-start-${popupId}`;
+      const setEndId = `poi-set-end-${popupId}`;
+      const routeId = `poi-route-${popupId}`;
+
+      const badgeHtml = `<div style="
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          background: ${style.color};
+          color: #ffffff;
+          padding: 3px 10px;
+          border-radius: 999px;
+          font-size: 11px;
+          font-weight: 600;
+          margin-bottom: 8px;
+        ">${style.emoji}<span>${escapeHtml(place.categoryLabel)}</span></div>`;
+
+      const addressHtml = place.address
+        ? `<div style="font-size: 12px; color: #374151; margin-bottom: 4px;">${escapeHtml(
+            place.address
+          )}</div>`
+        : "";
+
+      const popupHtml = `
+        <div style="min-width: 240px; font-family: system-ui;">
+          <div style="font-weight: 600; margin-bottom: 6px; color: #1f2937; font-size: 15px;">
+            ${escapeHtml(place.name)}
+          </div>
+          ${badgeHtml}
+          ${addressHtml}
+          <div style="font-size: 12px; color: #4b5563; margin-bottom: 10px;">
+            ${coordsText}
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <button id="${setStartId}" style="background: #22c55e; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
+              Set as Start
+            </button>
+            <button id="${setEndId}" style="background: #ef4444; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
+              Set as Destination
+            </button>
+            <button id="${routeId}" style="background: #2563eb; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
+              Route From My Location
+            </button>
+          </div>
+        </div>`;
+
+      marker.bindPopup(popupHtml, {
+        autoPan: true,
+        closeButton: true,
+        className: "poi-popup",
+      });
+
+      marker.on("popupopen", () => {
+        setActivePlace(place);
+
+        const startBtn = document.getElementById(setStartId);
+        const endBtn = document.getElementById(setEndId);
+        const routeBtn = document.getElementById(routeId);
+
+        if (startBtn) {
+          startBtn.addEventListener("click", () => {
+            handleSelectStartLocation(suggestion);
+            setRouteMode(false);
+            setIsTerrainMode(false);
+            setShowRoutePlannerModal(true);
+            marker.closePopup();
+          });
+        }
+
+        if (endBtn) {
+          endBtn.addEventListener("click", () => {
+            handleSelectEndLocation(suggestion);
+            setRouteMode(false);
+            setIsTerrainMode(false);
+            setShowRoutePlannerModal(true);
+            marker.closePopup();
+          });
+        }
+
+        if (routeBtn) {
+          routeBtn.addEventListener("click", () => {
+            autoRoutePendingRef.current = true;
+            handleSelectEndLocation(suggestion);
+            setRouteMode(false);
+            setIsTerrainMode(false);
+            setShowRoutePlannerModal(false);
+            useCurrentLocationAsStart();
+            marker.closePopup();
+          });
+        }
+      });
+
+      marker.on("popupclose", () => {
+        setActivePlace((current) =>
+          current && current.id === place.id ? null : current
+        );
+      });
+
+      poiLayerRef.current?.addLayer(marker);
+    };
+
+    const loadPlaces = async () => {
+      setIsLoadingPlaces(true);
+      setPlacesError(null);
+
+      try {
+        const fetchedPlaces = await fetchZamboangaPlaces();
+        if (isCancelled) {
+          return;
+        }
+
+        setPlaces(fetchedPlaces);
+        poiLayerRef.current?.clearLayers();
+        fetchedPlaces.forEach(renderPlaceMarker);
+
+        const usingFallback =
+          fetchedPlaces.length > 0 &&
+          fetchedPlaces.every((place) => place.source === "fallback");
+
+        if (usingFallback) {
+          setPlacesError(
+            "Showing a limited set of featured places while the live places service is unreachable."
+          );
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          console.error("Unable to load Zamboanga places:", error);
+          setPlacesError(
+            "We couldn't load live place data right now. Try refreshing the map later."
+          );
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingPlaces(false);
+        }
+      }
+    };
+
+    loadPlaces();
+
+    return () => {
+      isCancelled = true;
+      if (poiLayerRef.current && mapInstance) {
+        mapInstance.removeLayer(poiLayerRef.current);
+      }
+    };
+  }, [isMapReady]);
+
   // Handle layer switching
   useEffect(() => {
     if (!mapRef.current || !layersRef.current) return;
@@ -9540,7 +9894,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     layersRef.current[mapLayer].addTo(mapRef.current);
   }, [mapLayer]);
 
-  // Map click handlers (only for terrain mode now)
+  // Map click handlers for terrain sampling and dropped pins
   useEffect(() => {
     if (!mapRef.current) return;
 
@@ -9570,7 +9924,119 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           }
           terrainPopupRef.current = elevationMarker;
         }
+        return;
       }
+
+      if (!mapRef.current) {
+        return;
+      }
+
+      setActivePlace(null);
+      const { lat, lng } = e.latlng;
+      removeDroppedPinMarker();
+
+      let locationDetails: ZamboCityLocation | null = null;
+      try {
+        locationDetails = await getLocationByCoordinates(lat, lng);
+      } catch (error) {
+        console.error("Error reverse geocoding dropped pin:", error);
+      }
+
+      const coordsText = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+      const displayName =
+        locationDetails?.displayName || `Dropped Pin (${coordsText})`;
+      const suggestion: LocationSuggestion = {
+        display_name: displayName,
+        lat: lat.toString(),
+        lon: lng.toString(),
+        place_id:
+          locationDetails?.place_id ||
+          `dropped-${lat.toFixed(5)}-${lng.toFixed(5)}-${Date.now()}`,
+        type: locationDetails?.type || "dropped_pin",
+        isLocal: Boolean(locationDetails),
+      };
+
+      const marker = L.marker([lat, lng], {
+        icon: droppedPinIcon,
+        bubblingMouseEvents: false,
+      }).addTo(mapRef.current);
+
+      droppedPinMarkerRef.current = marker;
+
+      const popupId = Math.random().toString(36).slice(2, 10);
+      const setStartId = `set-start-${popupId}`;
+      const setEndId = `set-end-${popupId}`;
+      const routeHereId = `route-here-${popupId}`;
+
+      const popupHtml = `
+        <div style="min-width: 220px; font-family: system-ui;">
+          <div style="font-weight: 600; margin-bottom: 4px; color: #1f2937;">
+            ${escapeHtml(displayName)}
+          </div>
+          <div style="font-size: 12px; color: #4b5563; margin-bottom: 10px;">
+            ${coordsText}
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <button id="${setStartId}"
+              style="background: #22c55e; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
+              Set as Start
+            </button>
+            <button id="${setEndId}"
+              style="background: #ef4444; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
+              Set as Destination
+            </button>
+            <button id="${routeHereId}"
+              style="background: #2563eb; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
+              Route From My Location
+            </button>
+          </div>
+        </div>`;
+
+      marker.bindPopup(popupHtml, {
+        autoPan: true,
+        closeButton: true,
+        className: "dropped-pin-popup",
+      });
+
+      marker.on("popupopen", () => {
+        const startBtn = document.getElementById(setStartId);
+        const endBtn = document.getElementById(setEndId);
+        const routeBtn = document.getElementById(routeHereId);
+
+        if (startBtn) {
+          startBtn.addEventListener("click", () => {
+            handleSelectStartLocation(suggestion);
+            setRouteMode(false);
+            setIsTerrainMode(false);
+            setShowRoutePlannerModal(true);
+            marker.closePopup();
+          });
+        }
+
+        if (endBtn) {
+          endBtn.addEventListener("click", () => {
+            handleSelectEndLocation(suggestion);
+            setRouteMode(false);
+            setIsTerrainMode(false);
+            setShowRoutePlannerModal(true);
+            marker.closePopup();
+          });
+        }
+
+        if (routeBtn) {
+          routeBtn.addEventListener("click", () => {
+            autoRoutePendingRef.current = true;
+            handleSelectEndLocation(suggestion);
+            setRouteMode(false);
+            setIsTerrainMode(false);
+            setShowRoutePlannerModal(false);
+            useCurrentLocationAsStart();
+            marker.closePopup();
+          });
+        }
+      });
+
+      marker.openPopup();
     };
 
     mapRef.current.on("click", handleMapClick);
@@ -9612,6 +10078,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       }
     });
     circleMarkersRef.current = [];
+
+    removeDroppedPinMarker();
   };
 
   // Reset route
@@ -9660,7 +10128,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       mapRef.current!.removeLayer(terrainPopupRef.current);
       terrainPopupRef.current = null;
     }
+
+    removeDroppedPinMarker();
   };
+
+  const activePlaceStyle = activePlace ? POI_GROUP_STYLES[activePlace.group] : null;
 
   return (
     <div
@@ -9962,6 +10434,215 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         </div>
 
         <div style={{ position: "relative", marginTop: "60px" }}>
+          {isLoadingPlaces && (
+            <div
+              style={{
+                position: "fixed",
+                top: "80px",
+                left: "20px",
+                background: "rgba(37, 99, 235, 0.95)",
+                color: "#ffffff",
+                padding: "8px 16px",
+                borderRadius: "999px",
+                fontSize: "13px",
+                fontWeight: 600,
+                letterSpacing: "0.01em",
+                boxShadow: "0 10px 20px rgba(37,99,235,0.35)",
+                zIndex: 1100,
+              }}
+            >
+              Loading Zamboanga places…
+            </div>
+          )}
+
+          {placesError && (
+            <div
+              style={{
+                position: "fixed",
+                top: isLoadingPlaces ? "122px" : "80px",
+                left: "20px",
+                background: "rgba(239, 68, 68, 0.95)",
+                color: "#ffffff",
+                padding: "10px 16px",
+                borderRadius: "12px",
+                fontSize: "12px",
+                lineHeight: 1.4,
+                maxWidth: "280px",
+                boxShadow: "0 10px 20px rgba(239,68,68,0.25)",
+                zIndex: 1100,
+              }}
+            >
+              {placesError}
+            </div>
+          )}
+
+          {activePlace && activePlaceStyle && (
+            <div
+              style={{
+                position: "fixed",
+                top: "80px",
+                right: "20px",
+                width: "280px",
+                background: "#ffffff",
+                borderRadius: "16px",
+                boxShadow: "0 20px 35px rgba(15, 23, 42, 0.25)",
+                padding: "18px",
+                borderTop: `4px solid ${activePlaceStyle.color}`,
+                zIndex: 1100,
+                fontFamily: "system-ui, -apple-system, sans-serif",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  marginBottom: "10px",
+                }}
+              >
+                <div
+                  style={{
+                    width: "44px",
+                    height: "44px",
+                    borderRadius: "14px",
+                    background: activePlaceStyle.color,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "22px",
+                    color: "#ffffff",
+                    boxShadow: "0 10px 20px rgba(0,0,0,0.25)",
+                  }}
+                >
+                  {activePlaceStyle.emoji}
+                </div>
+                <div>
+                  <div
+                    style={{
+                      fontSize: "14px",
+                      fontWeight: 700,
+                      color: "#1f2937",
+                      marginBottom: "2px",
+                    }}
+                  >
+                    {activePlace.name}
+                  </div>
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "2px 8px",
+                      borderRadius: "999px",
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      color: "#ffffff",
+                      background: activePlaceStyle.color,
+                    }}
+                  >
+                    {activePlaceStyle.emoji} {activePlace.categoryLabel}
+                  </div>
+                </div>
+              </div>
+
+              {activePlace.address && (
+                <div
+                  style={{
+                    fontSize: "12px",
+                    color: "#4b5563",
+                    marginBottom: "8px",
+                  }}
+                >
+                  {activePlace.address}
+                </div>
+              )}
+
+              <div
+                style={{
+                  fontSize: "12px",
+                  color: "#6b7280",
+                  marginBottom: "14px",
+                }}
+              >
+                {activePlace.lat.toFixed(5)}, {activePlace.lng.toFixed(5)}
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px",
+                }}
+              >
+                <button
+                  style={{
+                    background: "#22c55e",
+                    color: "#ffffff",
+                    border: "none",
+                    padding: "8px 12px",
+                    borderRadius: "10px",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                  }}
+                  onClick={() => {
+                    const suggestion = placeToSuggestion(activePlace);
+                    handleSelectStartLocation(suggestion);
+                    setShowRoutePlannerModal(true);
+                    setRouteMode(false);
+                    setIsTerrainMode(false);
+                  }}
+                >
+                  Set as Start
+                </button>
+                <button
+                  style={{
+                    background: "#ef4444",
+                    color: "#ffffff",
+                    border: "none",
+                    padding: "8px 12px",
+                    borderRadius: "10px",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                  }}
+                  onClick={() => {
+                    const suggestion = placeToSuggestion(activePlace);
+                    handleSelectEndLocation(suggestion);
+                    setShowRoutePlannerModal(true);
+                    setRouteMode(false);
+                    setIsTerrainMode(false);
+                  }}
+                >
+                  Set as Destination
+                </button>
+                <button
+                  style={{
+                    background: "#2563eb",
+                    color: "#ffffff",
+                    border: "none",
+                    padding: "8px 12px",
+                    borderRadius: "10px",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                  }}
+                  onClick={() => {
+                    const suggestion = placeToSuggestion(activePlace);
+                    autoRoutePendingRef.current = true;
+                    handleSelectEndLocation(suggestion);
+                    setShowRoutePlannerModal(false);
+                    setRouteMode(false);
+                    setIsTerrainMode(false);
+                    useCurrentLocationAsStart();
+                  }}
+                >
+                  Route From My Location
+                </button>
+              </div>
+            </div>
+          )}
+
           <div
             id="map"
             style={{
@@ -9973,6 +10654,68 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             }}
           ></div>
         </div>
+
+        {places.length > 0 && (
+          <div
+            style={{
+              position: "fixed",
+              bottom: "30px",
+              right: activePlace ? "320px" : "20px",
+              background: "rgba(17, 24, 39, 0.92)",
+              color: "#f9fafb",
+              padding: "14px 16px",
+              borderRadius: "14px",
+              boxShadow: "0 12px 24px rgba(15,23,42,0.45)",
+              fontSize: "12px",
+              maxWidth: "280px",
+              zIndex: 1000,
+            }}
+          >
+            <div
+              style={{
+                fontWeight: 700,
+                fontSize: "13px",
+                letterSpacing: "0.02em",
+                marginBottom: "10px",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+            >
+              <span role="img" aria-label="Places">
+                📍
+              </span>
+              Zamboanga Places on the Map
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gap: "8px 12px",
+              }}
+            >
+              {Array.from(
+                new Set(places.map((place) => place.group))
+              ).map((group) => {
+                const style = POI_GROUP_STYLES[group as ZamboangaPlaceGroup];
+                return (
+                  <div
+                    key={group}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      color: "#e5e7eb",
+                    }}
+                  >
+                    <span style={{ fontSize: "15px" }}>{style.emoji}</span>
+                    <span>{style.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Action Buttons */}
         {onModalOpen && (
