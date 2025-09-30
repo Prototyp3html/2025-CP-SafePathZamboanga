@@ -9830,10 +9830,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         markerEntry.addTo(map);
       }
       const style = PLACE_CATEGORY_STYLES[place.category];
+      const displayLabel = place.categoryLabel ?? style.label;
       const lines = [
         `<div class="place-popup-card">`,
         `<div class="place-popup-name">${place.name}</div>`,
-        style.label ? `<div class="place-popup-category">${style.label}</div>` : "",
+        displayLabel
+          ? `<div class="place-popup-category">${displayLabel}</div>`
+          : "",
         place.description ? `<div class="place-popup-description">${place.description}</div>` : "",
         place.address ? `<div class="place-popup-address">${place.address}</div>` : "",
         `<button class="place-popup-action" id="place-directions-${place.id}">Directions from my location</button>`,
