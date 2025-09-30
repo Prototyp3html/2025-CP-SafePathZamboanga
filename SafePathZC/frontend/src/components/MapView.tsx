@@ -278,6 +278,78 @@ const POI_GROUP_STYLES: Record<
   },
 };
 
+const escapeHtml = (value: string): string =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+const POI_GROUP_STYLES: Record<
+  ZamboangaPlaceGroup,
+  { color: string; accent: string; emoji: string; label: string }
+> = {
+  food: {
+    color: "#f97316",
+    accent: "#fb923c",
+    emoji: "🍽️",
+    label: "Food & Drinks",
+  },
+  lodging: {
+    color: "#7c3aed",
+    accent: "#a78bfa",
+    emoji: "🛏️",
+    label: "Hotels & Stays",
+  },
+  shopping: {
+    color: "#2563eb",
+    accent: "#60a5fa",
+    emoji: "🛍️",
+    label: "Shops & Malls",
+  },
+  health: {
+    color: "#dc2626",
+    accent: "#f87171",
+    emoji: "🩺",
+    label: "Health Services",
+  },
+  education: {
+    color: "#059669",
+    accent: "#34d399",
+    emoji: "🎓",
+    label: "Schools & Universities",
+  },
+  services: {
+    color: "#4b5563",
+    accent: "#9ca3af",
+    emoji: "🏢",
+    label: "City Services",
+  },
+  finance: {
+    color: "#b45309",
+    accent: "#f59e0b",
+    emoji: "💱",
+    label: "Banks & Money",
+  },
+  leisure: {
+    color: "#db2777",
+    accent: "#f472b6",
+    emoji: "🎡",
+    label: "Leisure Spots",
+  },
+  worship: {
+    color: "#9333ea",
+    accent: "#c084fc",
+    emoji: "🕌",
+    label: "Places of Worship",
+  },
+  transport: {
+    color: "#0f766e",
+    accent: "#14b8a6",
+    emoji: "🚌",
+    label: "Transport Hubs",
+  },
+};
+
 const isWithinBounds = (point: LatLng, bounds: LatLngBounds): boolean =>
   point.lat >= bounds.lat.min &&
   point.lat <= bounds.lat.max &&
@@ -822,7 +894,7 @@ const pickTerrainWaypoint = (
 export const MapView = ({ onModalOpen }: MapViewProps) => {
   // Configuration for routing services
   const BACKEND_URL =
-    import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+    import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
   const USE_LOCAL_OSRM = import.meta.env.VITE_USE_LOCAL_OSRM === "true"; // Use environment variable to control local OSRM
 
   // Only log configuration once per session and load terrain data
@@ -997,6 +1069,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const terrainPopupRef = useRef<L.CircleMarker | null>(null);
   const droppedPinMarkerRef = useRef<L.Marker | null>(null);
   const autoRoutePendingRef = useRef(false);
+  const droppedPinMarkerRef = useRef<L.Marker | null>(null);
+  const autoRoutePendingRef = useRef(false);
   const terrainOverlayRef = useRef<L.LayerGroup | null>(null);
   const routeLayersRef = useRef<L.Polyline[]>([]);
   const poiLayerRef = useRef<L.LayerGroup | null>(null);
@@ -1059,6 +1133,17 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       console.log(
         "🔄 MapView unmounting - route state cleared, destinations preserved"
       );
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (mapSearchDebounceRef.current) {
+        window.clearTimeout(mapSearchDebounceRef.current);
+      }
+      if (mapSearchBlurTimeoutRef.current) {
+        window.clearTimeout(mapSearchBlurTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -1225,6 +1310,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     html: `<div style="
       width: 32px;
       height: 32px;
+      width: 32px;
+      height: 32px;
       background: linear-gradient(135deg, #ef4444, #dc2626);
       border-radius: 50% 50% 50% 0;
       transform: rotate(-45deg);
@@ -1373,6 +1460,190 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       console.error("Error searching Zamboanga City locations:", error);
       return [];
     }
+  };
+
+  const handleMapSearchInputChange = (value: string) => {
+    setMapSearchQuery(value);
+
+    if (mapSearchDebounceRef.current) {
+      window.clearTimeout(mapSearchDebounceRef.current);
+      mapSearchDebounceRef.current = null;
+    }
+
+    const trimmed = value.trim();
+    latestMapSearchQueryRef.current = trimmed;
+
+    if (trimmed.length < 2) {
+      setIsSearchingMapLocations(false);
+      setMapSearchResults([]);
+      setShowMapSearchResults(false);
+      setMapSearchError(null);
+      return;
+    }
+
+    setMapSearchError(null);
+    setShowMapSearchResults(true);
+    setIsSearchingMapLocations(true);
+
+    mapSearchDebounceRef.current = window.setTimeout(async () => {
+      try {
+        const suggestions = await searchLocations(trimmed);
+
+        if (latestMapSearchQueryRef.current !== trimmed) {
+          return;
+        }
+
+        setMapSearchResults(suggestions);
+        setMapSearchError(null);
+      } catch (error) {
+        console.error("Error searching map locations:", error);
+        if (latestMapSearchQueryRef.current === trimmed) {
+          setMapSearchResults([]);
+          setMapSearchError(
+            "We couldn't reach the live search service right now."
+          );
+        }
+      } finally {
+        if (latestMapSearchQueryRef.current === trimmed) {
+          setIsSearchingMapLocations(false);
+        }
+      }
+    }, 350);
+  };
+
+  const handleMapSearchFocus = () => {
+    if (mapSearchBlurTimeoutRef.current) {
+      window.clearTimeout(mapSearchBlurTimeoutRef.current);
+      mapSearchBlurTimeoutRef.current = null;
+    }
+
+    if (mapSearchResults.length > 0 || mapSearchError) {
+      setShowMapSearchResults(true);
+    }
+  };
+
+  const handleMapSearchBlur = () => {
+    if (mapSearchBlurTimeoutRef.current) {
+      window.clearTimeout(mapSearchBlurTimeoutRef.current);
+    }
+
+    mapSearchBlurTimeoutRef.current = window.setTimeout(() => {
+      setShowMapSearchResults(false);
+    }, 150);
+  };
+
+  const handleMapSearchResultSelect = (suggestion: LocationSuggestion) => {
+    if (mapSearchDebounceRef.current) {
+      window.clearTimeout(mapSearchDebounceRef.current);
+      mapSearchDebounceRef.current = null;
+    }
+
+    if (mapSearchBlurTimeoutRef.current) {
+      window.clearTimeout(mapSearchBlurTimeoutRef.current);
+      mapSearchBlurTimeoutRef.current = null;
+    }
+
+    setMapSearchQuery(suggestion.display_name);
+    setShowMapSearchResults(false);
+    setMapSearchResults([]);
+    setIsSearchingMapLocations(false);
+    setMapSearchError(null);
+
+    const lat = parseFloat(suggestion.lat);
+    const lng = parseFloat(suggestion.lon);
+
+    if (!mapRef.current || Number.isNaN(lat) || Number.isNaN(lng)) {
+      return;
+    }
+
+    latestMapSearchQueryRef.current = suggestion.display_name;
+
+    mapRef.current.setView([lat, lng], Math.max(mapRef.current.getZoom(), 16));
+    setActivePlace(null);
+    removeDroppedPinMarker();
+
+    const coordsText = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    const popupId = Math.random().toString(36).slice(2, 10);
+    const setStartId = `search-set-start-${popupId}`;
+    const setEndId = `search-set-end-${popupId}`;
+    const routeId = `search-route-${popupId}`;
+
+    const marker = L.marker([lat, lng], {
+      icon: droppedPinIcon,
+      bubblingMouseEvents: false,
+    }).addTo(mapRef.current);
+
+    droppedPinMarkerRef.current = marker;
+
+    const popupHtml = `
+      <div style="min-width: 220px; font-family: system-ui;">
+        <div style="font-weight: 600; margin-bottom: 4px; color: #1f2937;">
+          ${escapeHtml(suggestion.display_name)}
+        </div>
+        <div style="font-size: 12px; color: #4b5563; margin-bottom: 10px;">
+          ${coordsText}
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <button id="${setStartId}"
+            style="background: #22c55e; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
+            Set as Start
+          </button>
+          <button id="${setEndId}"
+            style="background: #ef4444; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
+            Set as Destination
+          </button>
+          <button id="${routeId}"
+            style="background: #2563eb; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
+            Route From My Location
+          </button>
+        </div>
+      </div>`;
+
+    marker.bindPopup(popupHtml, {
+      autoPan: true,
+      closeButton: true,
+      className: "dropped-pin-popup",
+    });
+
+    marker.on("popupopen", () => {
+      const startBtn = document.getElementById(setStartId);
+      const endBtn = document.getElementById(setEndId);
+      const routeBtn = document.getElementById(routeId);
+
+      if (startBtn) {
+        startBtn.addEventListener("click", () => {
+          handleSelectStartLocation(suggestion);
+          setRouteMode(false);
+          setIsTerrainMode(false);
+          setShowRoutePlannerModal(true);
+          marker.closePopup();
+        });
+      }
+
+      if (endBtn) {
+        endBtn.addEventListener("click", () => {
+          handleSelectEndLocation(suggestion);
+          setRouteMode(false);
+          setIsTerrainMode(false);
+          setShowRoutePlannerModal(true);
+          marker.closePopup();
+        });
+      }
+
+      if (routeBtn) {
+        routeBtn.addEventListener("click", () => {
+          autoRoutePendingRef.current = true;
+          handleSelectEndLocation(suggestion);
+          setRouteMode(false);
+          setIsTerrainMode(false);
+          setShowRoutePlannerModal(false);
+          useCurrentLocationAsStart();
+          marker.closePopup();
+        });
+      }
+    });
+
+    marker.openPopup();
   };
 
   const handleMapSearchInputChange = (value: string) => {
@@ -8510,6 +8781,26 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     isLocal: true,
   });
 
+  const removeDroppedPinMarker = () => {
+    if (
+      droppedPinMarkerRef.current &&
+      mapRef.current &&
+      mapRef.current.hasLayer(droppedPinMarkerRef.current)
+    ) {
+      mapRef.current.removeLayer(droppedPinMarkerRef.current);
+    }
+    droppedPinMarkerRef.current = null;
+  };
+
+  const placeToSuggestion = (place: ZamboangaPlace): LocationSuggestion => ({
+    display_name: place.name,
+    lat: place.lat.toString(),
+    lon: place.lng.toString(),
+    place_id: place.id,
+    type: place.categoryLabel.toLowerCase().replace(/\s+/g, "_"),
+    isLocal: true,
+  });
+
   // Handle selecting start location
   const handleSelectStartLocation = (location: LocationSuggestion) => {
     // Clear existing markers before setting new location
@@ -8529,6 +8820,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       lng: parseFloat(location.lon),
     });
     console.log("Start location selected:", location.display_name);
+    removeDroppedPinMarker();
     removeDroppedPinMarker();
   };
 
@@ -8551,6 +8843,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       lng: parseFloat(location.lon),
     });
     console.log("End location selected:", location.display_name);
+    removeDroppedPinMarker();
     removeDroppedPinMarker();
   };
 
@@ -9020,6 +9313,25 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       alert("Geolocation is not supported by this browser");
     }
   };
+
+  useEffect(() => {
+    if (
+      autoRoutePendingRef.current &&
+      selectedStartLocation &&
+      selectedEndLocation &&
+      startPoint &&
+      endPoint
+    ) {
+      autoRoutePendingRef.current = false;
+      handleFindRoute();
+    }
+  }, [
+    selectedStartLocation,
+    selectedEndLocation,
+    startPoint,
+    endPoint,
+    handleFindRoute,
+  ]);
 
   useEffect(() => {
     if (
@@ -9612,6 +9924,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     setTimeout(() => setIsMapReady(true), 100);
 
     // 1. FIRST: Add flood-aware routing button control
+    // 1. FIRST: Add flood-aware routing button control
     const RoutingBtn = L.Control.extend({
       options: {
         position: "topleft",
@@ -9657,11 +9970,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     map.addControl(routingBtn);
 
     // 2. Add zoom controls
+    // 2. Add zoom controls
     const zoomControl = new L.Control.Zoom({
       position: "topleft",
     });
     map.addControl(zoomControl);
 
+    // 3. Add collapsible menu button (same as before but removed routing-related parts)
     // 3. Add collapsible menu button (same as before but removed routing-related parts)
     const CollapsibleMenuBtn = L.Control.extend({
       options: { position: "topleft" },
@@ -9862,6 +10177,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     const collapsibleMenuBtn = new CollapsibleMenuBtn({ position: "topleft" });
     map.addControl(collapsibleMenuBtn);
 
+    // 4. Add terrain overlay toggle button
     // 4. Add terrain overlay toggle button
     const TerrainOverlayBtn = L.Control.extend({
       options: {
@@ -10179,6 +10495,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   }, [mapLayer]);
 
   // Map click handlers for terrain sampling and dropped pins
+  // Map click handlers for terrain sampling and dropped pins
   useEffect(() => {
     if (!mapRef.current) return;
 
@@ -10364,6 +10681,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     circleMarkersRef.current = [];
 
     removeDroppedPinMarker();
+
+    removeDroppedPinMarker();
   };
 
   // Reset route
@@ -10414,7 +10733,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     }
 
     removeDroppedPinMarker();
+
+    removeDroppedPinMarker();
   };
+
+  const activePlaceStyle = activePlace ? POI_GROUP_STYLES[activePlace.group] : null;
 
   const activePlaceStyle = activePlace ? POI_GROUP_STYLES[activePlace.group] : null;
 
@@ -11128,6 +11451,68 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             }}
           ></div>
         </div>
+
+        {places.length > 0 && (
+          <div
+            style={{
+              position: "fixed",
+              bottom: "30px",
+              right: activePlace ? "320px" : "20px",
+              background: "rgba(17, 24, 39, 0.92)",
+              color: "#f9fafb",
+              padding: "14px 16px",
+              borderRadius: "14px",
+              boxShadow: "0 12px 24px rgba(15,23,42,0.45)",
+              fontSize: "12px",
+              maxWidth: "280px",
+              zIndex: 1000,
+            }}
+          >
+            <div
+              style={{
+                fontWeight: 700,
+                fontSize: "13px",
+                letterSpacing: "0.02em",
+                marginBottom: "10px",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+            >
+              <span role="img" aria-label="Places">
+                📍
+              </span>
+              Zamboanga Places on the Map
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gap: "8px 12px",
+              }}
+            >
+              {Array.from(
+                new Set(places.map((place) => place.group))
+              ).map((group) => {
+                const style = POI_GROUP_STYLES[group as ZamboangaPlaceGroup];
+                return (
+                  <div
+                    key={group}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      color: "#e5e7eb",
+                    }}
+                  >
+                    <span style={{ fontSize: "15px" }}>{style.emoji}</span>
+                    <span>{style.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Action Buttons */}
         {onModalOpen && (
