@@ -5,7 +5,7 @@ Uses filtered road network data from QGIS for precise routing
 import json
 import math
 import heapq
-from typing import List, Dict, Tuple, Optional, Set
+from typing import List, Dict, Tuple, Optional, Set, Any
 from dataclasses import dataclass
 from pathlib import Path
 import logging
@@ -13,6 +13,35 @@ import logging
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Helper utilities
+def _parse_flood_flag(value: Any) -> bool:
+    """Convert various truthy/falsey representations into a boolean.
+
+    The terrain GeoJSON stores flood flags as strings ("0"/"1"). Relying on
+    Python's ``bool`` conversion treats any non-empty string as ``True``, which
+    incorrectly marks roads tagged with "0" as flooded. This helper normalises
+    the value before converting it into a boolean so routing costs reflect the
+    actual dataset."""
+
+    if isinstance(value, bool):
+        return value
+
+    if value is None:
+        return False
+
+    if isinstance(value, (int, float)):
+        return value != 0
+
+    if isinstance(value, str):
+        normalised = value.strip().lower()
+        if normalised in {"1", "true", "t", "yes", "y"}:
+            return True
+        if normalised in {"0", "false", "f", "no", "n", ""}:
+            return False
+
+    return False
+
 
 @dataclass
 class Coordinate:
@@ -178,7 +207,7 @@ class LocalRoutingService:
                     elev_mean = float(properties.get('elev_mean') or 0.0)
                     elev_min = float(properties.get('elev_min') or 0.0) 
                     elev_max = float(properties.get('elev_max') or 0.0)
-                    flooded = bool(properties.get('flooded', False))
+                    flooded = _parse_flood_flag(properties.get('flooded'))
                     length_m = float(properties.get('length_m') or 100.0)  # Default length if missing
                     road_id_raw = properties.get('road_id') or properties.get('fid') or 0
                     road_id = float(road_id_raw)

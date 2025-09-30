@@ -72,7 +72,7 @@ python seed_database.py
 
 ```bash
 # Start FastAPI development server
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn main:app --reload --host 0.0.0.0 --port 8001
 ```
 
 ## 📚 API Endpoints
@@ -140,7 +140,7 @@ python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 ## 🔄 Integration with Frontend
 
-The frontend React application connects to this API at `http://localhost:8000/api`.
+The frontend React application connects to this API at `http://localhost:8001/api`.
 
 Key integration points:
 
@@ -164,8 +164,8 @@ psql -U safepathzc_user -d safepathzc -h localhost
 ### Port Already in Use
 
 ```bash
-# Find process using port 8000
-netstat -an | findstr :8000
+# Find process using port 8001
+netstat -an | findstr :8001
 
 # Kill process (Windows)
 taskkill /F /PID <process_id>
@@ -212,6 +212,6 @@ Perfect for testing the dynamic MyRoutes interface!
 
 ---
 
-**API Status**: 🟢 Running on http://localhost:8000
-**Health Check**: 🟢 GET http://localhost:8000/
-**Documentation**: 📖 http://localhost:8000/docs
+**API Status**: 🟢 Running on http://localhost:8001
+**Health Check**: 🟢 GET http://localhost:8001/
+**Documentation**: 📖 http://localhost:8001/docs

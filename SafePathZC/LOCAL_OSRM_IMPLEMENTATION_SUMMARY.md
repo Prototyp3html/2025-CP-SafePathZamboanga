@@ -34,7 +34,7 @@ The system now tries to get all three distinct routes from your local OSRM using
 
 Environment variables added:
 
-- `VITE_BACKEND_URL=http://localhost:8000`
+- `VITE_BACKEND_URL=http://localhost:8001`
 - `VITE_USE_LOCAL_OSRM=true` (can disable if needed)
 - `VITE_GRAPHHOPPER_API_KEY=your_key` (fallback)
 
@@ -53,9 +53,9 @@ Added comprehensive console logging to track:
 
 ```
 🗺️ MapView Configuration:
-    - Backend URL: http://localhost:8000
+    - Backend URL: http://localhost:8001
     - Use Local OSRM: true
-    - Local OSRM endpoint: http://localhost:8000/osrm/route
+    - Local OSRM endpoint: http://localhost:8001/osrm/route
 
 🚀 Attempting to get all three distinct routes using local OSRM...
 ✅ Got safe route from local OSRM
