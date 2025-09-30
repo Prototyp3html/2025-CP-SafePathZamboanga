@@ -810,7 +810,7 @@ const pickTerrainWaypoint = (
 export const MapView = ({ onModalOpen }: MapViewProps) => {
   // Configuration for routing services
   const BACKEND_URL =
-    import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+    import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
   const USE_LOCAL_OSRM = import.meta.env.VITE_USE_LOCAL_OSRM === "true"; // Use environment variable to control local OSRM
 
   // Only log configuration once per session and load terrain data
