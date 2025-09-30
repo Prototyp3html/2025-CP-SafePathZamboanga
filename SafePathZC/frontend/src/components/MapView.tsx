@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 declare global {
   interface Window {
@@ -81,6 +81,35 @@ interface TerrainRoadFeature {
 interface TerrainRoadsData {
   type: "FeatureCollection";
   features: TerrainRoadFeature[];
+}
+
+interface TerrainFeatureMeta {
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+  roadId: string;
+  flooded: boolean;
+  elevation: number | null;
+  length: number;
+}
+
+interface TerrainSpatialIndex {
+  cellSize: number;
+  index: Map<string, number[]>;
+}
+
+interface RouteTerrainStats {
+  floodLength: number;
+  safeLength: number;
+  unknownLength: number;
+  totalLength: number;
+  floodedRatio: number;
+  safeRatio: number;
+  averageElevation: number | null;
+  usedRoadIds: Set<string>;
+  sampleCount: number;
+  riskCategory: "safe" | "manageable" | "prone";
 }
 
 type FloodPreference = "prefer" | "avoid" | "neutral";
@@ -241,6 +270,316 @@ const calculateOverlapRatio = (routeA: LatLng[], routeB: LatLng[]): number => {
   totalCount += sampledB.length;
 
   return totalCount > 0 ? overlapCount / totalCount : 0;
+};
+
+const TERRAIN_INDEX_CELL_SIZE = 0.01;
+const DEFAULT_TERRAIN_SEARCH_RADIUS_METERS = 120;
+
+const getTerrainCellKey = (latIndex: number, lngIndex: number): string =>
+  `${latIndex}:${lngIndex}`;
+
+const buildTerrainSpatialIndex = (
+  roads: TerrainRoadFeature[]
+): { metas: TerrainFeatureMeta[]; spatialIndex: TerrainSpatialIndex } => {
+  const metas: TerrainFeatureMeta[] = [];
+  const index = new Map<string, number[]>();
+
+  roads.forEach((road, idx) => {
+    if (road.geometry.type !== "LineString") {
+      return;
+    }
+
+    let minLat = Infinity;
+    let maxLat = -Infinity;
+    let minLng = Infinity;
+    let maxLng = -Infinity;
+
+    road.geometry.coordinates.forEach(([lng, lat]) => {
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return;
+      }
+
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+      if (lng < minLng) minLng = lng;
+      if (lng > maxLng) maxLng = lng;
+    });
+
+    if (!Number.isFinite(minLat) || !Number.isFinite(maxLat)) {
+      return;
+    }
+
+    const roadIdRaw =
+      road.properties.road_id ?? road.properties.osm_id ?? String(idx);
+    const roadId = String(roadIdRaw);
+    const floodedValue = `${road.properties.flooded ?? ""}`.toLowerCase();
+    const flooded =
+      floodedValue === "1" ||
+      floodedValue === "true" ||
+      floodedValue === "yes";
+    const elevationValue = Number(road.properties.elev_mean);
+    const elevation =
+      Number.isFinite(elevationValue) && elevationValue > -5000
+        ? elevationValue
+        : null;
+
+    const meta: TerrainFeatureMeta = {
+      minLat,
+      maxLat,
+      minLng,
+      maxLng,
+      roadId,
+      flooded,
+      elevation,
+      length: Number(road.properties.length_m) || 0,
+    };
+
+    metas.push(meta);
+
+    const cellSize = TERRAIN_INDEX_CELL_SIZE;
+    const latStart = Math.floor(minLat / cellSize);
+    const latEnd = Math.floor(maxLat / cellSize);
+    const lngStart = Math.floor(minLng / cellSize);
+    const lngEnd = Math.floor(maxLng / cellSize);
+
+    for (let latIdx = latStart; latIdx <= latEnd; latIdx++) {
+      for (let lngIdx = lngStart; lngIdx <= lngEnd; lngIdx++) {
+        const key = getTerrainCellKey(latIdx, lngIdx);
+        if (!index.has(key)) {
+          index.set(key, []);
+        }
+        index.get(key)!.push(idx);
+      }
+    }
+  });
+
+  return {
+    metas,
+    spatialIndex: {
+      cellSize: TERRAIN_INDEX_CELL_SIZE,
+      index,
+    },
+  };
+};
+
+const pointToSegmentDistanceMeters = (
+  point: LatLng,
+  startCoord: [number, number],
+  endCoord: [number, number]
+): number => {
+  const metersPerDegLat = 111320;
+  const metersPerDegLng =
+    111320 * Math.max(Math.cos(toRadians(point.lat)), 0.0001);
+
+  const startX = (startCoord[0] - point.lng) * metersPerDegLng;
+  const startY = (startCoord[1] - point.lat) * metersPerDegLat;
+  const endX = (endCoord[0] - point.lng) * metersPerDegLng;
+  const endY = (endCoord[1] - point.lat) * metersPerDegLat;
+
+  const segX = endX - startX;
+  const segY = endY - startY;
+  const segLengthSq = segX * segX + segY * segY;
+
+  let t = 0;
+  if (segLengthSq > 0) {
+    t = ((-startX) * segX + (-startY) * segY) / segLengthSq;
+    t = Math.max(0, Math.min(1, t));
+  }
+
+  const projX = startX + segX * t;
+  const projY = startY + segY * t;
+
+  const diffX = projX;
+  const diffY = projY;
+
+  return Math.sqrt(diffX * diffX + diffY * diffY);
+};
+
+const findNearestTerrainFeature = (
+  point: LatLng,
+  searchRadiusMeters: number,
+  features: TerrainRoadFeature[],
+  metas: TerrainFeatureMeta[],
+  spatialIndex: TerrainSpatialIndex | null
+): { featureIndex: number; distance: number } | null => {
+  if (!features.length || !metas.length) {
+    return null;
+  }
+
+  const latRadiusDeg = searchRadiusMeters / 111000;
+  const lngRadiusDeg =
+    searchRadiusMeters /
+    (111000 * Math.max(Math.cos(toRadians(point.lat)), 0.0001));
+
+  const candidateSet = new Set<number>();
+
+  if (spatialIndex) {
+    const { cellSize, index } = spatialIndex;
+    const latStart = Math.floor((point.lat - latRadiusDeg) / cellSize);
+    const latEnd = Math.floor((point.lat + latRadiusDeg) / cellSize);
+    const lngStart = Math.floor((point.lng - lngRadiusDeg) / cellSize);
+    const lngEnd = Math.floor((point.lng + lngRadiusDeg) / cellSize);
+
+    for (let latIdx = latStart; latIdx <= latEnd; latIdx++) {
+      for (let lngIdx = lngStart; lngIdx <= lngEnd; lngIdx++) {
+        const key = getTerrainCellKey(latIdx, lngIdx);
+        const matches = index.get(key);
+        if (matches) {
+          matches.forEach((idx) => candidateSet.add(idx));
+        }
+      }
+    }
+  }
+
+  if (!candidateSet.size) {
+    for (let i = 0; i < features.length; i++) {
+      candidateSet.add(i);
+    }
+  }
+
+  let closestIndex = -1;
+  let closestDistance = Infinity;
+
+  candidateSet.forEach((idx) => {
+    const meta = metas[idx];
+    if (!meta) {
+      return;
+    }
+
+    if (
+      point.lat < meta.minLat - latRadiusDeg ||
+      point.lat > meta.maxLat + latRadiusDeg ||
+      point.lng < meta.minLng - lngRadiusDeg ||
+      point.lng > meta.maxLng + lngRadiusDeg
+    ) {
+      return;
+    }
+
+    const geometry = features[idx].geometry;
+    if (!geometry || geometry.type !== "LineString") {
+      return;
+    }
+
+    const coords = geometry.coordinates;
+    for (let i = 0; i < coords.length - 1; i++) {
+      const distance = pointToSegmentDistanceMeters(point, coords[i], coords[i + 1]);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestIndex = idx;
+      }
+    }
+  });
+
+  if (closestIndex === -1 || closestDistance > searchRadiusMeters) {
+    return null;
+  }
+
+  return { featureIndex: closestIndex, distance: closestDistance };
+};
+
+const computeRouteTerrainStats = (
+  waypoints: LatLng[],
+  features: TerrainRoadFeature[],
+  metas: TerrainFeatureMeta[],
+  spatialIndex: TerrainSpatialIndex | null,
+  options: { sampleLimit?: number; searchRadiusMeters?: number } = {}
+): RouteTerrainStats | null => {
+  if (waypoints.length < 2 || !features.length || !metas.length) {
+    return null;
+  }
+
+  const sampleLimit = options.sampleLimit ?? 60;
+  const searchRadius =
+    options.searchRadiusMeters ?? DEFAULT_TERRAIN_SEARCH_RADIUS_METERS;
+
+  const step = Math.max(1, Math.floor((waypoints.length - 1) / sampleLimit));
+  let totalLength = 0;
+  let floodedLength = 0;
+  let safeLength = 0;
+  let unknownLength = 0;
+  let elevationSum = 0;
+  let elevationWeight = 0;
+  const usedRoadIds = new Set<string>();
+  let samples = 0;
+
+  for (let i = 0; i < waypoints.length - 1; i += step) {
+    const nextIndex = Math.min(i + step, waypoints.length - 1);
+    const segmentStart = waypoints[i];
+    const segmentEnd = waypoints[nextIndex];
+
+    const segmentLength = calculateDistanceMeters(segmentStart, segmentEnd);
+    if (!Number.isFinite(segmentLength) || segmentLength <= 0) {
+      continue;
+    }
+
+    totalLength += segmentLength;
+    samples++;
+
+    const midpoint = {
+      lat: (segmentStart.lat + segmentEnd.lat) / 2,
+      lng: (segmentStart.lng + segmentEnd.lng) / 2,
+    };
+
+    const nearest = findNearestTerrainFeature(
+      midpoint,
+      searchRadius,
+      features,
+      metas,
+      spatialIndex
+    );
+
+    if (nearest) {
+      const meta = metas[nearest.featureIndex];
+      usedRoadIds.add(meta.roadId);
+      if (meta.flooded) {
+        floodedLength += segmentLength;
+      } else {
+        safeLength += segmentLength;
+      }
+
+      if (meta.elevation !== null) {
+        elevationSum += meta.elevation * segmentLength;
+        elevationWeight += segmentLength;
+      }
+    } else {
+      unknownLength += segmentLength;
+    }
+  }
+
+  if (totalLength === 0) {
+    return null;
+  }
+
+  const floodedRatio = floodedLength / totalLength;
+  const safeRatio = safeLength / totalLength;
+  const averageElevation =
+    elevationWeight > 0 ? elevationSum / elevationWeight : null;
+
+  let riskCategory: "safe" | "manageable" | "prone";
+  if (floodedRatio <= 0.18) {
+    riskCategory = "safe";
+  } else if (floodedRatio <= 0.45) {
+    riskCategory = "manageable";
+  } else {
+    riskCategory = "prone";
+  }
+
+  if (unknownLength / totalLength > 0.35 && riskCategory === "safe") {
+    riskCategory = "manageable";
+  }
+
+  return {
+    floodLength: floodedLength,
+    safeLength,
+    unknownLength,
+    totalLength,
+    floodedRatio,
+    safeRatio,
+    averageElevation,
+    usedRoadIds,
+    sampleCount: samples,
+    riskCategory,
+  };
 };
 
 const pickTerrainWaypoint = (
@@ -528,6 +867,27 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     useState<TerrainRoadsData | null>(null);
   const [terrainRoadsLoaded, setTerrainRoadsLoaded] = useState(false);
   const [isMapReady, setIsMapReady] = useState(false);
+
+  const terrainRoadsMetaRef = useRef<TerrainFeatureMeta[]>([]);
+  const terrainSpatialIndexRef = useRef<TerrainSpatialIndex | null>(null);
+
+  const evaluateTerrainForRoute = useCallback(
+    (waypoints: LatLng[] | null | undefined): RouteTerrainStats | null => {
+      if (!terrainRoadsData || !waypoints || waypoints.length < 2) {
+        return null;
+      }
+
+      return computeRouteTerrainStats(
+        waypoints,
+        terrainRoadsData.features,
+        terrainRoadsMetaRef.current,
+        terrainSpatialIndexRef.current
+      );
+    },
+    [terrainRoadsData]
+  );
+
+  let distinctRouteRoadIds: Set<string> = new Set();
 
   const mapRef = useRef<L.Map | null>(null);
   const routingControlRef = useRef<any>(null);
@@ -838,6 +1198,14 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             data.features.length
           ).toFixed(2) + "m",
       });
+
+      const { metas, spatialIndex } = buildTerrainSpatialIndex(data.features);
+      terrainRoadsMetaRef.current = metas;
+      terrainSpatialIndexRef.current = spatialIndex;
+
+      console.log(
+        `🧭 Built terrain spatial index with ${spatialIndex.index.size} cells`
+      );
 
       setTerrainRoadsData(data);
       setTerrainRoadsLoaded(true);
@@ -4360,6 +4728,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     const routes: any[] = [];
 
+    const sharedTerrainRoadIds = new Set<string>();
+
     // SAFEST ROUTE: Prioritize main roads, avoid narrow streets
     console.log("Generating SAFEST route...");
     let safestRoute = await tryRouteFromAPI(
@@ -4545,6 +4915,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     console.log("Start:", start, "End:", end);
 
     const routes: any[] = [];
+    distinctRouteRoadIds = new Set<string>();
 
     // Calculate distance for context
     const distance =
@@ -4598,13 +4969,20 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           const safeElevationSum = await calculateAverageElevation(
             localRoutes.safe
           );
+          const safeStats = evaluateTerrainForRoute(localRoutes.safe);
+          if (safeStats) {
+            safeStats.usedRoadIds.forEach((id) =>
+              distinctRouteRoadIds.add(id)
+            );
+          }
           routes.push({
             type: "safe_terrain",
             name: `Safe Route (Avg: ${safeElevationSum.toFixed(
               0
             )}m elevation) - Local OSRM`,
             waypoints: localRoutes.safe,
-            avgElevation: safeElevationSum,
+            avgElevation:
+              safeStats?.averageElevation ?? safeElevationSum,
             route: {
               distance: Math.round(
                 calculateRouteDistance(localRoutes.safe) * 1000
@@ -4614,12 +4992,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               ),
             },
             plannedWaypoints: localRoutes.safe,
-            floodRisk:
-              safeElevationSum > 20
-                ? "safe"
-                : safeElevationSum > 10
-                ? "manageable"
-                : "prone",
+            floodRisk: safeStats?.riskCategory ?? "manageable",
+            terrainStats: safeStats ?? null,
           });
         }
 
@@ -4628,13 +5002,22 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           const manageableElevationSum = await calculateAverageElevation(
             localRoutes.manageable
           );
+          const manageableStats = evaluateTerrainForRoute(
+            localRoutes.manageable
+          );
+          if (manageableStats) {
+            manageableStats.usedRoadIds.forEach((id) =>
+              distinctRouteRoadIds.add(id)
+            );
+          }
           routes.push({
             type: "manageable_terrain",
             name: `Manageable Route (Avg: ${manageableElevationSum.toFixed(
               0
             )}m elevation) - Local OSRM`,
             waypoints: localRoutes.manageable,
-            avgElevation: manageableElevationSum,
+            avgElevation:
+              manageableStats?.averageElevation ?? manageableElevationSum,
             route: {
               distance: Math.round(
                 calculateRouteDistance(localRoutes.manageable) * 1000
@@ -4644,12 +5027,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               ),
             },
             plannedWaypoints: localRoutes.manageable,
-            floodRisk:
-              manageableElevationSum > 15
-                ? "safe"
-                : manageableElevationSum > 8
-                ? "manageable"
-                : "prone",
+            floodRisk: manageableStats?.riskCategory ?? "manageable",
+            terrainStats: manageableStats ?? null,
           });
         }
 
@@ -4658,13 +5037,20 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           const proneElevationSum = await calculateAverageElevation(
             localRoutes.prone
           );
+          const proneStats = evaluateTerrainForRoute(localRoutes.prone);
+          if (proneStats) {
+            proneStats.usedRoadIds.forEach((id) =>
+              distinctRouteRoadIds.add(id)
+            );
+          }
           routes.push({
             type: "flood_prone_terrain",
             name: `Flood-Prone Route (Avg: ${proneElevationSum.toFixed(
               0
             )}m elevation) - Local OSRM`,
             waypoints: localRoutes.prone,
-            avgElevation: proneElevationSum,
+            avgElevation:
+              proneStats?.averageElevation ?? proneElevationSum,
             route: {
               distance: Math.round(
                 calculateRouteDistance(localRoutes.prone) * 1000
@@ -4674,7 +5060,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               ),
             },
             plannedWaypoints: localRoutes.prone,
-            floodRisk: "prone",
+            floodRisk: proneStats?.riskCategory ?? "prone",
+            terrainStats: proneStats ?? null,
           });
         }
 
@@ -4832,18 +5219,26 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     const avgElevation =
       elevationSampleCount > 0 ? routeElevationSum / elevationSampleCount : 15;
 
+    const safeTerrainStats = evaluateTerrainForRoute(safeRoute);
+    if (safeTerrainStats) {
+      safeTerrainStats.usedRoadIds.forEach((id) =>
+        distinctRouteRoadIds.add(id)
+      );
+    }
+
     routes.push({
       type: "safe_terrain",
       name: `Safe Route (Avg: ${avgElevation.toFixed(0)}m elevation)`,
       waypoints: safeRoute,
-      avgElevation: avgElevation,
+      avgElevation: safeTerrainStats?.averageElevation ?? avgElevation,
       route: {
         distance: Math.round(calculateRouteDistance(safeRoute) * 1000),
         duration: Math.round((calculateRouteDistance(safeRoute) / 40) * 60),
       },
       plannedWaypoints: safeRoute || [],
-      floodRisk:
-        avgElevation > 20 ? "safe" : avgElevation > 10 ? "manageable" : "prone",
+      floodRisk: safeTerrainStats?.riskCategory ??
+        (avgElevation > 20 ? "safe" : avgElevation > 10 ? "manageable" : "prone"),
+      terrainStats: safeTerrainStats ?? null,
     });
 
     // ROUTE 2: MODERATE ROUTE - Balanced between elevation and directness
@@ -4978,13 +5373,21 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     const avgElevationModerate =
       elevationSampleCount > 0 ? routeElevationSum / elevationSampleCount : 10;
 
+    const manageableTerrainStats = evaluateTerrainForRoute(moderateRoute);
+    if (manageableTerrainStats) {
+      manageableTerrainStats.usedRoadIds.forEach((id) =>
+        distinctRouteRoadIds.add(id)
+      );
+    }
+
     routes.push({
       type: "manageable_terrain",
       name: `Manageable Route (Avg: ${avgElevationModerate.toFixed(
         0
       )}m elevation)`,
       waypoints: moderateRoute,
-      avgElevation: avgElevationModerate,
+      avgElevation:
+        manageableTerrainStats?.averageElevation ?? avgElevationModerate,
       route: {
         distance: Math.round(calculateRouteDistance(moderateRoute) * 1000),
         duration: Math.round((calculateRouteDistance(moderateRoute) / 35) * 60),
@@ -4992,11 +5395,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       plannedWaypoints:
         moderateRoute.length > 10 ? [start, end] : moderateRoute,
       floodRisk:
-        avgElevationModerate > 15
+        manageableTerrainStats?.riskCategory ??
+        (avgElevationModerate > 15
           ? "safe"
           : avgElevationModerate > 8
           ? "manageable"
-          : "prone",
+          : "prone"),
+      terrainStats: manageableTerrainStats ?? null,
     });
 
     // ROUTE 3: FLOOD-PRONE ROUTE - Lower elevation, coastal areas (REAL ROADS)
@@ -5154,19 +5559,28 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     const avgElevationRisky =
       elevationSampleCount > 0 ? routeElevationSum / elevationSampleCount : 5;
 
+    const riskyTerrainStats = evaluateTerrainForRoute(riskyRoute);
+    if (riskyTerrainStats) {
+      riskyTerrainStats.usedRoadIds.forEach((id) =>
+        distinctRouteRoadIds.add(id)
+      );
+    }
+
     routes.push({
       type: "flood_prone_terrain",
       name: `Flood-Prone Route (Avg: ${avgElevationRisky.toFixed(
         0
       )}m elevation)`,
       waypoints: riskyRoute,
-      avgElevation: avgElevationRisky,
+      avgElevation:
+        riskyTerrainStats?.averageElevation ?? avgElevationRisky,
       route: {
         distance: Math.round(calculateRouteDistance(riskyRoute) * 1000),
         duration: Math.round((calculateRouteDistance(riskyRoute) / 30) * 60),
       },
       plannedWaypoints: riskyRoute.length > 10 ? [start, end] : riskyRoute,
-      floodRisk: "prone", // Always prone since this is the risky route
+      floodRisk: riskyTerrainStats?.riskCategory ?? "prone",
+      terrainStats: riskyTerrainStats ?? null,
     });
 
     // CRITICAL: Validate route separation and force distinctness if needed
@@ -5338,6 +5752,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         `  - Distance: ${(route.route.distance / 1000).toFixed(1)}km`
       );
       console.log(`  - Waypoints: ${route.waypoints.length} points`);
+      if (route.terrainStats) {
+        console.log(
+          `  - Terrain stats: ${(route.terrainStats.floodedRatio * 100).toFixed(
+            1
+          )}% flooded, ${(route.terrainStats.safeRatio * 100).toFixed(1)}% safe`
+        );
+      }
 
       // Check if route uses OSRM (likely following roads)
       const usesRoads = route.waypoints.length > 10;
@@ -5351,18 +5772,60 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       }
     });
 
-    // Sort routes by elevation (safest=highest, flood-prone=lowest) but maintain separation
-    routes.sort((a, b) => b.avgElevation - a.avgElevation);
+    const riskOrdering: Record<string, number> = {
+      safe: 0,
+      manageable: 1,
+      prone: 2,
+    };
 
-    // Ensure proper risk classification based on actual elevations
-    if (routes.length >= 3) {
-      routes[0].floodRisk = "safe"; // Highest elevation
-      routes[1].floodRisk = "manageable"; // Medium elevation
-      routes[2].floodRisk = "prone"; // Lowest elevation
+    routes.sort((a, b) => {
+      const rankA = riskOrdering[a.floodRisk as keyof typeof riskOrdering] ?? 1;
+      const rankB = riskOrdering[b.floodRisk as keyof typeof riskOrdering] ?? 1;
 
-      routes[0].type = "safe_terrain";
-      routes[1].type = "manageable_terrain";
-      routes[2].type = "flood_prone_terrain";
+      if (rankA !== rankB) {
+        return rankA - rankB;
+      }
+
+      return (b.avgElevation ?? 0) - (a.avgElevation ?? 0);
+    });
+
+    routes.forEach((route) => {
+      if (route.floodRisk === "safe") {
+        route.type = "safe_terrain";
+      } else if (route.floodRisk === "manageable") {
+        route.type = "manageable_terrain";
+      } else if (route.floodRisk === "prone") {
+        route.type = "flood_prone_terrain";
+      }
+    });
+
+    const hasSafeRoute = routes.some((route) => route.floodRisk === "safe");
+    const hasManageableRoute = routes.some(
+      (route) => route.floodRisk === "manageable"
+    );
+    const hasProneRoute = routes.some((route) => route.floodRisk === "prone");
+
+    if (!hasSafeRoute || !hasManageableRoute || !hasProneRoute) {
+      const byFloodCoverage = [...routes].sort((a, b) => {
+        const ratioA = a.terrainStats?.floodedRatio ?? 1;
+        const ratioB = b.terrainStats?.floodedRatio ?? 1;
+        return ratioA - ratioB;
+      });
+
+      if (!hasSafeRoute && byFloodCoverage.length > 0) {
+        byFloodCoverage[0].floodRisk = "safe";
+        byFloodCoverage[0].type = "safe_terrain";
+      }
+      if (!hasProneRoute && byFloodCoverage.length > 0) {
+        const last = byFloodCoverage[byFloodCoverage.length - 1];
+        last.floodRisk = "prone";
+        last.type = "flood_prone_terrain";
+      }
+      if (!hasManageableRoute && byFloodCoverage.length > 1) {
+        const mid = byFloodCoverage[Math.floor(byFloodCoverage.length / 2)];
+        mid.floodRisk = "manageable";
+        mid.type = "manageable_terrain";
+      }
     }
 
     // FINAL VALIDATION: Ensure routes are truly distinct
@@ -5453,9 +5916,75 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
           if (route1IsRoadBased && route2IsRoadBased) {
             console.log(
-              `  ℹ️ Both routes are road-based (${route1.waypoints.length}, ${route2.waypoints.length} waypoints) - preserving road quality over geometric separation`
+              `  🔄 Attempting terrain-aware recalculation to reduce overlap for ${route2.type}`
             );
-            // Don't force separate road-based routes - it creates geometric routes
+
+            const avoidanceRoadIds = new Set<string>();
+            const referenceStats =
+              route1.terrainStats || evaluateTerrainForRoute(route1.waypoints);
+            const targetStats =
+              route2.terrainStats || evaluateTerrainForRoute(route2.waypoints);
+
+            referenceStats?.usedRoadIds.forEach((id) =>
+              avoidanceRoadIds.add(id)
+            );
+            targetStats?.usedRoadIds.forEach((id) =>
+              avoidanceRoadIds.add(id)
+            );
+
+            let priorityMode: "safe" | "manageable" | "flood_prone" =
+              "manageable";
+            if (route2.type === "safe_terrain") {
+              priorityMode = "safe";
+            } else if (route2.type === "flood_prone_terrain") {
+              priorityMode = "flood_prone";
+            }
+
+            let recalculated = null as LatLng[] | null;
+            try {
+              recalculated = await getTerrainAwareRoute(
+                start,
+                end,
+                priorityMode,
+                { excludeRoadIds: avoidanceRoadIds }
+              );
+            } catch (recalcError) {
+              console.warn(
+                "    ⚠️ Terrain-aware recalculation failed:",
+                recalcError
+              );
+            }
+
+            if (recalculated && recalculated.length > 1) {
+              console.log(
+                "    ✅ Found alternative road route using terrain index"
+              );
+              const recalculatedStats = evaluateTerrainForRoute(recalculated);
+              route2.waypoints = recalculated;
+              route2.avgElevation =
+                recalculatedStats?.averageElevation ?? route2.avgElevation;
+              route2.floodRisk =
+                recalculatedStats?.riskCategory ?? route2.floodRisk;
+              route2.terrainStats = recalculatedStats ?? route2.terrainStats ?? null;
+
+              const recalculatedDistance = calculateRouteDistance(recalculated);
+              route2.route.distance = Math.round(recalculatedDistance * 1000);
+              const speedDivisor =
+                priorityMode === "safe"
+                  ? 40
+                  : priorityMode === "manageable"
+                  ? 35
+                  : 30;
+              route2.route.duration = Math.round(
+                (recalculatedDistance / speedDivisor) * 60
+              );
+
+              finalValidation = false;
+            } else {
+              console.log(
+                "    ℹ️ Keeping existing road-based route after recalculation attempt"
+              );
+            }
           } else {
             console.warn(
               `  🔧 Applying force separation (route quality: ${route1.waypoints.length}, ${route2.waypoints.length} waypoints)`
@@ -5848,26 +6377,86 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         "🚀 Attempting terrain-aware route calculations with terrain scoring..."
       );
 
-      const sharedTerrainRoadIds = new Set<string>();
+      const terrainRouteStats: Record<
+        "safe" | "manageable" | "flood_prone",
+        RouteTerrainStats | null
+      > = {
+        safe: null,
+        manageable: null,
+        flood_prone: null,
+      };
 
       const safeTerrainWaypoints = await getTerrainAwareRoute(
         start,
         end,
         "safe",
-        { excludeRoadIds: sharedTerrainRoadIds }
+        { excludeRoadIds: distinctRouteRoadIds }
       );
+
+      if (
+        terrainRoadsData &&
+        safeTerrainWaypoints &&
+        safeTerrainWaypoints.length >= 2
+      ) {
+        const stats = computeRouteTerrainStats(
+          safeTerrainWaypoints,
+          terrainRoadsData.features,
+          terrainRoadsMetaRef.current,
+          terrainSpatialIndexRef.current
+        );
+        if (stats) {
+          terrainRouteStats.safe = stats;
+          stats.usedRoadIds.forEach((id) => distinctRouteRoadIds.add(id));
+        }
+      }
+
       const manageableTerrainWaypoints = await getTerrainAwareRoute(
         start,
         end,
         "manageable",
-        { excludeRoadIds: sharedTerrainRoadIds }
+        { excludeRoadIds: distinctRouteRoadIds }
       );
+
+      if (
+        terrainRoadsData &&
+        manageableTerrainWaypoints &&
+        manageableTerrainWaypoints.length >= 2
+      ) {
+        const stats = computeRouteTerrainStats(
+          manageableTerrainWaypoints,
+          terrainRoadsData.features,
+          terrainRoadsMetaRef.current,
+          terrainSpatialIndexRef.current
+        );
+        if (stats) {
+          terrainRouteStats.manageable = stats;
+          stats.usedRoadIds.forEach((id) => distinctRouteRoadIds.add(id));
+        }
+      }
+
       const floodProneTerrainWaypoints = await getTerrainAwareRoute(
         start,
         end,
         "flood_prone",
-        { excludeRoadIds: sharedTerrainRoadIds }
+        { excludeRoadIds: distinctRouteRoadIds }
       );
+
+      if (
+        terrainRoadsData &&
+        floodProneTerrainWaypoints &&
+        floodProneTerrainWaypoints.length >= 2
+      ) {
+        const stats = computeRouteTerrainStats(
+          floodProneTerrainWaypoints,
+          terrainRoadsData.features,
+          terrainRoadsMetaRef.current,
+          terrainSpatialIndexRef.current
+        );
+        if (stats) {
+          terrainRouteStats.flood_prone = stats;
+          stats.usedRoadIds.forEach((id) => distinctRouteRoadIds.add(id));
+        }
+      }
 
       const terrainCandidates = [
         { routeType: "safe" as const, waypoints: safeTerrainWaypoints },
