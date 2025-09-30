@@ -24,28 +24,6 @@ import {
   type ZamboangaPlaceGroup,
 } from "../utils/zamboangaPlaces";
 
-const IMPORTANT_POI_GROUPS = new Set<ZamboangaPlaceGroup>([
-  "shopping",
-  "health",
-  "education",
-  "transport",
-  "lodging",
-  "services",
-  "finance",
-]);
-
-const MID_PRIORITY_POI_GROUPS = new Set<ZamboangaPlaceGroup>([
-  "food",
-  "worship",
-]);
-
-const CORE_POI_GROUPS = new Set<ZamboangaPlaceGroup>([
-  "shopping",
-  "health",
-  "transport",
-  "lodging",
-  "education",
-]);
 
 // Fix Leaflet default marker icons
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -906,14 +884,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const [places, setPlaces] = useState<ZamboangaPlace[]>([]);
   const [isLoadingPlaces, setIsLoadingPlaces] = useState(false);
   const [placesError, setPlacesError] = useState<string | null>(null);
-  const [mapSearchQuery, setMapSearchQuery] = useState("");
-  const [mapSearchResults, setMapSearchResults] = useState<
-    LocationSuggestion[]
-  >([]);
-  const [isSearchingMapLocations, setIsSearchingMapLocations] =
-    useState(false);
-  const [showMapSearchResults, setShowMapSearchResults] = useState(false);
-  const [mapSearchError, setMapSearchError] = useState<string | null>(null);
+
   const [activePlace, setActivePlace] = useState<ZamboangaPlace | null>(null);
 
   // Identical terrain notification
@@ -1011,11 +982,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const routeLayersRef = useRef<L.Polyline[]>([]);
   const poiLayerRef = useRef<L.LayerGroup | null>(null);
   const poiIconCacheRef = useRef<Record<string, L.DivIcon>>({});
-  const poiMarkersRef = useRef<Map<string, L.Marker>>(new Map());
-  const poiPlacesRef = useRef<Map<string, ZamboangaPlace>>(new Map());
-  const mapSearchDebounceRef = useRef<number | null>(null);
-  const latestMapSearchQueryRef = useRef<string>("");
-  const mapSearchBlurTimeoutRef = useRef<number | null>(null);
 
   // GraphHopper rate limiting
   const lastGraphHopperRequest = useRef<number>(0);
@@ -1285,59 +1251,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     iconAnchor: [14, 28],
     popupAnchor: [0, -24],
   });
-
-  const shouldShowPlaceAtZoom = useCallback(
-    (place: ZamboangaPlace, zoom: number) => {
-      if (zoom >= 16) {
-        return true;
-      }
-
-      if (zoom >= 14) {
-        return place.group !== "leisure";
-      }
-
-      if (zoom >= 12) {
-        return (
-          IMPORTANT_POI_GROUPS.has(place.group) ||
-          MID_PRIORITY_POI_GROUPS.has(place.group)
-        );
-      }
-
-      return CORE_POI_GROUPS.has(place.group);
-    },
-    []
-  );
-
-  const updatePoiVisibility = useCallback(() => {
-    const map = mapRef.current;
-    const layerGroup = poiLayerRef.current;
-
-    if (!map || !layerGroup) {
-      return;
-    }
-
-    const currentZoom = map.getZoom();
-    const markerMap = poiMarkersRef.current;
-
-    markerMap.forEach((marker, placeId) => {
-      const place = poiPlacesRef.current.get(placeId);
-      if (!place) {
-        return;
-      }
-
-      const shouldDisplay = shouldShowPlaceAtZoom(place, currentZoom);
-      const hasLayer = layerGroup.hasLayer(marker);
-
-      if (shouldDisplay && !hasLayer) {
-        layerGroup.addLayer(marker);
-      } else if (!shouldDisplay && hasLayer) {
-        layerGroup.removeLayer(marker);
-        if (marker.isPopupOpen()) {
-          marker.closePopup();
-        }
-      }
-    });
-  }, [shouldShowPlaceAtZoom]);
 
   // Zamboanga City location search using local database (simplified working version)
   const searchLocations = async (
@@ -9961,13 +9874,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       poiLayerRef.current.clearLayers();
     }
 
-    poiMarkersRef.current.forEach((marker) => marker.remove());
-    poiMarkersRef.current.clear();
-    poiPlacesRef.current.clear();
-
-    poiLayerRef.current.addTo(mapInstance);
-    mapInstance.off("zoomend", updatePoiVisibility);
-    mapInstance.on("zoomend", updatePoiVisibility);
 
     const iconCache = poiIconCacheRef.current;
 
@@ -10103,12 +10009,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         );
       });
 
-      poiMarkersRef.current.set(place.id, marker);
-      poiPlacesRef.current.set(place.id, place);
-
-      if (shouldShowPlaceAtZoom(place, mapInstance.getZoom())) {
-        poiLayerRef.current?.addLayer(marker);
-      }
     };
 
     const loadPlaces = async () => {
@@ -10123,12 +10023,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
         setPlaces(fetchedPlaces);
         poiLayerRef.current?.clearLayers();
-        poiMarkersRef.current.forEach((marker) => marker.remove());
-        poiMarkersRef.current.clear();
-        poiPlacesRef.current.clear();
-
-        fetchedPlaces.forEach(renderPlaceMarker);
-        updatePoiVisibility();
 
         const usingFallback =
           fetchedPlaces.length > 0 &&
@@ -10157,12 +10051,12 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     return () => {
       isCancelled = true;
-      mapInstance.off("zoomend", updatePoiVisibility);
+
       if (poiLayerRef.current && mapInstance) {
         mapInstance.removeLayer(poiLayerRef.current);
       }
     };
-  }, [isMapReady, shouldShowPlaceAtZoom, updatePoiVisibility]);
+
 
   // Handle layer switching
   useEffect(() => {
@@ -10210,11 +10104,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           terrainPopupRef.current = elevationMarker;
         }
         return;
-      }
-
-      if (!mapRef.current) {
-        return;
-      }
 
       setActivePlace(null);
       const { lat, lng } = e.latlng;
@@ -10719,6 +10608,215 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         </div>
 
         <div style={{ position: "relative", marginTop: "60px" }}>
+          {isLoadingPlaces && (
+            <div
+              style={{
+                position: "fixed",
+                top: "80px",
+                left: "20px",
+                background: "rgba(37, 99, 235, 0.95)",
+                color: "#ffffff",
+                padding: "8px 16px",
+                borderRadius: "999px",
+                fontSize: "13px",
+                fontWeight: 600,
+                letterSpacing: "0.01em",
+                boxShadow: "0 10px 20px rgba(37,99,235,0.35)",
+                zIndex: 1100,
+              }}
+            >
+              Loading Zamboanga places…
+            </div>
+          )}
+
+          {placesError && (
+            <div
+              style={{
+                position: "fixed",
+                top: isLoadingPlaces ? "122px" : "80px",
+                left: "20px",
+                background: "rgba(239, 68, 68, 0.95)",
+                color: "#ffffff",
+                padding: "10px 16px",
+                borderRadius: "12px",
+                fontSize: "12px",
+                lineHeight: 1.4,
+                maxWidth: "280px",
+                boxShadow: "0 10px 20px rgba(239,68,68,0.25)",
+                zIndex: 1100,
+              }}
+            >
+              {placesError}
+            </div>
+          )}
+
+          {activePlace && activePlaceStyle && (
+            <div
+              style={{
+                position: "fixed",
+                top: "80px",
+                right: "20px",
+                width: "280px",
+                background: "#ffffff",
+                borderRadius: "16px",
+                boxShadow: "0 20px 35px rgba(15, 23, 42, 0.25)",
+                padding: "18px",
+                borderTop: `4px solid ${activePlaceStyle.color}`,
+                zIndex: 1100,
+                fontFamily: "system-ui, -apple-system, sans-serif",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  marginBottom: "10px",
+                }}
+              >
+                <div
+                  style={{
+                    width: "44px",
+                    height: "44px",
+                    borderRadius: "14px",
+                    background: activePlaceStyle.color,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "22px",
+                    color: "#ffffff",
+                    boxShadow: "0 10px 20px rgba(0,0,0,0.25)",
+                  }}
+                >
+                  {activePlaceStyle.emoji}
+                </div>
+                <div>
+                  <div
+                    style={{
+                      fontSize: "14px",
+                      fontWeight: 700,
+                      color: "#1f2937",
+                      marginBottom: "2px",
+                    }}
+                  >
+                    {activePlace.name}
+                  </div>
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "2px 8px",
+                      borderRadius: "999px",
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      color: "#ffffff",
+                      background: activePlaceStyle.color,
+                    }}
+                  >
+                    {activePlaceStyle.emoji} {activePlace.categoryLabel}
+                  </div>
+                </div>
+              </div>
+
+              {activePlace.address && (
+                <div
+                  style={{
+                    fontSize: "12px",
+                    color: "#4b5563",
+                    marginBottom: "8px",
+                  }}
+                >
+                  {activePlace.address}
+                </div>
+              )}
+
+              <div
+                style={{
+                  fontSize: "12px",
+                  color: "#6b7280",
+                  marginBottom: "14px",
+                }}
+              >
+                {activePlace.lat.toFixed(5)}, {activePlace.lng.toFixed(5)}
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px",
+                }}
+              >
+                <button
+                  style={{
+                    background: "#22c55e",
+                    color: "#ffffff",
+                    border: "none",
+                    padding: "8px 12px",
+                    borderRadius: "10px",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                  }}
+                  onClick={() => {
+                    const suggestion = placeToSuggestion(activePlace);
+                    handleSelectStartLocation(suggestion);
+                    setShowRoutePlannerModal(true);
+                    setRouteMode(false);
+                    setIsTerrainMode(false);
+                  }}
+                >
+                  Set as Start
+                </button>
+                <button
+                  style={{
+                    background: "#ef4444",
+                    color: "#ffffff",
+                    border: "none",
+                    padding: "8px 12px",
+                    borderRadius: "10px",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                  }}
+                  onClick={() => {
+                    const suggestion = placeToSuggestion(activePlace);
+                    handleSelectEndLocation(suggestion);
+                    setShowRoutePlannerModal(true);
+                    setRouteMode(false);
+                    setIsTerrainMode(false);
+                  }}
+                >
+                  Set as Destination
+                </button>
+                <button
+                  style={{
+                    background: "#2563eb",
+                    color: "#ffffff",
+                    border: "none",
+                    padding: "8px 12px",
+                    borderRadius: "10px",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                  }}
+                  onClick={() => {
+                    const suggestion = placeToSuggestion(activePlace);
+                    autoRoutePendingRef.current = true;
+                    handleSelectEndLocation(suggestion);
+                    setShowRoutePlannerModal(false);
+                    setRouteMode(false);
+                    setIsTerrainMode(false);
+                    useCurrentLocationAsStart();
+                  }}
+                >
+                  Route From My Location
+                </button>
+              </div>
+            </div>
+          )}
+
           <div
             style={{
               position: "fixed",
@@ -11127,6 +11225,68 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             }}
           ></div>
         </div>
+
+        {places.length > 0 && (
+          <div
+            style={{
+              position: "fixed",
+              bottom: "30px",
+              right: activePlace ? "320px" : "20px",
+              background: "rgba(17, 24, 39, 0.92)",
+              color: "#f9fafb",
+              padding: "14px 16px",
+              borderRadius: "14px",
+              boxShadow: "0 12px 24px rgba(15,23,42,0.45)",
+              fontSize: "12px",
+              maxWidth: "280px",
+              zIndex: 1000,
+            }}
+          >
+            <div
+              style={{
+                fontWeight: 700,
+                fontSize: "13px",
+                letterSpacing: "0.02em",
+                marginBottom: "10px",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+            >
+              <span role="img" aria-label="Places">
+                📍
+              </span>
+              Zamboanga Places on the Map
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gap: "8px 12px",
+              }}
+            >
+              {Array.from(
+                new Set(places.map((place) => place.group))
+              ).map((group) => {
+                const style = POI_GROUP_STYLES[group as ZamboangaPlaceGroup];
+                return (
+                  <div
+                    key={group}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      color: "#e5e7eb",
+                    }}
+                  >
+                    <span style={{ fontSize: "15px" }}>{style.emoji}</span>
+                    <span>{style.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Action Buttons */}
         {onModalOpen && (
