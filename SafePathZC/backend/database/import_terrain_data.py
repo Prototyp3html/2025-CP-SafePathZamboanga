@@ -9,12 +9,34 @@ import psycopg2
 import psycopg2.extras
 from pathlib import Path
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 import os
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+
+def _parse_flood_flag(value: Any) -> bool:
+    """Normalise flood flags stored as strings into a proper boolean."""
+
+    if isinstance(value, bool):
+        return value
+
+    if value is None:
+        return False
+
+    if isinstance(value, (int, float)):
+        return value != 0
+
+    if isinstance(value, str):
+        normalised = value.strip().lower()
+        if normalised in {"1", "true", "t", "yes", "y"}:
+            return True
+        if normalised in {"0", "false", "f", "no", "n", ""}:
+            return False
+
+    return False
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -124,7 +146,7 @@ class PostGISImporter:
                     'elev_mean': float(properties.get('elev_mean') or 0.0),
                     'elev_min': float(properties.get('elev_min') or 0.0),
                     'elev_max': float(properties.get('elev_max') or 0.0),
-                    'flood_status': bool(properties.get('flooded', False)),
+                    'flood_status': _parse_flood_flag(properties.get('flooded')),
                     'length_m': float(properties.get('length_m') or 0.0),
                     'surface_type': self._extract_surface(properties.get('other_tags', '')),
                     'max_speed': self._extract_maxspeed(properties.get('other_tags', '')),
