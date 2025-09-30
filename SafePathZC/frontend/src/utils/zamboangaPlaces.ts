@@ -179,13 +179,55 @@ const LEISURE_CATEGORY_MAP: Record<
 
 };
 
-const OVERPASS_QUERY = `
+const PLACE_FETCH_LIMIT = 400;
+const OVERPASS_ENDPOINTS = [
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass-api.de/api/interpreter",
+  "https://lz4.overpass-api.de/api/interpreter",
+];
+
+const buildTagQueries = (tag: string, values: string[]): string[] => {
+  const uniqueValues = Array.from(new Set(values)).filter(Boolean);
+
+  if (uniqueValues.length === 0) {
+    return [];
+  }
+
+  const valuePattern = uniqueValues.join("|");
+
+  return [
+    `node["${tag}"~"${valuePattern}"](${BOUNDING_BOX});`,
+    `way["${tag}"~"${valuePattern}"](${BOUNDING_BOX});`,
+    `relation["${tag}"~"${valuePattern}"](${BOUNDING_BOX});`,
+  ];
+};
+
+const OVERPASS_QUERY = (() => {
+  const queryParts: string[] = [];
+
+  queryParts.push(
+    ...buildTagQueries("amenity", Object.keys(AMENITY_CATEGORY_MAP))
+  );
+  queryParts.push(...buildTagQueries("shop", Object.keys(SHOP_CATEGORY_MAP)));
+  queryParts.push(
+    ...buildTagQueries("tourism", Object.keys(TOURISM_CATEGORY_MAP))
+  );
+  queryParts.push(
+    ...buildTagQueries("leisure", Object.keys(LEISURE_CATEGORY_MAP))
+  );
+
+  if (queryParts.length === 0) {
+    return "";
+  }
+
+  return `
   [out:json][timeout:60];
   (
-
+    ${queryParts.join("\n    ")}
   );
-  out center tags ${PLACE_LIMIT};
+  out center tags ${PLACE_FETCH_LIMIT};
 `;
+})();
 
 const titleCase = (value: string) =>
   value
@@ -282,4 +324,76 @@ export async function fetchZamboangaPlaces(): Promise<ZamboangaPlace[]> {
     return cachedPlaces;
   }
 
+  if (!OVERPASS_QUERY) {
+    cachedPlaces = FALLBACK_PLACES;
+    lastFetchTimestamp = now;
+    return FALLBACK_PLACES;
+  }
+
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        },
+        body: `data=${encodeURIComponent(OVERPASS_QUERY)}`,
+      });
+
+      if (!response.ok) {
+        console.warn(
+          `Overpass request to ${endpoint} failed with status ${response.status}`
+        );
+        continue;
+      }
+
+      const data = (await response.json()) as {
+        elements?: OverpassElement[];
+      };
+
+      const elements = data.elements ?? [];
+      if (elements.length === 0) {
+        console.warn(`Overpass request to ${endpoint} returned no elements`);
+        continue;
+      }
+
+      const deduped = new Map<string, ZamboangaPlace>();
+
+      for (const element of elements) {
+        const place = toPlace(element);
+        if (!place) continue;
+
+        const dedupeKey = `${place.group}|${place.name.toLowerCase()}|${place.lat.toFixed(
+          5
+        )}|${place.lng.toFixed(5)}`;
+
+        if (!deduped.has(dedupeKey)) {
+          deduped.set(dedupeKey, place);
+        }
+      }
+
+      if (deduped.size === 0) {
+        continue;
+      }
+
+      const places = Array.from(deduped.values()).sort((a, b) => {
+        if (a.group === b.group) {
+          return a.name.localeCompare(b.name, undefined, {
+            sensitivity: "base",
+          });
+        }
+        return a.group.localeCompare(b.group);
+      });
+
+      cachedPlaces = places;
+      lastFetchTimestamp = now;
+      return places;
+    } catch (error) {
+      console.warn(`Overpass request to ${endpoint} failed`, error);
+    }
+  }
+
+  cachedPlaces = FALLBACK_PLACES;
+  lastFetchTimestamp = now;
+  return cachedPlaces;
 }
