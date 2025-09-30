@@ -1,3 +1,7 @@
+const OVERPASS_ENDPOINTS = [
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass-api.de/api/interpreter",
+];
 const BOUNDING_BOX = "6.80,121.95,7.20,122.25"; // south,west,north,east roughly covering Zamboanga City
 const CACHE_DURATION_MS = 1000 * 60 * 15; // 15 minutes
 
@@ -34,6 +38,7 @@ interface OverpassElement {
   tags?: Record<string, string>;
 }
 
+const PLACE_LIMIT = 1200;
 
 let cachedPlaces: ZamboangaPlace[] | null = null;
 let lastFetchTimestamp = 0;
@@ -119,7 +124,9 @@ const AMENITY_CATEGORY_MAP: Record<
   police: { group: "services", label: "Police Station" },
   fire_station: { group: "services", label: "Fire Station" },
   post_office: { group: "services", label: "Post Office" },
-
+  community_centre: { group: "services", label: "Community Centre" },
+  townhall: { group: "services", label: "Town Hall" },
+  marketplace: { group: "shopping", label: "Public Market" },
   bus_station: { group: "transport", label: "Bus Station" },
   ferry_terminal: { group: "transport", label: "Ferry Terminal" },
   parking: { group: "transport", label: "Parking" },
@@ -128,7 +135,10 @@ const AMENITY_CATEGORY_MAP: Record<
   college: { group: "education", label: "College" },
   university: { group: "education", label: "University" },
   library: { group: "education", label: "Library" },
-
+  kindergarten: { group: "education", label: "Kindergarten" },
+  arts_centre: { group: "leisure", label: "Arts Centre" },
+  theatre: { group: "leisure", label: "Theatre" },
+  cinema: { group: "leisure", label: "Cinema" },
   place_of_worship: { group: "worship", label: "Place of Worship" },
 };
 
@@ -146,6 +156,8 @@ const TOURISM_CATEGORY_MAP: Record<
   museum: { group: "leisure", label: "Museum" },
   theme_park: { group: "leisure", label: "Theme Park" },
   zoo: { group: "leisure", label: "Zoo" },
+  viewpoint: { group: "leisure", label: "Viewpoint" },
+  picnic_site: { group: "leisure", label: "Picnic Site" },
 };
 
 const SHOP_CATEGORY_MAP: Record<
@@ -164,6 +176,7 @@ const SHOP_CATEGORY_MAP: Record<
   furniture: { group: "shopping", label: "Furniture Store" },
   electronics: { group: "shopping", label: "Electronics Store" },
   supermarket_hypermarket: { group: "shopping", label: "Hypermarket" },
+  marketplace: { group: "shopping", label: "Public Market" },
 };
 
 const LEISURE_CATEGORY_MAP: Record<
@@ -176,13 +189,22 @@ const LEISURE_CATEGORY_MAP: Record<
   sports_centre: { group: "leisure", label: "Sports Centre" },
   water_park: { group: "leisure", label: "Water Park" },
   garden: { group: "leisure", label: "Garden" },
-
+  recreation_ground: { group: "leisure", label: "Recreation Ground" },
+  common: { group: "leisure", label: "Common" },
+  nature_reserve: { group: "leisure", label: "Nature Reserve" },
 };
 
 const OVERPASS_QUERY = `
   [out:json][timeout:60];
   (
-
+    node["amenity"~"restaurant|fast_food|cafe|bar|pub|food_court|ice_cream|bakery|hospital|clinic|doctors|pharmacy|dentist|bank|atm|bureau_de_change|police|fire_station|post_office|community_centre|townhall|marketplace|arts_centre|cinema|theatre|bus_station|ferry_terminal|parking|fuel|school|college|university|library|kindergarten|place_of_worship"](${BOUNDING_BOX});
+    way["amenity"~"restaurant|fast_food|cafe|bar|pub|food_court|ice_cream|bakery|hospital|clinic|doctors|pharmacy|dentist|bank|atm|bureau_de_change|police|fire_station|post_office|community_centre|townhall|marketplace|arts_centre|cinema|theatre|bus_station|ferry_terminal|parking|fuel|school|college|university|library|kindergarten|place_of_worship"](${BOUNDING_BOX});
+    node["tourism"~"hotel|guest_house|hostel|motel|resort|apartment|attraction|museum|theme_park|zoo|viewpoint|picnic_site"](${BOUNDING_BOX});
+    way["tourism"~"hotel|guest_house|hostel|motel|resort|apartment|attraction|museum|theme_park|zoo|viewpoint|picnic_site"](${BOUNDING_BOX});
+    node["shop"~"mall|department_store|supermarket|convenience|bakery|boutique|clothes|shoes|sports|furniture|electronics|marketplace"](${BOUNDING_BOX});
+    way["shop"~"mall|department_store|supermarket|convenience|bakery|boutique|clothes|shoes|sports|furniture|electronics|marketplace"](${BOUNDING_BOX});
+    node["leisure"~"park|playground|fitness_centre|sports_centre|water_park|garden|recreation_ground|common|nature_reserve"](${BOUNDING_BOX});
+    way["leisure"~"park|playground|fitness_centre|sports_centre|water_park|garden|recreation_ground|common|nature_reserve"](${BOUNDING_BOX});
   );
   out center tags ${PLACE_LIMIT};
 `;
@@ -282,4 +304,57 @@ export async function fetchZamboangaPlaces(): Promise<ZamboangaPlace[]> {
     return cachedPlaces;
   }
 
+  const previousPlaces = cachedPlaces;
+  let lastError: unknown = null;
+
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "SafePathZamboanga/1.0 (https://safepath-zamboanga.com)",
+        },
+        body: new URLSearchParams({ data: OVERPASS_QUERY }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Overpass API error: ${response.status}`);
+      }
+
+      const json = await response.json();
+      const elements: OverpassElement[] = Array.isArray(json?.elements)
+        ? json.elements
+        : [];
+
+      const places = elements
+        .map(toPlace)
+        .filter((place): place is ZamboangaPlace => Boolean(place))
+        .slice(0, PLACE_LIMIT);
+
+      if (places.length === 0) {
+        throw new Error("No places returned from Overpass API");
+      }
+
+      cachedPlaces = places;
+      lastFetchTimestamp = now;
+      return places;
+    } catch (error) {
+      lastError = error;
+      console.error(`Failed to load places from ${endpoint}:`, error);
+      continue;
+    }
+  }
+
+  if (previousPlaces && previousPlaces.length > 0) {
+    console.warn("Using previously cached place data due to fetch failures.");
+    lastFetchTimestamp = now;
+    cachedPlaces = previousPlaces;
+    return previousPlaces;
+  }
+
+  console.error("Falling back to offline place list:", lastError);
+  cachedPlaces = FALLBACK_PLACES;
+  lastFetchTimestamp = now;
+  return FALLBACK_PLACES;
 }
