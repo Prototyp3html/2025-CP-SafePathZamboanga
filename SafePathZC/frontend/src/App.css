@@ -276,3 +276,212 @@
   border: 1px solid #991b1b !important;
   font-weight: 600 !important;
 }
+
+.leaflet-control-geocoder.geocoder-hover-toggle {
+  opacity: 0;
+  pointer-events: auto;
+  transform: translateY(-6px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.leaflet-control-geocoder.geocoder-hover-toggle:hover,
+.leaflet-control-geocoder.geocoder-hover-toggle:focus-within,
+.leaflet-control-geocoder.geocoder-hover-toggle.geocoder-hover-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.leaflet-control-geocoder.geocoder-hover-toggle .leaflet-control-geocoder-form {
+  pointer-events: auto;
+}
+
+.map-place-icon {
+  pointer-events: auto;
+}
+
+.map-place-icon-inner {
+  width: 28px;
+  height: 28px;
+  border-radius: 14px;
+  background: #111827;
+  color: #f9fafb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  border: 2px solid var(--marker-color, #2563eb);
+  box-shadow: 0 6px 12px rgba(17, 24, 39, 0.25);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.map-place-icon-active .map-place-icon-inner,
+.map-place-icon-inner:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 10px 22px rgba(17, 24, 39, 0.35);
+}
+
+.place-info-popup .leaflet-popup-content-wrapper {
+  padding: 0;
+  border-radius: 12px;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.35);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.place-info-popup .leaflet-popup-tip {
+  background: #fff;
+}
+
+.place-popup-card {
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  padding: 16px 18px;
+  min-width: 220px;
+  max-width: 280px;
+  color: #0f172a;
+}
+
+.place-popup-card--empty {
+  text-align: left;
+}
+
+.place-popup-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.place-popup-header::before {
+  content: "";
+}
+
+.place-popup-emoji {
+  font-size: 20px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.06);
+}
+
+.place-popup-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.place-popup-name {
+  font-weight: 600;
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.place-popup-category {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(15, 23, 42, 0.65);
+}
+
+.place-popup-description {
+  font-size: 13px;
+  color: rgba(15, 23, 42, 0.78);
+  line-height: 1.35;
+  margin-bottom: 8px;
+}
+
+.place-popup-address {
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.6);
+  margin-bottom: 10px;
+}
+
+.place-popup-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.place-popup-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  background: rgba(15, 23, 42, 0.08);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(15, 23, 42, 0.72);
+}
+
+.place-popup-action {
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  background: #2563eb;
+  color: #f8fafc;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.place-popup-action:hover {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+.place-popup-small {
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.7);
+  margin-top: 6px;
+}
+
+.place-popup-small-muted {
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.55);
+  margin-top: 4px;
+}
+
+.user-location-marker {
+  pointer-events: none;
+}
+
+.user-location-marker .user-location-inner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #2563eb;
+  border: 3px solid #ffffff;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+  position: relative;
+  z-index: 2;
+}
+
+.user-location-marker .user-location-pulse {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(37, 99, 235, 0.35);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  animation: userLocationPulse 2.4s infinite ease-in-out;
+}
+
+@keyframes userLocationPulse {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.45;
+  }
+  60% {
+    transform: translate(-50%, -50%) scale(2.1);
+    opacity: 0;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
+}

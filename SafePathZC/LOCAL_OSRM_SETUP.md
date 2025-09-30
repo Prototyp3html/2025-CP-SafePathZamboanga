@@ -16,7 +16,7 @@ The SafePathZC application now prioritizes local OSRM routing for the most accur
 
 ```env
 # Backend API Configuration
-VITE_BACKEND_URL=http://localhost:8000
+VITE_BACKEND_URL=http://localhost:8001
 
 # Local OSRM Configuration
 VITE_USE_LOCAL_OSRM=true
@@ -98,7 +98,7 @@ curl "http://localhost:5000/route/v1/driving/122.079,6.9214;122.085,6.9300?overv
 
 ```bash
 # Test the backend OSRM endpoint
-curl "http://localhost:8000/osrm/route?start=122.079,6.9214&end=122.085,6.9300&alternatives=true"
+curl "http://localhost:8001/osrm/route?start=122.079,6.9214&end=122.085,6.9300&alternatives=true"
 ```
 
 ### 3. Monitor Frontend Logs
@@ -107,9 +107,9 @@ Open the browser console and look for routing logs:
 
 ```
 🗺️ MapView Configuration:
-    - Backend URL: http://localhost:8000
+    - Backend URL: http://localhost:8001
     - Use Local OSRM: true
-    - Local OSRM endpoint: http://localhost:8000/osrm/route
+    - Local OSRM endpoint: http://localhost:8001/osrm/route
 
 🚀 Trying local OSRM first for Zamboanga-specific routing...
 🗺️ Local OSRM Response: {...}
@@ -187,7 +187,7 @@ GET /osrm/route?start=lng,lat&end=lng,lat&alternatives=true
 
 3. **Verify backend connectivity**:
    ```bash
-   curl http://localhost:8000/osrm/route?start=122.079,6.9214&end=122.085,6.9300
+   curl http://localhost:8001/osrm/route?start=122.079,6.9214&end=122.085,6.9300
    ```
 
 ## Performance Benefits

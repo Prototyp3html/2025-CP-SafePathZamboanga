@@ -152,7 +152,7 @@ PostGIS database initialized successfully
 Test the health endpoint:
 
 ```bash
-curl http://localhost:8000/api/v1/routing/postgis/health
+curl http://localhost:8001/api/v1/routing/postgis/health
 ```
 
 Expected response:
@@ -176,7 +176,7 @@ Expected response:
 
 ```bash
 # Test performance comparison
-curl "http://localhost:8000/api/v1/routing/postgis/performance/compare?start_lat=6.9214&start_lng=122.0790&end_lat=6.9100&end_lng=122.0850&mode=car"
+curl "http://localhost:8001/api/v1/routing/postgis/performance/compare?start_lat=6.9214&start_lng=122.0790&end_lat=6.9100&end_lng=122.0850&mode=car"
 ```
 
 Expected results:
@@ -205,7 +205,7 @@ Expected results:
 ### Network Statistics
 
 ```bash
-curl http://localhost:8000/api/v1/routing/postgis/statistics
+curl http://localhost:8001/api/v1/routing/postgis/statistics
 ```
 
 ## API Usage Examples
@@ -213,7 +213,7 @@ curl http://localhost:8000/api/v1/routing/postgis/statistics
 ### Basic Route Calculation
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/routing/postgis/calculate" \
+curl -X POST "http://localhost:8001/api/v1/routing/postgis/calculate" \
   -H "Content-Type: application/json" \
   -d '{
     "start_lat": 6.9214,
@@ -252,10 +252,10 @@ curl -X POST "http://localhost:8000/api/v1/routing/postgis/calculate" \
 
 ```bash
 # Motorcycle routing (better hill climbing)
-curl -X GET "http://localhost:8000/api/v1/routing/postgis/calculate?start_lat=6.9214&start_lng=122.0790&end_lat=6.9100&end_lng=122.0850&mode=motorcycle"
+curl -X GET "http://localhost:8001/api/v1/routing/postgis/calculate?start_lat=6.9214&start_lng=122.0790&end_lat=6.9100&end_lng=122.0850&mode=motorcycle"
 
 # Walking route (minimal terrain penalties)
-curl -X GET "http://localhost:8000/api/v1/routing/postgis/calculate?start_lat=6.9214&start_lng=122.0790&end_lat=6.9100&end_lng=122.0850&mode=walking"
+curl -X GET "http://localhost:8001/api/v1/routing/postgis/calculate?start_lat=6.9214&start_lng=122.0790&end_lat=6.9100&end_lng=122.0850&mode=walking"
 ```
 
 ## Advanced Features
