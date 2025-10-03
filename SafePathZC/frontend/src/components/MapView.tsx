@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 declare global {
   interface Window {
@@ -21,10 +21,11 @@ import {
 } from "../utils/zamboCityLocations";
 import { localRoutingService } from "../services/localRouting";
 import {
-  ZAMBOANGA_PLACES,
   PLACE_CATEGORY_STYLES,
   type PlaceDefinition,
   findNearestPlace,
+  fetchZamboangaPlaces,
+  getRuntimePlaces,
 } from "../utils/zamboangaPlaces";
 
 // Fix Leaflet default marker icons
@@ -177,6 +178,8 @@ const SAFE_CITY_BOUNDS: LatLngBounds = {
   lat: { min: 6.86, max: 7.1 },
   lng: { min: 122.01, max: 122.14 },
 };
+
+const MIN_POI_VISIBILITY_ZOOM = 16;
 
 const clampValue = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
@@ -875,6 +878,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     useState<TerrainRoadsData | null>(null);
   const [terrainRoadsLoaded, setTerrainRoadsLoaded] = useState(false);
   const [isMapReady, setIsMapReady] = useState(false);
+  const [places, setPlaces] = useState<PlaceDefinition[]>(() => getRuntimePlaces());
 
   const terrainRoadsMetaRef = useRef<TerrainFeatureMeta[]>([]);
   const terrainSpatialIndexRef = useRef<TerrainSpatialIndex | null>(null);
@@ -906,10 +910,32 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const terrainOverlayRef = useRef<L.LayerGroup | null>(null);
   const routeLayersRef = useRef<L.Polyline[]>([]);
   const placeMarkersRef = useRef<Map<string, L.Marker>>(new Map());
+  const placeDataRef = useRef<Map<string, PlaceDefinition>>(new Map());
   const placePopupRef = useRef<L.Popup | null>(null);
   const activePlaceIdRef = useRef<string | null>(null);
   const startDirectionsFromPlaceRef = useRef<((place: PlaceDefinition) => void) | null>(null);
   const placeVisibilityUpdaterRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadPlaces = async () => {
+      try {
+        const latestPlaces = await fetchZamboangaPlaces();
+        if (!isCancelled) {
+          setPlaces(latestPlaces);
+        }
+      } catch (error) {
+        console.warn("Failed to fetch live points of interest", error);
+      }
+    };
+
+    loadPlaces();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   const userLocationRef = useRef<LatLng | null>(null);
   const userLocationMarkerRef = useRef<L.Marker | null>(null);
@@ -9748,7 +9774,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         if (mapInstance) {
           const desiredZoom = Math.max(
             mapInstance.getZoom(),
-            Math.max(place.minZoom, 15)
+            Math.max(place.minZoom, MIN_POI_VISIBILITY_ZOOM)
           );
           mapInstance.flyTo([place.lat, place.lng], desiredZoom, {
             animate: true,
@@ -9805,24 +9831,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       activePlaceIdRef.current = placeId;
     };
 
-    if (placeMarkersRef.current.size === 0) {
-      ZAMBOANGA_PLACES.forEach((place) => {
-        const style = PLACE_CATEGORY_STYLES[place.category];
-        const markerInstance = L.marker([place.lat, place.lng], {
-          icon: L.divIcon({
-            className: "map-place-icon",
-            html: `<div class="map-place-icon-inner" style="--marker-color:${style.color}">${style.emoji}</div>`,
-            iconSize: [32, 32],
-            iconAnchor: [16, 32],
-            popupAnchor: [0, -28],
-          }),
-          keyboard: true,
-        });
-        markerInstance.on("click", () => openPlacePopup(place));
-        placeMarkersRef.current.set(place.id, markerInstance);
-      });
-    }
-
     const openPlacePopup = (place: PlaceDefinition) => {
       const popup = ensurePopup();
       const markerEntry = placeMarkersRef.current.get(place.id);
@@ -9855,35 +9863,108 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       });
     };
 
+    const refreshPlaceMarkers = () => {
+      const placesById = new Map(places.map((place) => [place.id, place]));
+      const markersToRemove: string[] = [];
+
+      placeMarkersRef.current.forEach((markerInstance, id) => {
+        if (!placesById.has(id)) {
+          if (map.hasLayer(markerInstance)) {
+            map.removeLayer(markerInstance);
+          }
+          markerInstance.off("click");
+          markersToRemove.push(id);
+          placeDataRef.current.delete(id);
+        }
+      });
+
+      markersToRemove.forEach((id) => {
+        placeMarkersRef.current.delete(id);
+      });
+
+      places.forEach((place) => {
+        const style = PLACE_CATEGORY_STYLES[place.category];
+        const icon = L.divIcon({
+          className: "map-place-icon",
+          html: `<div class="map-place-icon-inner" style="--marker-color:${style.color}"></div>`,
+          iconSize: [24, 24],
+          iconAnchor: [12, 12],
+          popupAnchor: [0, -12],
+        });
+
+        const existingMarker = placeMarkersRef.current.get(place.id);
+        if (existingMarker) {
+          existingMarker.setIcon(icon);
+          existingMarker.off("click");
+          existingMarker.on("click", () => openPlacePopup(place));
+          if (activePlaceIdRef.current === place.id) {
+            const element = existingMarker.getElement();
+            if (element) {
+              element.classList.add("map-place-icon-active");
+            }
+          }
+        } else {
+          const markerInstance = L.marker([place.lat, place.lng], {
+            icon,
+            keyboard: true,
+          });
+          markerInstance.on("click", () => openPlacePopup(place));
+          placeMarkersRef.current.set(place.id, markerInstance);
+        }
+
+        placeDataRef.current.set(place.id, place);
+      });
+    };
+
+    refreshPlaceMarkers();
+
     const updateVisibility = () => {
       const bounds = map.getBounds();
       const zoom = map.getZoom();
       placeMarkersRef.current.forEach((markerInstance, placeId) => {
-        const place = ZAMBOANGA_PLACES.find((item) => item.id === placeId);
+        const place = placeDataRef.current.get(placeId);
         if (!place) {
           return;
         }
-        const shouldShow = zoom >= place.minZoom && bounds.contains(markerInstance.getLatLng());
+        const minZoom = Math.max(place.minZoom, MIN_POI_VISIBILITY_ZOOM);
+        const shouldShow =
+          zoom >= minZoom && bounds.contains(markerInstance.getLatLng());
         const hasLayer = map.hasLayer(markerInstance);
         if (shouldShow && !hasLayer) {
           markerInstance.addTo(map);
+          if (activePlaceIdRef.current === placeId) {
+            const element = markerInstance.getElement();
+            if (element) {
+              element.classList.add("map-place-icon-active");
+            }
+          }
         } else if (!shouldShow && hasLayer) {
           map.removeLayer(markerInstance);
         }
       });
     };
 
-    placeVisibilityUpdaterRef.current = updateVisibility;
+    placeVisibilityUpdaterRef.current = () => {
+      refreshPlaceMarkers();
+      updateVisibility();
+    };
     updateVisibility();
     map.on("zoomend", updateVisibility);
     map.on("moveend", updateVisibility);
 
     const handleMapClick = (event: L.LeafletMouseEvent) => {
       const { lat, lng } = event.latlng;
-      const nearest = findNearestPlace(lat, lng, 500);
+      const nearest = findNearestPlace(lat, lng, 500, places);
       if (nearest) {
         openPlacePopup(nearest.place);
-        map.flyTo([nearest.place.lat, nearest.place.lng], Math.max(nearest.place.minZoom, map.getZoom()));
+        map.flyTo(
+          [nearest.place.lat, nearest.place.lng],
+          Math.max(
+            nearest.place.minZoom,
+            MIN_POI_VISIBILITY_ZOOM,
+            map.getZoom()
+          )
+        );
       } else {
         highlightMarker(null);
       }
@@ -9907,7 +9988,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       map.off("popupclose", handlePopupClose);
       stopUserLocationWatch();
     };
-  }, [isMapReady, startUserLocationWatch, stopUserLocationWatch]);
+  }, [isMapReady, startUserLocationWatch, stopUserLocationWatch, places]);
 
   useEffect(() => {
     if (!isMapReady) {
