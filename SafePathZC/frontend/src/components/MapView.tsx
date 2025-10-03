@@ -972,6 +972,27 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     };
   }, []);
 
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadPlaces = async () => {
+      try {
+        const latestPlaces = await fetchZamboangaPlaces();
+        if (!isCancelled) {
+          setPlaces(latestPlaces);
+        }
+      } catch (error) {
+        console.warn("Failed to fetch live points of interest", error);
+      }
+    };
+
+    loadPlaces();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
   const userLocationRef = useRef<LatLng | null>(null);
   const userLocationMarkerRef = useRef<L.Marker | null>(null);
   const userLocationAccuracyCircleRef = useRef<L.Circle | null>(null);
