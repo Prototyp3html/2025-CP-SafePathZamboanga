@@ -2,7 +2,7 @@ const BOUNDING_BOX = "6.80,121.95,7.20,122.25"; // south,west,north,east roughly
 const CACHE_DURATION_MS = 1000 * 60 * 15; // 15 minutes
 const OVERPASS_API_URL = "https://overpass-api.de/api/interpreter";
 const PLACE_LIMIT = 250;
-const DEFAULT_DYNAMIC_MIN_ZOOM = 15;
+const DEFAULT_DYNAMIC_MIN_ZOOM = 16;
 
 export type PlaceCategory =
   | "food"
@@ -42,18 +42,18 @@ interface OverpassElement {
 
 export const PLACE_CATEGORY_STYLES: Record<
   PlaceCategory,
-  { label: string; emoji: string; color: string }
+  { label: string; iconClass: string; color: string }
 > = {
-  food: { label: "Food & Dining", emoji: "🍽️", color: "#f2545b" },
-  lodging: { label: "Hotels & Stays", emoji: "🏨", color: "#6c5ce7" },
-  shopping: { label: "Shopping", emoji: "🛍️", color: "#f4a261" },
-  health: { label: "Health Services", emoji: "🏥", color: "#e63946" },
-  education: { label: "Education", emoji: "🎓", color: "#457b9d" },
-  services: { label: "Public Services", emoji: "🏛️", color: "#8d99ae" },
-  finance: { label: "Finance", emoji: "🏦", color: "#2d6a4f" },
-  leisure: { label: "Leisure & Parks", emoji: "🌳", color: "#2a9d8f" },
-  worship: { label: "Worship", emoji: "⛪", color: "#b56576" },
-  transport: { label: "Transport", emoji: "🚍", color: "#ffb703" },
+  food: { label: "Food & Dining", iconClass: "fa-utensils", color: "#d93025" },
+  lodging: { label: "Hotels & Stays", iconClass: "fa-bed", color: "#7b1fa2" },
+  shopping: { label: "Shopping", iconClass: "fa-bag-shopping", color: "#f29900" },
+  health: { label: "Health Services", iconClass: "fa-briefcase-medical", color: "#c2185b" },
+  education: { label: "Education", iconClass: "fa-graduation-cap", color: "#1a73e8" },
+  services: { label: "Public Services", iconClass: "fa-landmark", color: "#5f6368" },
+  finance: { label: "Finance", iconClass: "fa-piggy-bank", color: "#0b8043" },
+  leisure: { label: "Leisure & Parks", iconClass: "fa-tree", color: "#188038" },
+  worship: { label: "Worship", iconClass: "fa-church", color: "#a142f4" },
+  transport: { label: "Transport", iconClass: "fa-bus", color: "#fbbc04" },
 };
 
 type RawFallbackPlace = Omit<
@@ -317,6 +317,8 @@ const FALLBACK_PLACES: PlaceDefinition[] = RAW_FALLBACK_PLACES.map((place) => ({
 
 export const ZAMBOANGA_PLACES: PlaceDefinition[] = FALLBACK_PLACES;
 
+let runtimePlaces: PlaceDefinition[] = [...FALLBACK_PLACES];
+
 let cachedPlaces: PlaceDefinition[] | null = null;
 let lastFetchTimestamp = 0;
 
@@ -528,16 +530,23 @@ const toPlace = (element: OverpassElement): PlaceDefinition | null => {
   };
 };
 
+export const getRuntimePlaces = (): PlaceDefinition[] => runtimePlaces;
+
+export const setRuntimePlaces = (places: PlaceDefinition[]) => {
+  runtimePlaces = places;
+};
+
 export const getPlacesVisibleAtZoom = (zoom: number) =>
-  ZAMBOANGA_PLACES.filter((place) => zoom >= place.minZoom);
+  runtimePlaces.filter((place) => zoom >= place.minZoom);
 
 export const findNearestPlace = (
   lat: number,
   lng: number,
-  maxDistanceMeters = 450
+  maxDistanceMeters = 450,
+  places: PlaceDefinition[] = runtimePlaces
 ): { place: PlaceDefinition; distance: number } | null => {
   let nearest: { place: PlaceDefinition; distance: number } | null = null;
-  for (const place of ZAMBOANGA_PLACES) {
+  for (const place of places) {
     const distance = distanceInMeters({ lat, lng }, place);
     if (distance <= maxDistanceMeters) {
       if (!nearest || distance < nearest.distance) {
@@ -551,6 +560,7 @@ export const findNearestPlace = (
 export async function fetchZamboangaPlaces(): Promise<PlaceDefinition[]> {
   const now = Date.now();
   if (cachedPlaces && now - lastFetchTimestamp < CACHE_DURATION_MS) {
+    setRuntimePlaces(cachedPlaces);
     return cachedPlaces;
   }
 
@@ -586,10 +596,11 @@ export async function fetchZamboangaPlaces(): Promise<PlaceDefinition[]> {
     cachedPlaces = Array.from(uniqueFallback.values());
   } catch (error) {
     console.warn("Failed to load Overpass data, using fallback places", error);
-    cachedPlaces = [...ZAMBOANGA_PLACES];
+    cachedPlaces = [...FALLBACK_PLACES];
   }
 
   lastFetchTimestamp = now;
+  setRuntimePlaces(cachedPlaces);
   return cachedPlaces;
 }
 
