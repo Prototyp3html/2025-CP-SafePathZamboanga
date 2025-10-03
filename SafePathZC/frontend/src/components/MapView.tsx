@@ -181,6 +181,40 @@ const SAFE_CITY_BOUNDS: LatLngBounds = {
 
 const MIN_POI_VISIBILITY_ZOOM = 16;
 
+const DIRECTIONS_ICON_SVG = `
+  <svg class="place-popup-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M12 2c-.26 0-.51.1-.7.29l-8 8a1 1 0 0 0 0 1.42l8 8a1 1 0 0 0 1.42 0l8-8a1 1 0 0 0 0-1.42l-8-8A1 1 0 0 0 12 2zm0 2.41L18.59 11 12 17.59 5.41 11 12 4.41zM11 8v3H8v2h5V8h-2z" fill="currentColor" />
+  </svg>
+`;
+
+const escapeHtml = (input: string): string =>
+  input
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const formatCoordinate = (value: number, axis: "lat" | "lng"): string => {
+  const abs = Math.abs(value);
+  const direction = axis === "lat" ? (value >= 0 ? "N" : "S") : value >= 0 ? "E" : "W";
+  return `${abs.toFixed(4)}° ${direction}`;
+};
+
+const formatCoordinates = (lat: number, lng: number): string =>
+  `${formatCoordinate(lat, "lat")}, ${formatCoordinate(lng, "lng")}`;
+
+const splitDisplayName = (
+  displayName: string
+): { title: string; remainder: string | null } => {
+  const parts = displayName.split(",").map((part) => part.trim()).filter(Boolean);
+  if (parts.length === 0) {
+    return { title: displayName, remainder: null };
+  }
+  const [title, ...rest] = parts;
+  return { title, remainder: rest.length ? rest.join(", ") : null };
+};
+
 const clampValue = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
 
@@ -915,6 +949,28 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const activePlaceIdRef = useRef<string | null>(null);
   const startDirectionsFromPlaceRef = useRef<((place: PlaceDefinition) => void) | null>(null);
   const placeVisibilityUpdaterRef = useRef<(() => void) | null>(null);
+  const locationPopupRequestRef = useRef<number>(0);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadPlaces = async () => {
+      try {
+        const latestPlaces = await fetchZamboangaPlaces();
+        if (!isCancelled) {
+          setPlaces(latestPlaces);
+        }
+      } catch (error) {
+        console.warn("Failed to fetch live points of interest", error);
+      }
+    };
+
+    loadPlaces();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let isCancelled = false;
@@ -9743,9 +9799,15 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     };
   }, [isTerrainMode]);
 
-  // Clear destinations function
-  const handleStartDirectionsFromPlace = useCallback(
-    async (place: PlaceDefinition) => {
+  const handleStartDirectionsToDestination = useCallback(
+    async (destination: {
+      lat: number;
+      lng: number;
+      label: string;
+      placeId: string;
+      type?: string;
+      zoomHint?: number;
+    }) => {
       try {
         const location = await ensureUserLocation();
 
@@ -9759,11 +9821,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         };
 
         const destinationSuggestion: LocationSuggestion = {
-          display_name: place.name,
-          lat: place.lat.toString(),
-          lon: place.lng.toString(),
-          place_id: `place-${place.id}`,
-          type: place.category,
+          display_name: destination.label,
+          lat: destination.lat.toString(),
+          lon: destination.lng.toString(),
+          place_id: destination.placeId,
+          type: destination.type ?? "map-click",
           isLocal: true,
         };
 
@@ -9774,9 +9836,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         if (mapInstance) {
           const desiredZoom = Math.max(
             mapInstance.getZoom(),
-            Math.max(place.minZoom, MIN_POI_VISIBILITY_ZOOM)
+            destination.zoomHint ?? MIN_POI_VISIBILITY_ZOOM
           );
-          mapInstance.flyTo([place.lat, place.lng], desiredZoom, {
+          mapInstance.flyTo([destination.lat, destination.lng], desiredZoom, {
             animate: true,
             duration: 0.6,
           });
@@ -9784,7 +9846,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
         await handleFindRoute();
       } catch (error) {
-        console.error("Failed to start directions from place:", error);
+        console.error("Failed to start directions:", error);
         alert(
           error instanceof Error
             ? error.message
@@ -9792,7 +9854,27 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         );
       }
     },
-    [ensureUserLocation, handleSelectStartLocation, handleSelectEndLocation, handleFindRoute]
+    [
+      ensureUserLocation,
+      handleSelectStartLocation,
+      handleSelectEndLocation,
+      handleFindRoute,
+    ]
+  );
+
+  // Clear destinations function
+  const handleStartDirectionsFromPlace = useCallback(
+    async (place: PlaceDefinition) => {
+      await handleStartDirectionsToDestination({
+        lat: place.lat,
+        lng: place.lng,
+        label: place.name,
+        placeId: `place-${place.id}`,
+        type: place.category,
+        zoomHint: Math.max(place.minZoom, MIN_POI_VISIBILITY_ZOOM),
+      });
+    },
+    [handleStartDirectionsToDestination]
   );
 
   useEffect(() => {
@@ -9839,21 +9921,42 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       }
       const style = PLACE_CATEGORY_STYLES[place.category];
       const displayLabel = place.categoryLabel ?? style.label;
-      const lines = [
+      const buttonId = `place-directions-${place.id}`;
+      const safeName = escapeHtml(place.name);
+      const safeCategoryLabel = displayLabel ? escapeHtml(displayLabel) : null;
+      const safeDescription = place.description
+        ? escapeHtml(place.description)
+        : null;
+      const safeAddress = place.address ? escapeHtml(place.address) : null;
+      const categoryMarkup = safeCategoryLabel
+        ? `<div class="place-popup-category" style="--category-color:${style.color}">
+            <span class="place-popup-category-icon" aria-hidden="true">
+              <i class="fa-solid ${style.iconClass}" aria-hidden="true"></i>
+            </span>
+            <span>${safeCategoryLabel}</span>
+          </div>`
+            .replace(/\s+/g, " ")
+            .trim()
+        : "";
+      const content = [
         `<div class="place-popup-card">`,
-        `<div class="place-popup-name">${place.name}</div>`,
-        displayLabel
-          ? `<div class="place-popup-category">${displayLabel}</div>`
-          : "",
-        place.description ? `<div class="place-popup-description">${place.description}</div>` : "",
-        place.address ? `<div class="place-popup-address">${place.address}</div>` : "",
-        `<button class="place-popup-action" id="place-directions-${place.id}">Directions from my location</button>`,
-        `</div>`
-      ].filter(Boolean).join("\n");
-      popup.setLatLng([place.lat, place.lng]).setContent(lines).openOn(map);
+        `<div class="place-popup-row">`,
+        `<div class="place-popup-title-block">`,
+        `<div class="place-popup-name">${safeName}</div>`,
+        categoryMarkup,
+        safeAddress ? `<div class="place-popup-address">${safeAddress}</div>` : "",
+        `</div>`,
+        `<button class="place-popup-action" id="${buttonId}" aria-label="Get directions to ${safeName}">${DIRECTIONS_ICON_SVG}</button>`,
+        `</div>`,
+        safeDescription ? `<div class="place-popup-description">${safeDescription}</div>` : "",
+        `</div>`,
+      ]
+        .filter(Boolean)
+        .join("\n");
+      popup.setLatLng([place.lat, place.lng]).setContent(content).openOn(map);
       highlightMarker(place.id);
       window.requestAnimationFrame(() => {
-        const button = document.getElementById(`place-directions-${place.id}`);
+        const button = document.getElementById(buttonId);
         if (button) {
           const handler = startDirectionsFromPlaceRef.current;
           if (handler) {
@@ -9861,6 +9964,102 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           }
         }
       });
+    };
+
+    const openLocationPopup = async (point: LatLng) => {
+      const popup = ensurePopup();
+      highlightMarker(null);
+      const requestId = Date.now();
+      locationPopupRequestRef.current = requestId;
+      const coordinatesLabel = formatCoordinates(point.lat, point.lng);
+      const defaultTitle = "Dropped pin";
+      const defaultDestinationLabel = `${defaultTitle} (${coordinatesLabel})`;
+      const buttonId = `location-directions-${requestId}`;
+
+      const renderContent = (
+        title: string,
+        addressLine: string | null,
+        message: string | null,
+        destinationLabel: string
+      ) => {
+        const safeTitle = escapeHtml(title);
+        const safeAddress = addressLine ? escapeHtml(addressLine) : null;
+        const safeCoordinates = escapeHtml(coordinatesLabel);
+        const safeMessage = message ? escapeHtml(message) : null;
+        const html = [
+          `<div class="place-popup-card">`,
+          `<div class="place-popup-row">`,
+          `<div class="place-popup-title-block">`,
+          `<div class="place-popup-name">${safeTitle}</div>`,
+          safeAddress ? `<div class="place-popup-address">${safeAddress}</div>` : "",
+          `<div class="place-popup-coordinates">${safeCoordinates}</div>`,
+          `</div>`,
+          `<button class="place-popup-action" id="${buttonId}" aria-label="Get directions to ${safeTitle}">${DIRECTIONS_ICON_SVG}</button>`,
+          `</div>`,
+          safeMessage ? `<div class="place-popup-small-muted">${safeMessage}</div>` : "",
+          `</div>`,
+        ]
+          .filter(Boolean)
+          .join("\n");
+        popup
+          .setLatLng([point.lat, point.lng])
+          .setContent(html)
+          .openOn(map);
+        window.requestAnimationFrame(() => {
+          const button = document.getElementById(buttonId);
+          if (button) {
+            button.addEventListener(
+              "click",
+              () =>
+                handleStartDirectionsToDestination({
+                  lat: point.lat,
+                  lng: point.lng,
+                  label: destinationLabel,
+                  placeId: `map-click-${requestId}`,
+                  type: "map-click",
+                }),
+              { once: true }
+            );
+          }
+        });
+      };
+
+      renderContent(
+        defaultTitle,
+        null,
+        "Fetching nearby location details…",
+        defaultDestinationLabel
+      );
+
+      try {
+        const location = await getLocationByCoordinates(point.lat, point.lng);
+        if (locationPopupRequestRef.current !== requestId) {
+          return;
+        }
+        if (location) {
+          const { title, remainder } = splitDisplayName(location.displayName);
+          const resolvedTitle = title || defaultTitle;
+          const resolvedLabel = location.displayName || defaultDestinationLabel;
+          renderContent(resolvedTitle, remainder, null, resolvedLabel);
+        } else {
+          renderContent(
+            defaultTitle,
+            null,
+            "We couldn't find additional details for this spot.",
+            defaultDestinationLabel
+          );
+        }
+      } catch (error) {
+        console.error("Failed to fetch location details:", error);
+        if (locationPopupRequestRef.current === requestId) {
+          renderContent(
+            defaultTitle,
+            null,
+            "We couldn't load additional details for this spot.",
+            defaultDestinationLabel
+          );
+        }
+      }
     };
 
     const refreshPlaceMarkers = () => {
@@ -9884,12 +10083,24 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
       places.forEach((place) => {
         const style = PLACE_CATEGORY_STYLES[place.category];
+        const iconMarkup = `
+          <div
+            class="map-place-icon-inner"
+            style="--marker-color:${style.color}"
+            role="presentation"
+            aria-hidden="true"
+          >
+            <i class="map-place-icon-glyph fa-solid ${style.iconClass}" aria-hidden="true"></i>
+          </div>
+        `
+          .replace(/\s+/g, " ")
+          .trim();
         const icon = L.divIcon({
           className: "map-place-icon",
-          html: `<div class="map-place-icon-inner" style="--marker-color:${style.color}"></div>`,
-          iconSize: [24, 24],
-          iconAnchor: [12, 12],
-          popupAnchor: [0, -12],
+          html: iconMarkup,
+          iconSize: [26, 26],
+          iconAnchor: [13, 13],
+          popupAnchor: [0, -13],
         });
 
         const existingMarker = placeMarkersRef.current.get(place.id);
@@ -9952,7 +10163,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     map.on("zoomend", updateVisibility);
     map.on("moveend", updateVisibility);
 
-    const handleMapClick = (event: L.LeafletMouseEvent) => {
+    const handleMapClick = async (event: L.LeafletMouseEvent) => {
       const { lat, lng } = event.latlng;
       const nearest = findNearestPlace(lat, lng, 500, places);
       if (nearest) {
@@ -9966,7 +10177,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           )
         );
       } else {
-        highlightMarker(null);
+        void openLocationPopup({ lat, lng });
       }
     };
 
@@ -9988,7 +10199,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       map.off("popupclose", handlePopupClose);
       stopUserLocationWatch();
     };
-  }, [isMapReady, startUserLocationWatch, stopUserLocationWatch, places]);
+  }, [
+    isMapReady,
+    startUserLocationWatch,
+    stopUserLocationWatch,
+    places,
+    handleStartDirectionsToDestination,
+  ]);
 
   useEffect(() => {
     if (!isMapReady) {

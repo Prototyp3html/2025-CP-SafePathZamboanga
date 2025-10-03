@@ -42,18 +42,18 @@ interface OverpassElement {
 
 export const PLACE_CATEGORY_STYLES: Record<
   PlaceCategory,
-  { label: string; emoji: string; color: string }
+  { label: string; iconClass: string; color: string }
 > = {
-  food: { label: "Food & Dining", emoji: "🍽️", color: "#f2545b" },
-  lodging: { label: "Hotels & Stays", emoji: "🏨", color: "#6c5ce7" },
-  shopping: { label: "Shopping", emoji: "🛍️", color: "#f4a261" },
-  health: { label: "Health Services", emoji: "🏥", color: "#e63946" },
-  education: { label: "Education", emoji: "🎓", color: "#457b9d" },
-  services: { label: "Public Services", emoji: "🏛️", color: "#8d99ae" },
-  finance: { label: "Finance", emoji: "🏦", color: "#2d6a4f" },
-  leisure: { label: "Leisure & Parks", emoji: "🌳", color: "#2a9d8f" },
-  worship: { label: "Worship", emoji: "⛪", color: "#b56576" },
-  transport: { label: "Transport", emoji: "🚍", color: "#ffb703" },
+  food: { label: "Food & Dining", iconClass: "fa-utensils", color: "#d93025" },
+  lodging: { label: "Hotels & Stays", iconClass: "fa-bed", color: "#7b1fa2" },
+  shopping: { label: "Shopping", iconClass: "fa-bag-shopping", color: "#f29900" },
+  health: { label: "Health Services", iconClass: "fa-briefcase-medical", color: "#c2185b" },
+  education: { label: "Education", iconClass: "fa-graduation-cap", color: "#1a73e8" },
+  services: { label: "Public Services", iconClass: "fa-landmark", color: "#5f6368" },
+  finance: { label: "Finance", iconClass: "fa-piggy-bank", color: "#0b8043" },
+  leisure: { label: "Leisure & Parks", iconClass: "fa-tree", color: "#188038" },
+  worship: { label: "Worship", iconClass: "fa-church", color: "#a142f4" },
+  transport: { label: "Transport", iconClass: "fa-bus", color: "#fbbc04" },
 };
 
 type RawFallbackPlace = Omit<
