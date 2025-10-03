@@ -2,7 +2,7 @@ const BOUNDING_BOX = "6.80,121.95,7.20,122.25"; // south,west,north,east roughly
 const CACHE_DURATION_MS = 1000 * 60 * 15; // 15 minutes
 const OVERPASS_API_URL = "https://overpass-api.de/api/interpreter";
 const PLACE_LIMIT = 250;
-const DEFAULT_DYNAMIC_MIN_ZOOM = 15;
+const DEFAULT_DYNAMIC_MIN_ZOOM = 16;
 
 export type PlaceCategory =
   | "food"
@@ -317,6 +317,8 @@ const FALLBACK_PLACES: PlaceDefinition[] = RAW_FALLBACK_PLACES.map((place) => ({
 
 export const ZAMBOANGA_PLACES: PlaceDefinition[] = FALLBACK_PLACES;
 
+let runtimePlaces: PlaceDefinition[] = [...FALLBACK_PLACES];
+
 let cachedPlaces: PlaceDefinition[] | null = null;
 let lastFetchTimestamp = 0;
 
@@ -528,16 +530,23 @@ const toPlace = (element: OverpassElement): PlaceDefinition | null => {
   };
 };
 
+export const getRuntimePlaces = (): PlaceDefinition[] => runtimePlaces;
+
+export const setRuntimePlaces = (places: PlaceDefinition[]) => {
+  runtimePlaces = places;
+};
+
 export const getPlacesVisibleAtZoom = (zoom: number) =>
-  ZAMBOANGA_PLACES.filter((place) => zoom >= place.minZoom);
+  runtimePlaces.filter((place) => zoom >= place.minZoom);
 
 export const findNearestPlace = (
   lat: number,
   lng: number,
-  maxDistanceMeters = 450
+  maxDistanceMeters = 450,
+  places: PlaceDefinition[] = runtimePlaces
 ): { place: PlaceDefinition; distance: number } | null => {
   let nearest: { place: PlaceDefinition; distance: number } | null = null;
-  for (const place of ZAMBOANGA_PLACES) {
+  for (const place of places) {
     const distance = distanceInMeters({ lat, lng }, place);
     if (distance <= maxDistanceMeters) {
       if (!nearest || distance < nearest.distance) {
@@ -551,6 +560,7 @@ export const findNearestPlace = (
 export async function fetchZamboangaPlaces(): Promise<PlaceDefinition[]> {
   const now = Date.now();
   if (cachedPlaces && now - lastFetchTimestamp < CACHE_DURATION_MS) {
+    setRuntimePlaces(cachedPlaces);
     return cachedPlaces;
   }
 
@@ -586,10 +596,11 @@ export async function fetchZamboangaPlaces(): Promise<PlaceDefinition[]> {
     cachedPlaces = Array.from(uniqueFallback.values());
   } catch (error) {
     console.warn("Failed to load Overpass data, using fallback places", error);
-    cachedPlaces = [...ZAMBOANGA_PLACES];
+    cachedPlaces = [...FALLBACK_PLACES];
   }
 
   lastFetchTimestamp = now;
+  setRuntimePlaces(cachedPlaces);
   return cachedPlaces;
 }
 
