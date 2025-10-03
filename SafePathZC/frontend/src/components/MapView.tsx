@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+﻿import { useState, useEffect, useRef, useCallback } from "react";
 
 declare global {
   interface Window {
@@ -6,7 +6,9 @@ declare global {
   }
 }
 import L from "leaflet";
+import "leaflet-control-geocoder";
 import "leaflet/dist/leaflet.css";
+import "leaflet-control-geocoder/dist/Control.Geocoder.css";
 import "leaflet-routing-machine";
 import "../App.css";
 import { RouteModal } from "./RouteModal";
@@ -19,23 +21,11 @@ import {
 } from "../utils/zamboCityLocations";
 import { localRoutingService } from "../services/localRouting";
 import {
-  fetchZamboangaPlaces,
-  type ZamboangaPlace,
-  type ZamboangaPlaceGroup,
+  ZAMBOANGA_PLACES,
+  PLACE_CATEGORY_STYLES,
+  type PlaceDefinition,
+  findNearestPlace,
 } from "../utils/zamboangaPlaces";
-
-const MID_PRIORITY_POI_GROUPS = new Set<ZamboangaPlaceGroup>([
-  "food",
-  "worship",
-]);
-
-const CORE_POI_GROUPS = new Set<ZamboangaPlaceGroup>([
-  "shopping",
-  "health",
-  "transport",
-  "lodging",
-  "education",
-]);
 
 // Fix Leaflet default marker icons
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -205,150 +195,6 @@ const biasTowardCityCenter = (point: LatLng, factor: number): LatLng => ({
   lat: point.lat + (CITY_CENTER.lat - point.lat) * factor,
   lng: point.lng + (CITY_CENTER.lng - point.lng) * factor,
 });
-
-const escapeHtml = (value: string): string =>
-  value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-
-const POI_GROUP_STYLES: Record<
-  ZamboangaPlaceGroup,
-  { color: string; accent: string; emoji: string; label: string }
-> = {
-  food: {
-    color: "#f97316",
-    accent: "#fb923c",
-    emoji: "🍽️",
-    label: "Food & Drinks",
-  },
-  lodging: {
-    color: "#7c3aed",
-    accent: "#a78bfa",
-    emoji: "🛏️",
-    label: "Hotels & Stays",
-  },
-  shopping: {
-    color: "#2563eb",
-    accent: "#60a5fa",
-    emoji: "🛍️",
-    label: "Shops & Malls",
-  },
-  health: {
-    color: "#dc2626",
-    accent: "#f87171",
-    emoji: "🩺",
-    label: "Health Services",
-  },
-  education: {
-    color: "#059669",
-    accent: "#34d399",
-    emoji: "🎓",
-    label: "Schools & Universities",
-  },
-  services: {
-    color: "#4b5563",
-    accent: "#9ca3af",
-    emoji: "🏢",
-    label: "City Services",
-  },
-  finance: {
-    color: "#b45309",
-    accent: "#f59e0b",
-    emoji: "💱",
-    label: "Banks & Money",
-  },
-  leisure: {
-    color: "#db2777",
-    accent: "#f472b6",
-    emoji: "🎡",
-    label: "Leisure Spots",
-  },
-  worship: {
-    color: "#9333ea",
-    accent: "#c084fc",
-    emoji: "🕌",
-    label: "Places of Worship",
-  },
-  transport: {
-    color: "#0f766e",
-    accent: "#14b8a6",
-    emoji: "🚌",
-    label: "Transport Hubs",
-  },
-};
-
-const escapeHtml = (value: string): string =>
-  value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-
-const POI_GROUP_STYLES: Record<
-  ZamboangaPlaceGroup,
-  { color: string; accent: string; emoji: string; label: string }
-> = {
-  food: {
-    color: "#f97316",
-    accent: "#fb923c",
-    emoji: "🍽️",
-    label: "Food & Drinks",
-  },
-  lodging: {
-    color: "#7c3aed",
-    accent: "#a78bfa",
-    emoji: "🛏️",
-    label: "Hotels & Stays",
-  },
-  shopping: {
-    color: "#2563eb",
-    accent: "#60a5fa",
-    emoji: "🛍️",
-    label: "Shops & Malls",
-  },
-  health: {
-    color: "#dc2626",
-    accent: "#f87171",
-    emoji: "🩺",
-    label: "Health Services",
-  },
-  education: {
-    color: "#059669",
-    accent: "#34d399",
-    emoji: "🎓",
-    label: "Schools & Universities",
-  },
-  services: {
-    color: "#4b5563",
-    accent: "#9ca3af",
-    emoji: "🏢",
-    label: "City Services",
-  },
-  finance: {
-    color: "#b45309",
-    accent: "#f59e0b",
-    emoji: "💱",
-    label: "Banks & Money",
-  },
-  leisure: {
-    color: "#db2777",
-    accent: "#f472b6",
-    emoji: "🎡",
-    label: "Leisure Spots",
-  },
-  worship: {
-    color: "#9333ea",
-    accent: "#c084fc",
-    emoji: "🕌",
-    label: "Places of Worship",
-  },
-  transport: {
-    color: "#0f766e",
-    accent: "#14b8a6",
-    emoji: "🚌",
-    label: "Transport Hubs",
-  },
-};
 
 const isWithinBounds = (point: LatLng, bounds: LatLngBounds): boolean =>
   point.lat >= bounds.lat.min &&
@@ -898,6 +744,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const USE_LOCAL_OSRM = import.meta.env.VITE_USE_LOCAL_OSRM === "true"; // Use environment variable to control local OSRM
 
   // Only log configuration once per session and load terrain data
+
+
   useEffect(() => {
     if (!window.mapViewConfigLogged) {
       console.log(`🗺️ MapView Configuration:
@@ -965,18 +813,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     "safe" | "manageable" | "prone" | null
   >(null);
   const [showWeatherDashboard, setShowWeatherDashboard] = useState(false);
-  const [places, setPlaces] = useState<ZamboangaPlace[]>([]);
-  const [isLoadingPlaces, setIsLoadingPlaces] = useState(false);
-  const [placesError, setPlacesError] = useState<string | null>(null);
-  const [mapSearchQuery, setMapSearchQuery] = useState("");
-  const [mapSearchResults, setMapSearchResults] = useState<
-    LocationSuggestion[]
-  >([]);
-  const [isSearchingMapLocations, setIsSearchingMapLocations] =
-    useState(false);
-  const [showMapSearchResults, setShowMapSearchResults] = useState(false);
-  const [mapSearchError, setMapSearchError] = useState<string | null>(null);
-  const [activePlace, setActivePlace] = useState<ZamboangaPlace | null>(null);
 
   // Identical terrain notification
   const [
@@ -1067,19 +903,137 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const circleMarkersRef = useRef<L.CircleMarker[]>([]);
   const layersRef = useRef<Record<string, L.TileLayer>>({});
   const terrainPopupRef = useRef<L.CircleMarker | null>(null);
-  const droppedPinMarkerRef = useRef<L.Marker | null>(null);
-  const autoRoutePendingRef = useRef(false);
-  const droppedPinMarkerRef = useRef<L.Marker | null>(null);
-  const autoRoutePendingRef = useRef(false);
   const terrainOverlayRef = useRef<L.LayerGroup | null>(null);
   const routeLayersRef = useRef<L.Polyline[]>([]);
-  const poiLayerRef = useRef<L.LayerGroup | null>(null);
-  const poiIconCacheRef = useRef<Record<string, L.DivIcon>>({});
-  const poiMarkersRef = useRef<Map<string, L.Marker>>(new Map());
-  const poiPlacesRef = useRef<Map<string, ZamboangaPlace>>(new Map());
-  const mapSearchDebounceRef = useRef<number | null>(null);
-  const latestMapSearchQueryRef = useRef<string>("");
-  const mapSearchBlurTimeoutRef = useRef<number | null>(null);
+  const placeMarkersRef = useRef<Map<string, L.Marker>>(new Map());
+  const placePopupRef = useRef<L.Popup | null>(null);
+  const activePlaceIdRef = useRef<string | null>(null);
+  const startDirectionsFromPlaceRef = useRef<((place: PlaceDefinition) => void) | null>(null);
+  const placeVisibilityUpdaterRef = useRef<(() => void) | null>(null);
+
+  const userLocationRef = useRef<LatLng | null>(null);
+  const userLocationMarkerRef = useRef<L.Marker | null>(null);
+  const userLocationAccuracyCircleRef = useRef<L.Circle | null>(null);
+  const geolocationWatchIdRef = useRef<number | null>(null);
+
+
+  const updateUserLocationMarker = useCallback(
+    (location: LatLng, accuracy?: number) => {
+      const mapInstance = mapRef.current;
+      if (!mapInstance) {
+        return;
+      }
+
+      const { lat, lng } = location;
+      const position: L.LatLngExpression = [lat, lng];
+
+      if (!userLocationMarkerRef.current) {
+        const icon = L.divIcon({
+          className: "user-location-marker",
+          html: "<div class=\"user-location-inner\"></div><div class=\"user-location-pulse\"></div>",
+          iconSize: [24, 24],
+          iconAnchor: [12, 12],
+        });
+        userLocationMarkerRef.current = L.marker(position, {
+          icon,
+          interactive: false,
+          keyboard: false,
+          zIndexOffset: 800,
+        }).addTo(mapInstance);
+      } else {
+        userLocationMarkerRef.current.setLatLng(position);
+      }
+
+      if (typeof accuracy === "number" && Number.isFinite(accuracy)) {
+        const radius = Math.max(accuracy, 35);
+        if (!userLocationAccuracyCircleRef.current) {
+          userLocationAccuracyCircleRef.current = L.circle(position, {
+            radius,
+            color: "#2563eb",
+            weight: 1,
+            fillColor: "#3b82f6",
+            fillOpacity: 0.18,
+            interactive: false,
+          }).addTo(mapInstance);
+        } else {
+          userLocationAccuracyCircleRef.current.setLatLng(position);
+          userLocationAccuracyCircleRef.current.setRadius(radius);
+        }
+      }
+    },
+    []
+  );
+
+  const stopUserLocationWatch = useCallback(() => {
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.geolocation ||
+      geolocationWatchIdRef.current === null
+    ) {
+      return;
+    }
+    navigator.geolocation.clearWatch(geolocationWatchIdRef.current);
+    geolocationWatchIdRef.current = null;
+  }, []);
+
+  const startUserLocationWatch = useCallback(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      console.warn("Geolocation is not supported in this environment.");
+      return;
+    }
+    if (geolocationWatchIdRef.current !== null) {
+      return;
+    }
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const location = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+        userLocationRef.current = location;
+        updateUserLocationMarker(location, position.coords.accuracy);
+      },
+      (error) => {
+        console.warn("Geolocation watch error:", error);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 10000,
+        timeout: 20000,
+      }
+    );
+    geolocationWatchIdRef.current = watchId;
+  }, [updateUserLocationMarker]);
+
+  const ensureUserLocation = useCallback(async (): Promise<LatLng> => {
+    if (userLocationRef.current) {
+      return userLocationRef.current;
+    }
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      throw new Error("Geolocation is not supported on this device.");
+    }
+
+    const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(
+        resolve,
+        reject,
+        {
+          enableHighAccuracy: true,
+          timeout: 20000,
+          maximumAge: 10000,
+        }
+      );
+    });
+
+    const location = {
+      lat: position.coords.latitude,
+      lng: position.coords.longitude,
+    };
+    userLocationRef.current = location;
+    updateUserLocationMarker(location, position.coords.accuracy);
+    startUserLocationWatch();
+    return location;
+  }, [startUserLocationWatch, updateUserLocationMarker]);
 
   // GraphHopper rate limiting
   const lastGraphHopperRequest = useRef<number>(0);
@@ -1133,28 +1087,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       console.log(
         "🔄 MapView unmounting - route state cleared, destinations preserved"
       );
-    };
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (mapSearchDebounceRef.current) {
-        window.clearTimeout(mapSearchDebounceRef.current);
-      }
-      if (mapSearchBlurTimeoutRef.current) {
-        window.clearTimeout(mapSearchBlurTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (mapSearchDebounceRef.current) {
-        window.clearTimeout(mapSearchDebounceRef.current);
-      }
-      if (mapSearchBlurTimeoutRef.current) {
-        window.clearTimeout(mapSearchBlurTimeoutRef.current);
-      }
     };
   }, []);
 
@@ -1308,10 +1240,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const endIcon = L.divIcon({
     className: "modern-location-pin end-pin",
     html: `<div style="
-      width: 32px;
-      height: 32px;
-      width: 32px;
-      height: 32px;
+      width: 32px; 
+      height: 32px; 
       background: linear-gradient(135deg, #ef4444, #dc2626);
       border-radius: 50% 50% 50% 0;
       transform: rotate(-45deg);
@@ -1334,90 +1264,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     iconAnchor: [16, 32],
     popupAnchor: [0, -32],
   });
-
-  const droppedPinIcon = L.divIcon({
-    className: "modern-location-pin dropped-pin",
-    html: `<div style="
-      width: 28px;
-      height: 28px;
-      background: linear-gradient(135deg, #2563eb, #1d4ed8);
-      border-radius: 50% 50% 50% 0;
-      transform: rotate(-45deg);
-      border: 3px solid white;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-      position: relative;
-    ">
-      <div style="
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%) rotate(45deg);
-        width: 10px;
-        height: 10px;
-        background: white;
-        border-radius: 50%;
-      "></div>
-    </div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 28],
-    popupAnchor: [0, -24],
-  });
-
-  const shouldShowPlaceAtZoom = useCallback(
-    (place: ZamboangaPlace, zoom: number) => {
-      if (zoom < 14) {
-        return false;
-      }
-
-      if (zoom >= 17) {
-        return true;
-      }
-
-      if (zoom >= 16) {
-        return place.group !== "leisure";
-      }
-
-      return (
-        CORE_POI_GROUPS.has(place.group) ||
-        MID_PRIORITY_POI_GROUPS.has(place.group)
-      );
-    },
-    []
-  );
-
-  const updatePoiVisibility = useCallback(() => {
-    const map = mapRef.current;
-    const layerGroup = poiLayerRef.current;
-
-    if (!map || !layerGroup) {
-      return;
-    }
-
-    const currentZoom = map.getZoom();
-    const viewportBounds = map.getBounds().pad(0.15);
-    const markerMap = poiMarkersRef.current;
-
-    markerMap.forEach((marker, placeId) => {
-      const place = poiPlacesRef.current.get(placeId);
-      if (!place) {
-        return;
-      }
-
-      const isInViewport = viewportBounds.contains(marker.getLatLng());
-      const shouldDisplay =
-        shouldShowPlaceAtZoom(place, currentZoom) && isInViewport;
-      const hasLayer = layerGroup.hasLayer(marker);
-
-      if (shouldDisplay && !hasLayer) {
-        layerGroup.addLayer(marker);
-      } else if (!shouldDisplay && hasLayer) {
-        layerGroup.removeLayer(marker);
-        if (marker.isPopupOpen()) {
-          marker.closePopup();
-        }
-      }
-    });
-  }, [shouldShowPlaceAtZoom]);
 
   // Zamboanga City location search using local database (simplified working version)
   const searchLocations = async (
@@ -1460,374 +1306,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       console.error("Error searching Zamboanga City locations:", error);
       return [];
     }
-  };
-
-  const handleMapSearchInputChange = (value: string) => {
-    setMapSearchQuery(value);
-
-    if (mapSearchDebounceRef.current) {
-      window.clearTimeout(mapSearchDebounceRef.current);
-      mapSearchDebounceRef.current = null;
-    }
-
-    const trimmed = value.trim();
-    latestMapSearchQueryRef.current = trimmed;
-
-    if (trimmed.length < 2) {
-      setIsSearchingMapLocations(false);
-      setMapSearchResults([]);
-      setShowMapSearchResults(false);
-      setMapSearchError(null);
-      return;
-    }
-
-    setMapSearchError(null);
-    setShowMapSearchResults(true);
-    setIsSearchingMapLocations(true);
-
-    mapSearchDebounceRef.current = window.setTimeout(async () => {
-      try {
-        const suggestions = await searchLocations(trimmed);
-
-        if (latestMapSearchQueryRef.current !== trimmed) {
-          return;
-        }
-
-        setMapSearchResults(suggestions);
-        setMapSearchError(null);
-      } catch (error) {
-        console.error("Error searching map locations:", error);
-        if (latestMapSearchQueryRef.current === trimmed) {
-          setMapSearchResults([]);
-          setMapSearchError(
-            "We couldn't reach the live search service right now."
-          );
-        }
-      } finally {
-        if (latestMapSearchQueryRef.current === trimmed) {
-          setIsSearchingMapLocations(false);
-        }
-      }
-    }, 350);
-  };
-
-  const handleMapSearchFocus = () => {
-    if (mapSearchBlurTimeoutRef.current) {
-      window.clearTimeout(mapSearchBlurTimeoutRef.current);
-      mapSearchBlurTimeoutRef.current = null;
-    }
-
-    if (mapSearchResults.length > 0 || mapSearchError) {
-      setShowMapSearchResults(true);
-    }
-  };
-
-  const handleMapSearchBlur = () => {
-    if (mapSearchBlurTimeoutRef.current) {
-      window.clearTimeout(mapSearchBlurTimeoutRef.current);
-    }
-
-    mapSearchBlurTimeoutRef.current = window.setTimeout(() => {
-      setShowMapSearchResults(false);
-    }, 150);
-  };
-
-  const handleMapSearchResultSelect = (suggestion: LocationSuggestion) => {
-    if (mapSearchDebounceRef.current) {
-      window.clearTimeout(mapSearchDebounceRef.current);
-      mapSearchDebounceRef.current = null;
-    }
-
-    if (mapSearchBlurTimeoutRef.current) {
-      window.clearTimeout(mapSearchBlurTimeoutRef.current);
-      mapSearchBlurTimeoutRef.current = null;
-    }
-
-    setMapSearchQuery(suggestion.display_name);
-    setShowMapSearchResults(false);
-    setMapSearchResults([]);
-    setIsSearchingMapLocations(false);
-    setMapSearchError(null);
-
-    const lat = parseFloat(suggestion.lat);
-    const lng = parseFloat(suggestion.lon);
-
-    if (!mapRef.current || Number.isNaN(lat) || Number.isNaN(lng)) {
-      return;
-    }
-
-    latestMapSearchQueryRef.current = suggestion.display_name;
-
-    mapRef.current.setView([lat, lng], Math.max(mapRef.current.getZoom(), 16));
-    setActivePlace(null);
-    removeDroppedPinMarker();
-
-    const coordsText = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-    const popupId = Math.random().toString(36).slice(2, 10);
-    const setStartId = `search-set-start-${popupId}`;
-    const setEndId = `search-set-end-${popupId}`;
-    const routeId = `search-route-${popupId}`;
-
-    const marker = L.marker([lat, lng], {
-      icon: droppedPinIcon,
-      bubblingMouseEvents: false,
-    }).addTo(mapRef.current);
-
-    droppedPinMarkerRef.current = marker;
-
-    const popupHtml = `
-      <div style="min-width: 220px; font-family: system-ui;">
-        <div style="font-weight: 600; margin-bottom: 4px; color: #1f2937;">
-          ${escapeHtml(suggestion.display_name)}
-        </div>
-        <div style="font-size: 12px; color: #4b5563; margin-bottom: 10px;">
-          ${coordsText}
-        </div>
-        <div style="display: flex; flex-direction: column; gap: 6px;">
-          <button id="${setStartId}"
-            style="background: #22c55e; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
-            Set as Start
-          </button>
-          <button id="${setEndId}"
-            style="background: #ef4444; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
-            Set as Destination
-          </button>
-          <button id="${routeId}"
-            style="background: #2563eb; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
-            Route From My Location
-          </button>
-        </div>
-      </div>`;
-
-    marker.bindPopup(popupHtml, {
-      autoPan: true,
-      closeButton: true,
-      className: "dropped-pin-popup",
-    });
-
-    marker.on("popupopen", () => {
-      const startBtn = document.getElementById(setStartId);
-      const endBtn = document.getElementById(setEndId);
-      const routeBtn = document.getElementById(routeId);
-
-      if (startBtn) {
-        startBtn.addEventListener("click", () => {
-          handleSelectStartLocation(suggestion);
-          setRouteMode(false);
-          setIsTerrainMode(false);
-          setShowRoutePlannerModal(true);
-          marker.closePopup();
-        });
-      }
-
-      if (endBtn) {
-        endBtn.addEventListener("click", () => {
-          handleSelectEndLocation(suggestion);
-          setRouteMode(false);
-          setIsTerrainMode(false);
-          setShowRoutePlannerModal(true);
-          marker.closePopup();
-        });
-      }
-
-      if (routeBtn) {
-        routeBtn.addEventListener("click", () => {
-          autoRoutePendingRef.current = true;
-          handleSelectEndLocation(suggestion);
-          setRouteMode(false);
-          setIsTerrainMode(false);
-          setShowRoutePlannerModal(false);
-          useCurrentLocationAsStart();
-          marker.closePopup();
-        });
-      }
-    });
-
-    marker.openPopup();
-  };
-
-  const handleMapSearchInputChange = (value: string) => {
-    setMapSearchQuery(value);
-
-    if (mapSearchDebounceRef.current) {
-      window.clearTimeout(mapSearchDebounceRef.current);
-      mapSearchDebounceRef.current = null;
-    }
-
-    const trimmed = value.trim();
-    latestMapSearchQueryRef.current = trimmed;
-
-    if (trimmed.length < 2) {
-      setIsSearchingMapLocations(false);
-      setMapSearchResults([]);
-      setShowMapSearchResults(false);
-      setMapSearchError(null);
-      return;
-    }
-
-    setMapSearchError(null);
-    setShowMapSearchResults(true);
-    setIsSearchingMapLocations(true);
-
-    mapSearchDebounceRef.current = window.setTimeout(async () => {
-      try {
-        const suggestions = await searchLocations(trimmed);
-
-        if (latestMapSearchQueryRef.current !== trimmed) {
-          return;
-        }
-
-        setMapSearchResults(suggestions);
-        setMapSearchError(null);
-      } catch (error) {
-        console.error("Error searching map locations:", error);
-        if (latestMapSearchQueryRef.current === trimmed) {
-          setMapSearchResults([]);
-          setMapSearchError(
-            "We couldn't reach the live search service right now."
-          );
-        }
-      } finally {
-        if (latestMapSearchQueryRef.current === trimmed) {
-          setIsSearchingMapLocations(false);
-        }
-      }
-    }, 350);
-  };
-
-  const handleMapSearchFocus = () => {
-    if (mapSearchBlurTimeoutRef.current) {
-      window.clearTimeout(mapSearchBlurTimeoutRef.current);
-      mapSearchBlurTimeoutRef.current = null;
-    }
-
-    if (mapSearchResults.length > 0 || mapSearchError) {
-      setShowMapSearchResults(true);
-    }
-  };
-
-  const handleMapSearchBlur = () => {
-    if (mapSearchBlurTimeoutRef.current) {
-      window.clearTimeout(mapSearchBlurTimeoutRef.current);
-    }
-
-    mapSearchBlurTimeoutRef.current = window.setTimeout(() => {
-      setShowMapSearchResults(false);
-    }, 150);
-  };
-
-  const handleMapSearchResultSelect = (suggestion: LocationSuggestion) => {
-    if (mapSearchDebounceRef.current) {
-      window.clearTimeout(mapSearchDebounceRef.current);
-      mapSearchDebounceRef.current = null;
-    }
-
-    if (mapSearchBlurTimeoutRef.current) {
-      window.clearTimeout(mapSearchBlurTimeoutRef.current);
-      mapSearchBlurTimeoutRef.current = null;
-    }
-
-    setMapSearchQuery(suggestion.display_name);
-    setShowMapSearchResults(false);
-    setMapSearchResults([]);
-    setIsSearchingMapLocations(false);
-    setMapSearchError(null);
-
-    const lat = parseFloat(suggestion.lat);
-    const lng = parseFloat(suggestion.lon);
-
-    if (!mapRef.current || Number.isNaN(lat) || Number.isNaN(lng)) {
-      return;
-    }
-
-    latestMapSearchQueryRef.current = suggestion.display_name;
-
-    mapRef.current.setView([lat, lng], Math.max(mapRef.current.getZoom(), 16));
-    setActivePlace(null);
-    removeDroppedPinMarker();
-
-    const coordsText = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-    const popupId = Math.random().toString(36).slice(2, 10);
-    const setStartId = `search-set-start-${popupId}`;
-    const setEndId = `search-set-end-${popupId}`;
-    const routeId = `search-route-${popupId}`;
-
-    const marker = L.marker([lat, lng], {
-      icon: droppedPinIcon,
-      bubblingMouseEvents: false,
-    }).addTo(mapRef.current);
-
-    droppedPinMarkerRef.current = marker;
-
-    const popupHtml = `
-      <div style="min-width: 220px; font-family: system-ui;">
-        <div style="font-weight: 600; margin-bottom: 4px; color: #1f2937;">
-          ${escapeHtml(suggestion.display_name)}
-        </div>
-        <div style="font-size: 12px; color: #4b5563; margin-bottom: 10px;">
-          ${coordsText}
-        </div>
-        <div style="display: flex; flex-direction: column; gap: 6px;">
-          <button id="${setStartId}"
-            style="background: #22c55e; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
-            Set as Start
-          </button>
-          <button id="${setEndId}"
-            style="background: #ef4444; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
-            Set as Destination
-          </button>
-          <button id="${routeId}"
-            style="background: #2563eb; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
-            Route From My Location
-          </button>
-        </div>
-      </div>`;
-
-    marker.bindPopup(popupHtml, {
-      autoPan: true,
-      closeButton: true,
-      className: "dropped-pin-popup",
-    });
-
-    marker.on("popupopen", () => {
-      const startBtn = document.getElementById(setStartId);
-      const endBtn = document.getElementById(setEndId);
-      const routeBtn = document.getElementById(routeId);
-
-      if (startBtn) {
-        startBtn.addEventListener("click", () => {
-          handleSelectStartLocation(suggestion);
-          setRouteMode(false);
-          setIsTerrainMode(false);
-          setShowRoutePlannerModal(true);
-          marker.closePopup();
-        });
-      }
-
-      if (endBtn) {
-        endBtn.addEventListener("click", () => {
-          handleSelectEndLocation(suggestion);
-          setRouteMode(false);
-          setIsTerrainMode(false);
-          setShowRoutePlannerModal(true);
-          marker.closePopup();
-        });
-      }
-
-      if (routeBtn) {
-        routeBtn.addEventListener("click", () => {
-          autoRoutePendingRef.current = true;
-          handleSelectEndLocation(suggestion);
-          setRouteMode(false);
-          setIsTerrainMode(false);
-          setShowRoutePlannerModal(false);
-          useCurrentLocationAsStart();
-          marker.closePopup();
-        });
-      }
-    });
-
-    marker.openPopup();
   };
 
   // Load terrain roads data for enhanced routing
@@ -8761,46 +8239,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     }
   };
 
-  const removeDroppedPinMarker = () => {
-    if (
-      droppedPinMarkerRef.current &&
-      mapRef.current &&
-      mapRef.current.hasLayer(droppedPinMarkerRef.current)
-    ) {
-      mapRef.current.removeLayer(droppedPinMarkerRef.current);
-    }
-    droppedPinMarkerRef.current = null;
-  };
-
-  const placeToSuggestion = (place: ZamboangaPlace): LocationSuggestion => ({
-    display_name: place.name,
-    lat: place.lat.toString(),
-    lon: place.lng.toString(),
-    place_id: place.id,
-    type: place.categoryLabel.toLowerCase().replace(/\s+/g, "_"),
-    isLocal: true,
-  });
-
-  const removeDroppedPinMarker = () => {
-    if (
-      droppedPinMarkerRef.current &&
-      mapRef.current &&
-      mapRef.current.hasLayer(droppedPinMarkerRef.current)
-    ) {
-      mapRef.current.removeLayer(droppedPinMarkerRef.current);
-    }
-    droppedPinMarkerRef.current = null;
-  };
-
-  const placeToSuggestion = (place: ZamboangaPlace): LocationSuggestion => ({
-    display_name: place.name,
-    lat: place.lat.toString(),
-    lon: place.lng.toString(),
-    place_id: place.id,
-    type: place.categoryLabel.toLowerCase().replace(/\s+/g, "_"),
-    isLocal: true,
-  });
-
   // Handle selecting start location
   const handleSelectStartLocation = (location: LocationSuggestion) => {
     // Clear existing markers before setting new location
@@ -8820,8 +8258,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       lng: parseFloat(location.lon),
     });
     console.log("Start location selected:", location.display_name);
-    removeDroppedPinMarker();
-    removeDroppedPinMarker();
   };
 
   // Handle selecting end location
@@ -8843,8 +8279,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       lng: parseFloat(location.lon),
     });
     console.log("End location selected:", location.display_name);
-    removeDroppedPinMarker();
-    removeDroppedPinMarker();
   };
 
   // Handle find route button click
@@ -9313,44 +8747,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       alert("Geolocation is not supported by this browser");
     }
   };
-
-  useEffect(() => {
-    if (
-      autoRoutePendingRef.current &&
-      selectedStartLocation &&
-      selectedEndLocation &&
-      startPoint &&
-      endPoint
-    ) {
-      autoRoutePendingRef.current = false;
-      handleFindRoute();
-    }
-  }, [
-    selectedStartLocation,
-    selectedEndLocation,
-    startPoint,
-    endPoint,
-    handleFindRoute,
-  ]);
-
-  useEffect(() => {
-    if (
-      autoRoutePendingRef.current &&
-      selectedStartLocation &&
-      selectedEndLocation &&
-      startPoint &&
-      endPoint
-    ) {
-      autoRoutePendingRef.current = false;
-      handleFindRoute();
-    }
-  }, [
-    selectedStartLocation,
-    selectedEndLocation,
-    startPoint,
-    endPoint,
-    handleFindRoute,
-  ]);
 
   // Handle route selection
   const handleRouteSelection = (routeType: "safe" | "manageable" | "prone") => {
@@ -9923,8 +9319,21 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     // Set map as ready after initialization
     setTimeout(() => setIsMapReady(true), 100);
 
-    // 1. FIRST: Add flood-aware routing button control
-    // 1. FIRST: Add flood-aware routing button control
+    // 1. FIRST: Add geocoder (search bar)
+    const geocoder = (L.Control as any)
+      .geocoder({
+        defaultMarkGeocode: false,
+        position: "topleft",
+        placeholder: "Search in Zamboanga City...",
+        collapsed: false,
+      })
+      .on("markgeocode", function (e: any) {
+        const latlng = e.geocode.center;
+        map.setView(latlng, 16);
+      })
+      .addTo(map);
+
+    // 2. SECOND: Add flood-aware routing button control
     const RoutingBtn = L.Control.extend({
       options: {
         position: "topleft",
@@ -9969,15 +9378,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     const routingBtn = new RoutingBtn({ position: "topleft" });
     map.addControl(routingBtn);
 
-    // 2. Add zoom controls
-    // 2. Add zoom controls
+    // 3. THIRD: Add zoom controls
     const zoomControl = new L.Control.Zoom({
       position: "topleft",
     });
     map.addControl(zoomControl);
 
-    // 3. Add collapsible menu button (same as before but removed routing-related parts)
-    // 3. Add collapsible menu button (same as before but removed routing-related parts)
+    // 4. FOURTH: Add collapsible menu button (same as before but removed routing-related parts)
     const CollapsibleMenuBtn = L.Control.extend({
       options: { position: "topleft" },
       onAdd: function () {
@@ -10177,8 +9584,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     const collapsibleMenuBtn = new CollapsibleMenuBtn({ position: "topleft" });
     map.addControl(collapsibleMenuBtn);
 
-    // 4. Add terrain overlay toggle button
-    // 4. Add terrain overlay toggle button
+    // 5. Add terrain overlay toggle button
     const TerrainOverlayBtn = L.Control.extend({
       options: {
         position: "topright",
@@ -10256,229 +9662,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     };
   }, []);
 
-  useEffect(() => {
-    if (!isMapReady || !mapRef.current) {
-      return;
-    }
-
-    let isCancelled = false;
-    const mapInstance = mapRef.current;
-
-    if (!poiLayerRef.current) {
-      poiLayerRef.current = L.layerGroup();
-    } else {
-      poiLayerRef.current.clearLayers();
-    }
-
-    poiMarkersRef.current.forEach((marker) => marker.remove());
-    poiMarkersRef.current.clear();
-    poiPlacesRef.current.clear();
-
-    poiLayerRef.current.addTo(mapInstance);
-    mapInstance.off("zoomend", updatePoiVisibility);
-    mapInstance.off("moveend", updatePoiVisibility);
-    mapInstance.on("zoomend", updatePoiVisibility);
-    mapInstance.on("moveend", updatePoiVisibility);
-
-    const iconCache = poiIconCacheRef.current;
-
-    const renderPlaceMarker = (place: ZamboangaPlace) => {
-      const style = POI_GROUP_STYLES[place.group];
-      const cacheKey = place.group;
-
-      if (!iconCache[cacheKey]) {
-        iconCache[cacheKey] = L.divIcon({
-          className: "zambo-poi-marker",
-          html: `<div style="
-              width: 32px;
-              height: 32px;
-              border-radius: 12px;
-              background: ${style.color};
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              color: #ffffff;
-              font-size: 18px;
-              border: 2px solid #ffffff;
-              box-shadow: 0 4px 10px rgba(0,0,0,0.25);
-            ">${style.emoji}</div>`,
-          iconSize: [32, 32],
-          iconAnchor: [16, 32],
-          popupAnchor: [0, -28],
-        });
-      }
-
-      const marker = L.marker([place.lat, place.lng], {
-        icon: iconCache[cacheKey],
-        bubblingMouseEvents: false,
-      });
-
-      const coordsText = `${place.lat.toFixed(5)}, ${place.lng.toFixed(5)}`;
-      const suggestion = placeToSuggestion(place);
-      const popupId = Math.random().toString(36).slice(2, 10);
-      const setStartId = `poi-set-start-${popupId}`;
-      const setEndId = `poi-set-end-${popupId}`;
-      const routeId = `poi-route-${popupId}`;
-
-      const badgeHtml = `<div style="
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          background: ${style.color};
-          color: #ffffff;
-          padding: 3px 10px;
-          border-radius: 999px;
-          font-size: 11px;
-          font-weight: 600;
-          margin-bottom: 8px;
-        ">${style.emoji}<span>${escapeHtml(place.categoryLabel)}</span></div>`;
-
-      const addressHtml = place.address
-        ? `<div style="font-size: 12px; color: #374151; margin-bottom: 4px;">${escapeHtml(
-            place.address
-          )}</div>`
-        : "";
-
-      const popupHtml = `
-        <div style="min-width: 240px; font-family: system-ui;">
-          <div style="font-weight: 600; margin-bottom: 6px; color: #1f2937; font-size: 15px;">
-            ${escapeHtml(place.name)}
-          </div>
-          ${badgeHtml}
-          ${addressHtml}
-          <div style="font-size: 12px; color: #4b5563; margin-bottom: 10px;">
-            ${coordsText}
-          </div>
-          <div style="display: flex; flex-direction: column; gap: 6px;">
-            <button id="${setStartId}" style="background: #22c55e; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
-              Set as Start
-            </button>
-            <button id="${setEndId}" style="background: #ef4444; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
-              Set as Destination
-            </button>
-            <button id="${routeId}" style="background: #2563eb; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
-              Route From My Location
-            </button>
-          </div>
-        </div>`;
-
-      marker.bindPopup(popupHtml, {
-        autoPan: true,
-        closeButton: true,
-        className: "poi-popup",
-      });
-
-      marker.on("popupopen", () => {
-        setActivePlace(place);
-
-        const startBtn = document.getElementById(setStartId);
-        const endBtn = document.getElementById(setEndId);
-        const routeBtn = document.getElementById(routeId);
-
-        if (startBtn) {
-          startBtn.addEventListener("click", () => {
-            handleSelectStartLocation(suggestion);
-            setRouteMode(false);
-            setIsTerrainMode(false);
-            setShowRoutePlannerModal(true);
-            marker.closePopup();
-          });
-        }
-
-        if (endBtn) {
-          endBtn.addEventListener("click", () => {
-            handleSelectEndLocation(suggestion);
-            setRouteMode(false);
-            setIsTerrainMode(false);
-            setShowRoutePlannerModal(true);
-            marker.closePopup();
-          });
-        }
-
-        if (routeBtn) {
-          routeBtn.addEventListener("click", () => {
-            autoRoutePendingRef.current = true;
-            handleSelectEndLocation(suggestion);
-            setRouteMode(false);
-            setIsTerrainMode(false);
-            setShowRoutePlannerModal(false);
-            useCurrentLocationAsStart();
-            marker.closePopup();
-          });
-        }
-      });
-
-      marker.on("popupclose", () => {
-        setActivePlace((current) =>
-          current && current.id === place.id ? null : current
-        );
-      });
-
-      poiMarkersRef.current.set(place.id, marker);
-      poiPlacesRef.current.set(place.id, place);
-
-      if (
-        shouldShowPlaceAtZoom(place, mapInstance.getZoom()) &&
-        mapInstance.getBounds().pad(0.15).contains(marker.getLatLng())
-      ) {
-        poiLayerRef.current?.addLayer(marker);
-      }
-    };
-
-    const loadPlaces = async () => {
-      setIsLoadingPlaces(true);
-      setPlacesError(null);
-
-      try {
-        const fetchedPlaces = await fetchZamboangaPlaces();
-        if (isCancelled) {
-          return;
-        }
-
-        setPlaces(fetchedPlaces);
-        poiLayerRef.current?.clearLayers();
-        poiMarkersRef.current.forEach((marker) => marker.remove());
-        poiMarkersRef.current.clear();
-        poiPlacesRef.current.clear();
-
-        fetchedPlaces.forEach(renderPlaceMarker);
-        updatePoiVisibility();
-
-        const usingFallback =
-          fetchedPlaces.length > 0 &&
-          fetchedPlaces.every((place) => place.source === "fallback");
-
-        if (usingFallback) {
-          setPlacesError(
-            "Showing a limited set of featured places while the live places service is unreachable."
-          );
-        }
-      } catch (error) {
-        if (!isCancelled) {
-          console.error("Unable to load Zamboanga places:", error);
-          setPlacesError(
-            "We couldn't load live place data right now. Try refreshing the map later."
-          );
-        }
-      } finally {
-        if (!isCancelled) {
-          setIsLoadingPlaces(false);
-        }
-      }
-    };
-
-    loadPlaces();
-
-    return () => {
-      isCancelled = true;
-      mapInstance.off("zoomend", updatePoiVisibility);
-      mapInstance.off("moveend", updatePoiVisibility);
-      if (poiLayerRef.current && mapInstance) {
-        mapInstance.removeLayer(poiLayerRef.current);
-      }
-    };
-  }, [isMapReady, shouldShowPlaceAtZoom, updatePoiVisibility]);
-
   // Handle layer switching
   useEffect(() => {
     if (!mapRef.current || !layersRef.current) return;
@@ -10494,8 +9677,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     layersRef.current[mapLayer].addTo(mapRef.current);
   }, [mapLayer]);
 
-  // Map click handlers for terrain sampling and dropped pins
-  // Map click handlers for terrain sampling and dropped pins
+  // Map click handlers (only for terrain mode now)
   useEffect(() => {
     if (!mapRef.current) return;
 
@@ -10525,119 +9707,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           }
           terrainPopupRef.current = elevationMarker;
         }
-        return;
       }
-
-      if (!mapRef.current) {
-        return;
-      }
-
-      setActivePlace(null);
-      const { lat, lng } = e.latlng;
-      removeDroppedPinMarker();
-
-      let locationDetails: ZamboCityLocation | null = null;
-      try {
-        locationDetails = await getLocationByCoordinates(lat, lng);
-      } catch (error) {
-        console.error("Error reverse geocoding dropped pin:", error);
-      }
-
-      const coordsText = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-      const displayName =
-        locationDetails?.displayName || `Dropped Pin (${coordsText})`;
-      const suggestion: LocationSuggestion = {
-        display_name: displayName,
-        lat: lat.toString(),
-        lon: lng.toString(),
-        place_id:
-          locationDetails?.place_id ||
-          `dropped-${lat.toFixed(5)}-${lng.toFixed(5)}-${Date.now()}`,
-        type: locationDetails?.type || "dropped_pin",
-        isLocal: Boolean(locationDetails),
-      };
-
-      const marker = L.marker([lat, lng], {
-        icon: droppedPinIcon,
-        bubblingMouseEvents: false,
-      }).addTo(mapRef.current);
-
-      droppedPinMarkerRef.current = marker;
-
-      const popupId = Math.random().toString(36).slice(2, 10);
-      const setStartId = `set-start-${popupId}`;
-      const setEndId = `set-end-${popupId}`;
-      const routeHereId = `route-here-${popupId}`;
-
-      const popupHtml = `
-        <div style="min-width: 220px; font-family: system-ui;">
-          <div style="font-weight: 600; margin-bottom: 4px; color: #1f2937;">
-            ${escapeHtml(displayName)}
-          </div>
-          <div style="font-size: 12px; color: #4b5563; margin-bottom: 10px;">
-            ${coordsText}
-          </div>
-          <div style="display: flex; flex-direction: column; gap: 6px;">
-            <button id="${setStartId}"
-              style="background: #22c55e; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
-              Set as Start
-            </button>
-            <button id="${setEndId}"
-              style="background: #ef4444; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
-              Set as Destination
-            </button>
-            <button id="${routeHereId}"
-              style="background: #2563eb; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
-              Route From My Location
-            </button>
-          </div>
-        </div>`;
-
-      marker.bindPopup(popupHtml, {
-        autoPan: true,
-        closeButton: true,
-        className: "dropped-pin-popup",
-      });
-
-      marker.on("popupopen", () => {
-        const startBtn = document.getElementById(setStartId);
-        const endBtn = document.getElementById(setEndId);
-        const routeBtn = document.getElementById(routeHereId);
-
-        if (startBtn) {
-          startBtn.addEventListener("click", () => {
-            handleSelectStartLocation(suggestion);
-            setRouteMode(false);
-            setIsTerrainMode(false);
-            setShowRoutePlannerModal(true);
-            marker.closePopup();
-          });
-        }
-
-        if (endBtn) {
-          endBtn.addEventListener("click", () => {
-            handleSelectEndLocation(suggestion);
-            setRouteMode(false);
-            setIsTerrainMode(false);
-            setShowRoutePlannerModal(true);
-            marker.closePopup();
-          });
-        }
-
-        if (routeBtn) {
-          routeBtn.addEventListener("click", () => {
-            autoRoutePendingRef.current = true;
-            handleSelectEndLocation(suggestion);
-            setRouteMode(false);
-            setIsTerrainMode(false);
-            setShowRoutePlannerModal(false);
-            useCurrentLocationAsStart();
-            marker.closePopup();
-          });
-        }
-      });
-
-      marker.openPopup();
     };
 
     mapRef.current.on("click", handleMapClick);
@@ -10648,6 +9718,218 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   }, [isTerrainMode]);
 
   // Clear destinations function
+  const handleStartDirectionsFromPlace = useCallback(
+    async (place: PlaceDefinition) => {
+      try {
+        const location = await ensureUserLocation();
+
+        const startSuggestion: LocationSuggestion = {
+          display_name: "My Location",
+          lat: location.lat.toString(),
+          lon: location.lng.toString(),
+          place_id: "current-user-location",
+          type: "user-location",
+          isLocal: true,
+        };
+
+        const destinationSuggestion: LocationSuggestion = {
+          display_name: place.name,
+          lat: place.lat.toString(),
+          lon: place.lng.toString(),
+          place_id: `place-${place.id}`,
+          type: place.category,
+          isLocal: true,
+        };
+
+        handleSelectStartLocation(startSuggestion);
+        handleSelectEndLocation(destinationSuggestion);
+
+        const mapInstance = mapRef.current;
+        if (mapInstance) {
+          const desiredZoom = Math.max(
+            mapInstance.getZoom(),
+            Math.max(place.minZoom, 15)
+          );
+          mapInstance.flyTo([place.lat, place.lng], desiredZoom, {
+            animate: true,
+            duration: 0.6,
+          });
+        }
+
+        await handleFindRoute();
+      } catch (error) {
+        console.error("Failed to start directions from place:", error);
+        alert(
+          error instanceof Error
+            ? error.message
+            : "We could not access your current location. Please allow location permissions and try again."
+        );
+      }
+    },
+    [ensureUserLocation, handleSelectStartLocation, handleSelectEndLocation, handleFindRoute]
+  );
+
+  useEffect(() => {
+    startDirectionsFromPlaceRef.current = handleStartDirectionsFromPlace;
+  }, [handleStartDirectionsFromPlace]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapReady) {
+      return;
+    }
+
+    const ensurePopup = () => {
+      if (!placePopupRef.current) {
+        placePopupRef.current = L.popup({
+          closeButton: true,
+          autoPanPadding: L.point(48, 72),
+          className: "place-info-popup",
+        });
+      }
+      return placePopupRef.current!;
+    };
+
+    const highlightMarker = (placeId: string | null) => {
+      placeMarkersRef.current.forEach((markerInstance, id) => {
+        const element = markerInstance.getElement();
+        if (!element) {
+          return;
+        }
+        if (id === placeId) {
+          element.classList.add("map-place-icon-active");
+        } else {
+          element.classList.remove("map-place-icon-active");
+        }
+      });
+      activePlaceIdRef.current = placeId;
+    };
+
+    if (placeMarkersRef.current.size === 0) {
+      ZAMBOANGA_PLACES.forEach((place) => {
+        const style = PLACE_CATEGORY_STYLES[place.category];
+        const markerInstance = L.marker([place.lat, place.lng], {
+          icon: L.divIcon({
+            className: "map-place-icon",
+            html: `<div class="map-place-icon-inner" style="--marker-color:${style.color}">${style.emoji}</div>`,
+            iconSize: [32, 32],
+            iconAnchor: [16, 32],
+            popupAnchor: [0, -28],
+          }),
+          keyboard: true,
+        });
+        markerInstance.on("click", () => openPlacePopup(place));
+        placeMarkersRef.current.set(place.id, markerInstance);
+      });
+    }
+
+    const openPlacePopup = (place: PlaceDefinition) => {
+      const popup = ensurePopup();
+      const markerEntry = placeMarkersRef.current.get(place.id);
+      if (markerEntry && !map.hasLayer(markerEntry)) {
+        markerEntry.addTo(map);
+      }
+      const style = PLACE_CATEGORY_STYLES[place.category];
+      const lines = [
+        `<div class="place-popup-card">`,
+        `<div class="place-popup-name">${place.name}</div>`,
+        style.label ? `<div class="place-popup-category">${style.label}</div>` : "",
+        place.description ? `<div class="place-popup-description">${place.description}</div>` : "",
+        place.address ? `<div class="place-popup-address">${place.address}</div>` : "",
+        `<button class="place-popup-action" id="place-directions-${place.id}">Directions from my location</button>`,
+        `</div>`
+      ].filter(Boolean).join("\n");
+      popup.setLatLng([place.lat, place.lng]).setContent(lines).openOn(map);
+      highlightMarker(place.id);
+      window.requestAnimationFrame(() => {
+        const button = document.getElementById(`place-directions-${place.id}`);
+        if (button) {
+          const handler = startDirectionsFromPlaceRef.current;
+          if (handler) {
+            button.addEventListener("click", () => handler(place), { once: true });
+          }
+        }
+      });
+    };
+
+    const updateVisibility = () => {
+      const bounds = map.getBounds();
+      const zoom = map.getZoom();
+      placeMarkersRef.current.forEach((markerInstance, placeId) => {
+        const place = ZAMBOANGA_PLACES.find((item) => item.id === placeId);
+        if (!place) {
+          return;
+        }
+        const shouldShow = zoom >= place.minZoom && bounds.contains(markerInstance.getLatLng());
+        const hasLayer = map.hasLayer(markerInstance);
+        if (shouldShow && !hasLayer) {
+          markerInstance.addTo(map);
+        } else if (!shouldShow && hasLayer) {
+          map.removeLayer(markerInstance);
+        }
+      });
+    };
+
+    placeVisibilityUpdaterRef.current = updateVisibility;
+    updateVisibility();
+    map.on("zoomend", updateVisibility);
+    map.on("moveend", updateVisibility);
+
+    const handleMapClick = (event: L.LeafletMouseEvent) => {
+      const { lat, lng } = event.latlng;
+      const nearest = findNearestPlace(lat, lng, 500);
+      if (nearest) {
+        openPlacePopup(nearest.place);
+        map.flyTo([nearest.place.lat, nearest.place.lng], Math.max(nearest.place.minZoom, map.getZoom()));
+      } else {
+        highlightMarker(null);
+      }
+    };
+
+    const handlePopupClose = (event: L.PopupEvent) => {
+      if (event.popup === placePopupRef.current) {
+        highlightMarker(null);
+      }
+    };
+
+    map.on("click", handleMapClick);
+    map.on("popupclose", handlePopupClose);
+
+    startUserLocationWatch();
+
+    return () => {
+      map.off("zoomend", updateVisibility);
+      map.off("moveend", updateVisibility);
+      map.off("click", handleMapClick);
+      map.off("popupclose", handlePopupClose);
+      stopUserLocationWatch();
+    };
+  }, [isMapReady, startUserLocationWatch, stopUserLocationWatch]);
+
+  useEffect(() => {
+    if (!isMapReady) {
+      return;
+    }
+    const container = document.querySelector<HTMLElement>(".leaflet-control-geocoder");
+    if (!container) {
+      return;
+    }
+    container.classList.add("geocoder-hover-toggle");
+    const show = () => container.classList.add("geocoder-hover-visible");
+    const hide = () => container.classList.remove("geocoder-hover-visible");
+    container.addEventListener("mouseenter", show);
+    container.addEventListener("mouseleave", hide);
+    container.addEventListener("focusin", show);
+    container.addEventListener("focusout", hide);
+    return () => {
+      container.removeEventListener("mouseenter", show);
+      container.removeEventListener("mouseleave", hide);
+      container.removeEventListener("focusin", show);
+      container.removeEventListener("focusout", hide);
+      container.classList.remove("geocoder-hover-visible", "geocoder-hover-toggle");
+    };
+  }, [isMapReady]);
+
   const clearDestinations = () => {
     setSelectedStartLocation(null);
     setSelectedEndLocation(null);
@@ -10679,10 +9961,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       }
     });
     circleMarkersRef.current = [];
-
-    removeDroppedPinMarker();
-
-    removeDroppedPinMarker();
   };
 
   // Reset route
@@ -10731,15 +10009,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       mapRef.current!.removeLayer(terrainPopupRef.current);
       terrainPopupRef.current = null;
     }
-
-    removeDroppedPinMarker();
-
-    removeDroppedPinMarker();
   };
-
-  const activePlaceStyle = activePlace ? POI_GROUP_STYLES[activePlace.group] : null;
-
-  const activePlaceStyle = activePlace ? POI_GROUP_STYLES[activePlace.group] : null;
 
   return (
     <div
@@ -11042,405 +10312,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
         <div style={{ position: "relative", marginTop: "60px" }}>
           <div
-            style={{
-              position: "fixed",
-              top: "104px",
-              left: "50%",
-              transform: "translateX(-50%)",
-              width: "min(420px, calc(100% - 40px))",
-              zIndex: 1200,
-              fontFamily: "system-ui, -apple-system, sans-serif",
-              pointerEvents: "none",
-            }}
-          >
-            <div style={{ position: "relative", pointerEvents: "auto" }}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  background: "#ffffff",
-                  borderRadius: "999px",
-                  padding: "10px 16px",
-                  boxShadow: "0 14px 28px rgba(15,23,42,0.22)",
-                  border: "1px solid rgba(148, 163, 184, 0.35)",
-                }}
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#2563eb"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <circle cx="11" cy="11" r="7"></circle>
-                  <line x1="16.65" y1="16.65" x2="21" y2="21"></line>
-                </svg>
-                <input
-                  type="text"
-                  placeholder="Search places in Zamboanga City"
-                  value={mapSearchQuery}
-                  onChange={(event) =>
-                    handleMapSearchInputChange(event.target.value)
-                  }
-                  onFocus={handleMapSearchFocus}
-                  onBlur={handleMapSearchBlur}
-                  style={{
-                    flex: 1,
-                    border: "none",
-                    outline: "none",
-                    fontSize: "14px",
-                    color: "#1f2937",
-                    background: "transparent",
-                  }}
-                />
-                {mapSearchQuery.length > 0 && (
-                  <button
-                    type="button"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => handleMapSearchInputChange("")}
-                    style={{
-                      background: "rgba(148, 163, 184, 0.15)",
-                      border: "none",
-                      width: "26px",
-                      height: "26px",
-                      borderRadius: "50%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      cursor: "pointer",
-                    }}
-                    aria-label="Clear search"
-                  >
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="#475569"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <line x1="18" y1="6" x2="6" y2="18"></line>
-                      <line x1="6" y1="6" x2="18" y2="18"></line>
-                    </svg>
-                  </button>
-                )}
-              </div>
-
-              {showMapSearchResults && (
-                <div
-                  onMouseDown={(event) => event.preventDefault()}
-                  style={{
-                    position: "absolute",
-                    top: "56px",
-                    left: 0,
-                    right: 0,
-                    background: "#ffffff",
-                    borderRadius: "16px",
-                    boxShadow: "0 18px 36px rgba(15,23,42,0.25)",
-                    border: "1px solid rgba(148, 163, 184, 0.35)",
-                    padding: "8px 0",
-                    maxHeight: "300px",
-                    overflowY: "auto",
-                  }}
-                >
-                  {isSearchingMapLocations && (
-                    <div
-                      style={{
-                        padding: "10px 18px",
-                        fontSize: "13px",
-                        color: "#475569",
-                      }}
-                    >
-                      Searching updated map data…
-                    </div>
-                  )}
-                  {mapSearchError && (
-                    <div
-                      style={{
-                        padding: "10px 18px",
-                        fontSize: "13px",
-                        color: "#dc2626",
-                      }}
-                    >
-                      {mapSearchError}
-                    </div>
-                  )}
-                  {!mapSearchError &&
-                    !isSearchingMapLocations &&
-                    mapSearchResults.length === 0 && (
-                      <div
-                        style={{
-                          padding: "12px 18px",
-                          fontSize: "13px",
-                          color: "#6b7280",
-                        }}
-                      >
-                        No nearby places found. Try a different name.
-                      </div>
-                    )}
-                  {mapSearchResults.map((result) => {
-                    const subtitle = result.type
-                      ? result.type.replace(/_/g, " ")
-                      : "Location";
-                    return (
-                      <button
-                        key={result.place_id}
-                        type="button"
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => handleMapSearchResultSelect(result)}
-                        style={{
-                          width: "100%",
-                          padding: "10px 18px",
-                          background: "transparent",
-                          border: "none",
-                          textAlign: "left",
-                          cursor: "pointer",
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "2px",
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: "14px",
-                            color: "#1f2937",
-                            fontWeight: 600,
-                          }}
-                        >
-                          {result.display_name}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: "12px",
-                            color: "#64748b",
-                          }}
-                        >
-                          {subtitle.charAt(0).toUpperCase() + subtitle.slice(1)}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {isLoadingPlaces && (
-            <div
-              style={{
-                position: "fixed",
-                top: "140px",
-                left: "20px",
-                background: "rgba(37, 99, 235, 0.95)",
-                color: "#ffffff",
-                padding: "8px 16px",
-                borderRadius: "999px",
-                fontSize: "13px",
-                fontWeight: 600,
-                letterSpacing: "0.01em",
-                boxShadow: "0 10px 20px rgba(37,99,235,0.35)",
-                zIndex: 1100,
-              }}
-            >
-              Loading Zamboanga places…
-            </div>
-          )}
-
-          {placesError && (
-            <div
-              style={{
-                position: "fixed",
-                top: isLoadingPlaces ? "182px" : "140px",
-                left: "20px",
-                background: "rgba(239, 68, 68, 0.95)",
-                color: "#ffffff",
-                padding: "10px 16px",
-                borderRadius: "12px",
-                fontSize: "12px",
-                lineHeight: 1.4,
-                maxWidth: "280px",
-                boxShadow: "0 10px 20px rgba(239,68,68,0.25)",
-                zIndex: 1100,
-              }}
-            >
-              {placesError}
-            </div>
-          )}
-
-          {activePlace && activePlaceStyle && (
-            <div
-              style={{
-                position: "fixed",
-                top: "80px",
-                right: "20px",
-                width: "280px",
-                background: "#ffffff",
-                borderRadius: "16px",
-                boxShadow: "0 20px 35px rgba(15, 23, 42, 0.25)",
-                padding: "18px",
-                borderTop: `4px solid ${activePlaceStyle.color}`,
-                zIndex: 1100,
-                fontFamily: "system-ui, -apple-system, sans-serif",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  marginBottom: "10px",
-                }}
-              >
-                <div
-                  style={{
-                    width: "44px",
-                    height: "44px",
-                    borderRadius: "14px",
-                    background: activePlaceStyle.color,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: "22px",
-                    color: "#ffffff",
-                    boxShadow: "0 10px 20px rgba(0,0,0,0.25)",
-                  }}
-                >
-                  {activePlaceStyle.emoji}
-                </div>
-                <div>
-                  <div
-                    style={{
-                      fontSize: "14px",
-                      fontWeight: 700,
-                      color: "#1f2937",
-                      marginBottom: "2px",
-                    }}
-                  >
-                    {activePlace.name}
-                  </div>
-                  <div
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      padding: "2px 8px",
-                      borderRadius: "999px",
-                      fontSize: "11px",
-                      fontWeight: 600,
-                      color: "#ffffff",
-                      background: activePlaceStyle.color,
-                    }}
-                  >
-                    {activePlaceStyle.emoji} {activePlace.categoryLabel}
-                  </div>
-                </div>
-              </div>
-
-              {activePlace.address && (
-                <div
-                  style={{
-                    fontSize: "12px",
-                    color: "#4b5563",
-                    marginBottom: "8px",
-                  }}
-                >
-                  {activePlace.address}
-                </div>
-              )}
-
-              <div
-                style={{
-                  fontSize: "12px",
-                  color: "#6b7280",
-                  marginBottom: "14px",
-                }}
-              >
-                {activePlace.lat.toFixed(5)}, {activePlace.lng.toFixed(5)}
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "8px",
-                }}
-              >
-                <button
-                  style={{
-                    background: "#22c55e",
-                    color: "#ffffff",
-                    border: "none",
-                    padding: "8px 12px",
-                    borderRadius: "10px",
-                    cursor: "pointer",
-                    fontSize: "13px",
-                    fontWeight: 600,
-                  }}
-                  onClick={() => {
-                    const suggestion = placeToSuggestion(activePlace);
-                    handleSelectStartLocation(suggestion);
-                    setShowRoutePlannerModal(true);
-                    setRouteMode(false);
-                    setIsTerrainMode(false);
-                  }}
-                >
-                  Set as Start
-                </button>
-                <button
-                  style={{
-                    background: "#ef4444",
-                    color: "#ffffff",
-                    border: "none",
-                    padding: "8px 12px",
-                    borderRadius: "10px",
-                    cursor: "pointer",
-                    fontSize: "13px",
-                    fontWeight: 600,
-                  }}
-                  onClick={() => {
-                    const suggestion = placeToSuggestion(activePlace);
-                    handleSelectEndLocation(suggestion);
-                    setShowRoutePlannerModal(true);
-                    setRouteMode(false);
-                    setIsTerrainMode(false);
-                  }}
-                >
-                  Set as Destination
-                </button>
-                <button
-                  style={{
-                    background: "#2563eb",
-                    color: "#ffffff",
-                    border: "none",
-                    padding: "8px 12px",
-                    borderRadius: "10px",
-                    cursor: "pointer",
-                    fontSize: "13px",
-                    fontWeight: 600,
-                  }}
-                  onClick={() => {
-                    const suggestion = placeToSuggestion(activePlace);
-                    autoRoutePendingRef.current = true;
-                    handleSelectEndLocation(suggestion);
-                    setShowRoutePlannerModal(false);
-                    setRouteMode(false);
-                    setIsTerrainMode(false);
-                    useCurrentLocationAsStart();
-                  }}
-                >
-                  Route From My Location
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div
             id="map"
             style={{
               height: "500px",
@@ -11452,67 +10323,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           ></div>
         </div>
 
-        {places.length > 0 && (
-          <div
-            style={{
-              position: "fixed",
-              bottom: "30px",
-              right: activePlace ? "320px" : "20px",
-              background: "rgba(17, 24, 39, 0.92)",
-              color: "#f9fafb",
-              padding: "14px 16px",
-              borderRadius: "14px",
-              boxShadow: "0 12px 24px rgba(15,23,42,0.45)",
-              fontSize: "12px",
-              maxWidth: "280px",
-              zIndex: 1000,
-            }}
-          >
-            <div
-              style={{
-                fontWeight: 700,
-                fontSize: "13px",
-                letterSpacing: "0.02em",
-                marginBottom: "10px",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-              }}
-            >
-              <span role="img" aria-label="Places">
-                📍
-              </span>
-              Zamboanga Places on the Map
-            </div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: "8px 12px",
-              }}
-            >
-              {Array.from(
-                new Set(places.map((place) => place.group))
-              ).map((group) => {
-                const style = POI_GROUP_STYLES[group as ZamboangaPlaceGroup];
-                return (
-                  <div
-                    key={group}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      color: "#e5e7eb",
-                    }}
-                  >
-                    <span style={{ fontSize: "15px" }}>{style.emoji}</span>
-                    <span>{style.label}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
         {/* Action Buttons */}
         {onModalOpen && (
