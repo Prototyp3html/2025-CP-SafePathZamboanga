@@ -5,7 +5,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic import BaseModel
 from datetime import datetime, date
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import os
 import requests
 import math
@@ -300,6 +300,9 @@ async def root():
 # Enhanced Routing and Risk Analysis Endpoints
 
 # Helper functions for OSRM routing
+OSRM_ALIGNMENT_THRESHOLD_METERS = 75.0
+DEFAULT_ALIGNMENT_SPEED_MPS = 8.33  # ~30 km/h fallback when OSRM provides no timing context
+
 async def get_osrm_route(start_lng: float, start_lat: float, end_lng: float, end_lat: float, alternatives: bool = False):
     """Get route from OSRM routing service with robust error handling"""
     try:
@@ -560,13 +563,19 @@ async def get_route(
         try:
             # Strategy 1: Try OSRM alternatives first
             route_data = await get_osrm_route(start_lng, start_lat, end_lng, end_lat, alternatives=True)
-            
+
             if route_data.get("routes") and len(route_data["routes"]) >= 2:
-                print(f"✅ Got {len(route_data['routes'])} alternative routes from OSRM")
+                aligned_routes, adjustments = align_osrm_routes(
+                    route_data["routes"], start_lat, start_lng, end_lat, end_lng
+                )
+                if adjustments:
+                    print(f"🔧 Adjusted {len(adjustments)} OSRM alternative routes to reach the requested endpoints")
+
                 return {
-                    "routes": route_data["routes"],
+                    "routes": aligned_routes,
                     "waypoints": route_data.get("waypoints", []),
-                    "source": "osrm_alternatives"
+                    "source": "osrm_alternatives",
+                    "adjustments": adjustments
                 }
             
             # Strategy 2: Generate different routes using waypoint variations
@@ -576,7 +585,12 @@ async def get_route(
             # Main direct route
             main_route = await get_osrm_route(start_lng, start_lat, end_lng, end_lat, alternatives=False)
             if main_route.get("routes"):
-                routes.extend(main_route["routes"])
+                aligned_main_routes, adjustments = align_osrm_routes(
+                    main_route["routes"], start_lat, start_lng, end_lat, end_lng
+                )
+                if adjustments:
+                    print(f"🔧 Adjusted main OSRM route to reconnect missing segments ({len(adjustments)} fixes)")
+                routes.extend(aligned_main_routes)
             
             # Try to generate alternative routes by using intermediate waypoints
             try:
@@ -624,8 +638,14 @@ async def get_route(
                             }
                         ]
                     }
-                    routes.append(alternative_route)
-                    print("✅ Generated northern alternative route")
+                    aligned_route, adjustments = align_route_geometry_with_request(
+                        alternative_route, start_lat, start_lng, end_lat, end_lng
+                    )
+                    routes.append(aligned_route)
+                    if adjustments:
+                        print("✅ Generated northern alternative route with endpoint corrections")
+                    else:
+                        print("✅ Generated northern alternative route")
                 
                 # Route via southern waypoint  
                 south_waypoint_lng = mid_lng
@@ -664,26 +684,44 @@ async def get_route(
                             }
                         ]
                     }
-                    routes.append(alternative_route)
-                    print("✅ Generated southern alternative route")
+                    aligned_route, adjustments = align_route_geometry_with_request(
+                        alternative_route, start_lat, start_lng, end_lat, end_lng
+                    )
+                    routes.append(aligned_route)
+                    if adjustments:
+                        print("✅ Generated southern alternative route with endpoint corrections")
+                    else:
+                        print("✅ Generated southern alternative route")
                     
             except Exception as waypoint_error:
                 print(f"⚠️ Could not generate waypoint alternatives: {waypoint_error}")
             
             if routes:
                 print(f"🎯 Generated {len(routes)} total routes (including alternatives)")
+                adjustments_summary = [
+                    route.get("metadata", {}).get("safepath_adjustments", [])
+                    for route in routes
+                    if route.get("metadata", {}).get("safepath_adjustments")
+                ]
                 return {
                     "routes": routes,
                     "waypoints": [],
-                    "source": "osrm_generated_alternatives"
+                    "source": "osrm_generated_alternatives",
+                    "adjustments": adjustments_summary
                 }
             else:
                 # Final fallback - just return the main route
                 route_data = await get_osrm_route(start_lng, start_lat, end_lng, end_lat, alternatives=False)
+                aligned_routes, adjustments = align_osrm_routes(
+                    route_data.get("routes", []), start_lat, start_lng, end_lat, end_lng
+                )
+                if adjustments:
+                    print(f"🔧 Adjusted fallback OSRM route ({len(adjustments)} corrections)")
                 return {
-                    "routes": route_data["routes"],
+                    "routes": aligned_routes,
                     "waypoints": route_data.get("waypoints", []),
-                    "source": "osrm_single"
+                    "source": "osrm_single",
+                    "adjustments": adjustments
                 }
                 
         except Exception as osrm_error:
@@ -1080,6 +1118,92 @@ def calculate_slope(elev1: float, elev2: float, distance_m: float) -> float:
     if distance_m == 0:
         return 0.0
     return ((elev2 - elev1) / distance_m) * 100
+
+
+def align_route_geometry_with_request(route: dict, start_lat: float, start_lng: float,
+                                      end_lat: float, end_lng: float,
+                                      threshold_m: float = OSRM_ALIGNMENT_THRESHOLD_METERS) -> Tuple[dict, List[dict]]:
+    """Ensure an OSRM route actually starts and ends at the requested coordinates.
+
+    OSRM snaps input coordinates to its own network. When OSM lacks coverage near the
+    requested points, the geometry can terminate hundreds of metres away (often on a
+    cul-de-sac). To keep the UI from drawing lines that stop prematurely, this helper
+    appends short connector segments back to the caller's exact start/end positions.
+
+    Returns the mutated route dictionary plus a list describing any adjustments that
+    were applied so the caller can log or surface the behaviour."""
+
+    geometry = route.setdefault("geometry", {"type": "LineString", "coordinates": []})
+    coords = geometry.setdefault("coordinates", [])
+
+    adjustments = []
+    added_distance = 0.0
+
+    if coords:
+        start_gap = calculate_distance(start_lat, start_lng, coords[0][1], coords[0][0])
+        if start_gap > threshold_m:
+            coords.insert(0, [start_lng, start_lat])
+            adjustments.append({"position": "start", "gap_m": start_gap})
+            added_distance += start_gap
+    else:
+        # No geometry from OSRM – fall back to a direct line between the requested points.
+        coords.extend([[start_lng, start_lat], [end_lng, end_lat]])
+        straight_distance = calculate_distance(start_lat, start_lng, end_lat, end_lng)
+        adjustments.append({"position": "start", "gap_m": straight_distance})
+        adjustments.append({"position": "end", "gap_m": 0.0})
+        added_distance += straight_distance
+
+    end_gap = calculate_distance(end_lat, end_lng, coords[-1][1], coords[-1][0])
+    if end_gap > threshold_m:
+        coords.append([end_lng, end_lat])
+        adjustments.append({"position": "end", "gap_m": end_gap})
+        added_distance += end_gap
+
+    if added_distance > 0:
+        original_distance = route.get("distance", 0.0)
+        original_duration = route.get("duration", 0.0)
+        route["distance"] = original_distance + added_distance
+
+        if original_distance > 0 and original_duration > 0:
+            avg_speed = original_distance / original_duration
+        else:
+            avg_speed = DEFAULT_ALIGNMENT_SPEED_MPS
+
+        if avg_speed <= 0:
+            avg_speed = DEFAULT_ALIGNMENT_SPEED_MPS
+
+        extra_duration = added_distance / avg_speed
+        route["duration"] = original_duration + extra_duration
+
+        legs = route.get("legs") or []
+        if legs:
+            last_leg = legs[-1]
+            last_leg["distance"] = last_leg.get("distance", 0.0) + added_distance
+            last_leg["duration"] = last_leg.get("duration", 0.0) + extra_duration
+            last_leg["weight"] = last_leg.get("weight", last_leg["duration"])
+
+        metadata = route.setdefault("metadata", {})
+        metadata["safepath_adjustments"] = adjustments
+
+    return route, adjustments
+
+
+def align_osrm_routes(routes: List[dict], start_lat: float, start_lng: float,
+                      end_lat: float, end_lng: float) -> Tuple[List[dict], List[List[dict]]]:
+    """Align every OSRM route with the requested coordinates."""
+
+    aligned_routes = []
+    adjustments_summary = []
+
+    for route in routes:
+        aligned_route, adjustments = align_route_geometry_with_request(
+            route, start_lat, start_lng, end_lat, end_lng
+        )
+        aligned_routes.append(aligned_route)
+        if adjustments:
+            adjustments_summary.append(adjustments)
+
+    return aligned_routes, adjustments_summary
 
 # Phase 2 - Routing API
 @app.post("/api/route", response_model=RouteResponse)

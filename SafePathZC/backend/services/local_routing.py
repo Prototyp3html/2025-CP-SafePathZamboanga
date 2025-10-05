@@ -578,7 +578,7 @@ def calculate_local_route(start_lat: float, start_lng: float,
     
     if route:
         route_info = service.get_route_info(route, mode)
-        
+
         return {
             "success": True,
             "route": [{"lat": coord.lat, "lng": coord.lng} for coord in route],
@@ -588,5 +588,5 @@ def calculate_local_route(start_lat: float, start_lng: float,
             "terrain_summary": route_info["terrain_summary"],
             "source": "local_geojson_terrain"
         }
-    
+
     return None
