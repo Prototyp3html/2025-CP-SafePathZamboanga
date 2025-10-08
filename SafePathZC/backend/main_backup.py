@@ -33,6 +33,93 @@ Base.metadata.create_all(bind=engine)
 
 # Pydantic models for API
 
+class FavoriteRoute(Base):
+    __tablename__ = "favorite_routes"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    from_location = Column(String, nullable=False)
+    to_location = Column(String, nullable=False)
+    from_lat = Column(Float, nullable=True)
+    from_lng = Column(Float, nullable=True)
+    to_lat = Column(Float, nullable=True)
+    to_lng = Column(Float, nullable=True)
+    frequency = Column(String, default="Weekly")  # Daily, Weekly, Monthly
+    avg_duration = Column(String, nullable=False)
+    last_used = Column(DateTime, default=datetime.utcnow)
+    risk_level = Column(String, default="low")  # low, moderate, high
+    user_id = Column(String, default="default_user")
+
+class SearchHistory(Base):
+    __tablename__ = "search_history"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    query = Column(String, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    results_count = Column(Integer, default=0)
+    user_id = Column(String, default="default_user")
+
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    phone = Column(String, nullable=True)
+    location = Column(String, nullable=True)
+    role = Column(String, default="user")  # user, admin, moderator
+    is_active = Column(Boolean, default=True)
+    community_points = Column(Integer, default=0)
+    routes_used = Column(Integer, default=0)
+    reports_submitted = Column(Integer, default=0)
+    joined_at = Column(DateTime, default=datetime.utcnow)
+    last_activity = Column(DateTime, default=datetime.utcnow)
+
+class AdminUser(Base):
+    __tablename__ = "admin_users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    role = Column(String, default="admin")  # admin, moderator
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_login = Column(DateTime, nullable=True)
+
+class Report(Base):
+    __tablename__ = "reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
+    category = Column(String, nullable=False)  # flood, road_closure, accident, emergency, infrastructure, other
+    urgency = Column(String, default="medium")  # low, medium, high, critical
+    status = Column(String, default="pending")  # pending, approved, rejected, under_review
+    is_visible = Column(Boolean, default=False)
+    
+    # Location data
+    location_lat = Column(Float, nullable=False)
+    location_lng = Column(Float, nullable=False)
+    location_address = Column(String, nullable=False)
+    
+    # Reporter data
+    reporter_name = Column(String, nullable=False)
+    reporter_email = Column(String, nullable=False)
+    reporter_id = Column(String, default="anonymous")
+    
+    # Admin data
+    admin_notes = Column(Text, nullable=True)
+    verification_score = Column(Float, default=0.0)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+# Create tables
+Base.metadata.create_all(bind=engine)
+
 # Pydantic models for API
 class RouteHistoryCreate(BaseModel):
     from_location: str

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+﻿import { useState, useEffect, useRef, useCallback } from "react";
 
 declare global {
   interface Window {
@@ -197,7 +197,8 @@ const escapeHtml = (input: string): string =>
 
 const formatCoordinate = (value: number, axis: "lat" | "lng"): string => {
   const abs = Math.abs(value);
-  const direction = axis === "lat" ? (value >= 0 ? "N" : "S") : value >= 0 ? "E" : "W";
+  const direction =
+    axis === "lat" ? (value >= 0 ? "N" : "S") : value >= 0 ? "E" : "W";
   return `${abs.toFixed(4)}° ${direction}`;
 };
 
@@ -207,7 +208,10 @@ const formatCoordinates = (lat: number, lng: number): string =>
 const splitDisplayName = (
   displayName: string
 ): { title: string; remainder: string | null } => {
-  const parts = displayName.split(",").map((part) => part.trim()).filter(Boolean);
+  const parts = displayName
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
   if (parts.length === 0) {
     return { title: displayName, remainder: null };
   }
@@ -251,8 +255,7 @@ const calculateDistanceMeters = (pointA: LatLng, pointB: LatLng): number => {
 
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1) * Math.cos(lat2) *
-      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
   return EARTH_RADIUS_KM * c * 1000;
@@ -357,9 +360,7 @@ const buildTerrainSpatialIndex = (
     const roadId = String(roadIdRaw);
     const floodedValue = `${road.properties.flooded ?? ""}`.toLowerCase();
     const flooded =
-      floodedValue === "1" ||
-      floodedValue === "true" ||
-      floodedValue === "yes";
+      floodedValue === "1" || floodedValue === "true" || floodedValue === "yes";
     const elevationValue = Number(road.properties.elev_mean);
     const elevation =
       Number.isFinite(elevationValue) && elevationValue > -5000
@@ -425,7 +426,7 @@ const pointToSegmentDistanceMeters = (
 
   let t = 0;
   if (segLengthSq > 0) {
-    t = ((-startX) * segX + (-startY) * segY) / segLengthSq;
+    t = (-startX * segX + -startY * segY) / segLengthSq;
     t = Math.max(0, Math.min(1, t));
   }
 
@@ -505,7 +506,11 @@ const findNearestTerrainFeature = (
 
     const coords = geometry.coordinates;
     for (let i = 0; i < coords.length - 1; i++) {
-      const distance = pointToSegmentDistanceMeters(point, coords[i], coords[i + 1]);
+      const distance = pointToSegmentDistanceMeters(
+        point,
+        coords[i],
+        coords[i + 1]
+      );
       if (distance < closestDistance) {
         closestDistance = distance;
         closestIndex = idx;
@@ -738,7 +743,9 @@ const pickTerrainWaypoint = (
 
     const latDeltaKm = (waypoint.lat - midpoint.lat) * kmPerDegree;
     const lngDeltaKm =
-      (waypoint.lng - midpoint.lng) * kmPerDegree * Math.cos(toRadians(midpoint.lat));
+      (waypoint.lng - midpoint.lng) *
+      kmPerDegree *
+      Math.cos(toRadians(midpoint.lat));
 
     score += latPreference * latDeltaKm * 5;
     score += lngPreference * lngDeltaKm * 5;
@@ -781,7 +788,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const USE_LOCAL_OSRM = import.meta.env.VITE_USE_LOCAL_OSRM === "true"; // Use environment variable to control local OSRM
 
   // Only log configuration once per session and load terrain data
-
 
   useEffect(() => {
     if (!window.mapViewConfigLogged) {
@@ -912,7 +918,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     useState<TerrainRoadsData | null>(null);
   const [terrainRoadsLoaded, setTerrainRoadsLoaded] = useState(false);
   const [isMapReady, setIsMapReady] = useState(false);
-  const [places, setPlaces] = useState<PlaceDefinition[]>(() => getRuntimePlaces());
+  const [places, setPlaces] = useState<PlaceDefinition[]>(() =>
+    getRuntimePlaces()
+  );
 
   const terrainRoadsMetaRef = useRef<TerrainFeatureMeta[]>([]);
   const terrainSpatialIndexRef = useRef<TerrainSpatialIndex | null>(null);
@@ -947,7 +955,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const placeDataRef = useRef<Map<string, PlaceDefinition>>(new Map());
   const placePopupRef = useRef<L.Popup | null>(null);
   const activePlaceIdRef = useRef<string | null>(null);
-  const startDirectionsFromPlaceRef = useRef<((place: PlaceDefinition) => void) | null>(null);
+  const startDirectionsFromPlaceRef = useRef<
+    ((place: PlaceDefinition) => void) | null
+  >(null);
   const placeVisibilityUpdaterRef = useRef<(() => void) | null>(null);
   const locationPopupRequestRef = useRef<number>(0);
 
@@ -998,7 +1008,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const userLocationAccuracyCircleRef = useRef<L.Circle | null>(null);
   const geolocationWatchIdRef = useRef<number | null>(null);
 
-
   const updateUserLocationMarker = useCallback(
     (location: LatLng, accuracy?: number) => {
       const mapInstance = mapRef.current;
@@ -1012,7 +1021,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       if (!userLocationMarkerRef.current) {
         const icon = L.divIcon({
           className: "user-location-marker",
-          html: "<div class=\"user-location-inner\"></div><div class=\"user-location-pulse\"></div>",
+          html: '<div class="user-location-inner"></div><div class="user-location-pulse"></div>',
           iconSize: [24, 24],
           iconAnchor: [12, 12],
         });
@@ -1095,17 +1104,15 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       throw new Error("Geolocation is not supported on this device.");
     }
 
-    const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(
-        resolve,
-        reject,
-        {
+    const position = await new Promise<GeolocationPosition>(
+      (resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
           enableHighAccuracy: true,
           timeout: 20000,
           maximumAge: 10000,
-        }
-      );
-    });
+        });
+      }
+    );
 
     const location = {
       lat: position.coords.latitude,
@@ -1512,9 +1519,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             corridorWidthKm: 1.4,
             positionBias: 0.7,
           });
-          strategicWaypoints = [primary, secondary].filter(
-            Boolean
-          ) as LatLng[];
+          strategicWaypoints = [primary, secondary].filter(Boolean) as LatLng[];
           console.log(
             `🛡️ Safe route waypoints selected: ${strategicWaypoints.length}`
           );
@@ -1541,9 +1546,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             corridorWidthKm: 1.6,
             positionBias: 0.7,
           });
-          strategicWaypoints = [primary, secondary].filter(
-            Boolean
-          ) as LatLng[];
+          strategicWaypoints = [primary, secondary].filter(Boolean) as LatLng[];
           console.log(
             `⚠️ Manageable route waypoints selected: ${strategicWaypoints.length}`
           );
@@ -1568,9 +1571,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             corridorWidthKm: 2.0,
             positionBias: 0.75,
           });
-          strategicWaypoints = [primary, secondary].filter(
-            Boolean
-          ) as LatLng[];
+          strategicWaypoints = [primary, secondary].filter(Boolean) as LatLng[];
 
           if (strategicWaypoints.length === 0) {
             const midpoint = computeMidpoint(start, end);
@@ -4721,31 +4722,75 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     const directionBiases: Record<string, BiasStep[][]> = {
       safe: [
         [
-          { anchor: "quarter", latOffset: latScale * 0.7, lngOffset: lngScale * 0.2 },
-          { anchor: "mid", latOffset: latScale * 1.1, lngOffset: lngScale * 0.6 },
+          {
+            anchor: "quarter",
+            latOffset: latScale * 0.7,
+            lngOffset: lngScale * 0.2,
+          },
+          {
+            anchor: "mid",
+            latOffset: latScale * 1.1,
+            lngOffset: lngScale * 0.6,
+          },
         ],
         [
-          { anchor: "quarter", latOffset: latScale * 0.6, lngOffset: -lngScale * 0.2 },
-          { anchor: "threeQuarter", latOffset: latScale * 0.8, lngOffset: lngScale * 0.3 },
+          {
+            anchor: "quarter",
+            latOffset: latScale * 0.6,
+            lngOffset: -lngScale * 0.2,
+          },
+          {
+            anchor: "threeQuarter",
+            latOffset: latScale * 0.8,
+            lngOffset: lngScale * 0.3,
+          },
         ],
       ],
       manageable: [
         [
-          { anchor: "quarter", latOffset: latScale * 0.2, lngOffset: -lngScale * 0.9 },
-          { anchor: "mid", latOffset: latScale * 0.5, lngOffset: -lngScale * 1.3 },
+          {
+            anchor: "quarter",
+            latOffset: latScale * 0.2,
+            lngOffset: -lngScale * 0.9,
+          },
+          {
+            anchor: "mid",
+            latOffset: latScale * 0.5,
+            lngOffset: -lngScale * 1.3,
+          },
         ],
         [
-          { anchor: "quarter", latOffset: latScale * 0.35, lngOffset: -lngScale * 0.7 },
-          { anchor: "threeQuarter", latOffset: latScale * 0.3, lngOffset: -lngScale * 1.2 },
+          {
+            anchor: "quarter",
+            latOffset: latScale * 0.35,
+            lngOffset: -lngScale * 0.7,
+          },
+          {
+            anchor: "threeQuarter",
+            latOffset: latScale * 0.3,
+            lngOffset: -lngScale * 1.2,
+          },
         ],
       ],
       flood_prone: [
         [
-          { anchor: "quarter", latOffset: -latScale * 0.6, lngOffset: -lngScale * 0.4 },
-          { anchor: "mid", latOffset: -latScale * 1.0, lngOffset: -lngScale * 0.6 },
+          {
+            anchor: "quarter",
+            latOffset: -latScale * 0.6,
+            lngOffset: -lngScale * 0.4,
+          },
+          {
+            anchor: "mid",
+            latOffset: -latScale * 1.0,
+            lngOffset: -lngScale * 0.6,
+          },
         ],
         [
-          { anchor: "quarter", latOffset: -latScale * 0.7, lngOffset: lngScale * 0.2 },
+          {
+            anchor: "quarter",
+            latOffset: -latScale * 0.7,
+            lngOffset: lngScale * 0.2,
+          },
           {
             anchor: "threeQuarter",
             latOffset: -latScale * 0.8,
@@ -4820,7 +4865,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
           if (overlap > 0.55) {
             const indexToAdjust =
-              priority.indexOf(routeA.routeType) >= priority.indexOf(routeB.routeType)
+              priority.indexOf(routeA.routeType) >=
+              priority.indexOf(routeB.routeType)
                 ? i
                 : j;
 
@@ -4960,7 +5006,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     if (!safestRoute) {
       // Fallback with waypoint through major intersection
       const midpoint = computeMidpoint(start, end);
-      const majorRoadWaypoint = { lat: midpoint.lat + 0.003, lng: midpoint.lng }; // Slight offset to major road
+      const majorRoadWaypoint = {
+        lat: midpoint.lat + 0.003,
+        lng: midpoint.lng,
+      }; // Slight offset to major road
       safestRoute = await tryRouteFromAPI(
         [start, majorRoadWaypoint, end],
         "Safest with Waypoint",
@@ -5089,11 +5138,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       areRoutesSimilar(alternativeRoute, fastestRoute, 0.001)
     ) {
       alternativeRoute = await tryRouteFromAPI(
-        [
-          start,
-          { lat: midpoint.lat + 0.006, lng: midpoint.lng + 0.006 },
-          end,
-        ],
+        [start, { lat: midpoint.lat + 0.006, lng: midpoint.lng + 0.006 }, end],
         "Alternative Diagonal",
         5000
       );
@@ -5190,9 +5235,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           );
           const safeStats = evaluateTerrainForRoute(localRoutes.safe);
           if (safeStats) {
-            safeStats.usedRoadIds.forEach((id) =>
-              distinctRouteRoadIds.add(id)
-            );
+            safeStats.usedRoadIds.forEach((id) => distinctRouteRoadIds.add(id));
           }
           routes.push({
             type: "safe_terrain",
@@ -5200,8 +5243,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               0
             )}m elevation) - Local OSRM`,
             waypoints: localRoutes.safe,
-            avgElevation:
-              safeStats?.averageElevation ?? safeElevationSum,
+            avgElevation: safeStats?.averageElevation ?? safeElevationSum,
             route: {
               distance: Math.round(
                 calculateRouteDistance(localRoutes.safe) * 1000
@@ -5268,8 +5310,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               0
             )}m elevation) - Local OSRM`,
             waypoints: localRoutes.prone,
-            avgElevation:
-              proneStats?.averageElevation ?? proneElevationSum,
+            avgElevation: proneStats?.averageElevation ?? proneElevationSum,
             route: {
               distance: Math.round(
                 calculateRouteDistance(localRoutes.prone) * 1000
@@ -5455,8 +5496,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         duration: Math.round((calculateRouteDistance(safeRoute) / 40) * 60),
       },
       plannedWaypoints: safeRoute || [],
-      floodRisk: safeTerrainStats?.riskCategory ??
-        (avgElevation > 20 ? "safe" : avgElevation > 10 ? "manageable" : "prone"),
+      floodRisk:
+        safeTerrainStats?.riskCategory ??
+        (avgElevation > 20
+          ? "safe"
+          : avgElevation > 10
+          ? "manageable"
+          : "prone"),
       terrainStats: safeTerrainStats ?? null,
     });
 
@@ -5791,8 +5837,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         0
       )}m elevation)`,
       waypoints: riskyRoute,
-      avgElevation:
-        riskyTerrainStats?.averageElevation ?? avgElevationRisky,
+      avgElevation: riskyTerrainStats?.averageElevation ?? avgElevationRisky,
       route: {
         distance: Math.round(calculateRouteDistance(riskyRoute) * 1000),
         duration: Math.round((calculateRouteDistance(riskyRoute) / 30) * 60),
@@ -6147,9 +6192,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             referenceStats?.usedRoadIds.forEach((id) =>
               avoidanceRoadIds.add(id)
             );
-            targetStats?.usedRoadIds.forEach((id) =>
-              avoidanceRoadIds.add(id)
-            );
+            targetStats?.usedRoadIds.forEach((id) => avoidanceRoadIds.add(id));
 
             let priorityMode: "safe" | "manageable" | "flood_prone" =
               "manageable";
@@ -6184,7 +6227,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                 recalculatedStats?.averageElevation ?? route2.avgElevation;
               route2.floodRisk =
                 recalculatedStats?.riskCategory ?? route2.floodRisk;
-              route2.terrainStats = recalculatedStats ?? route2.terrainStats ?? null;
+              route2.terrainStats =
+                recalculatedStats ?? route2.terrainStats ?? null;
 
               const recalculatedDistance = calculateRouteDistance(recalculated);
               route2.route.distance = Math.round(recalculatedDistance * 1000);
@@ -6702,9 +6746,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       }[] = [];
 
       for (const candidate of terrainCandidates) {
-        let overlappingWith:
-          | (typeof distinctTerrainCandidates)[number]
-          | null = null;
+        let overlappingWith: (typeof distinctTerrainCandidates)[number] | null =
+          null;
 
         for (const existing of distinctTerrainCandidates) {
           const overlap = calculateOverlapRatio(
@@ -6944,7 +6987,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               routeType = route.routeType;
             } else {
               routeType =
-                index === 0 ? "safe" : index === 1 ? "manageable" : "flood_prone";
+                index === 0
+                  ? "safe"
+                  : index === 1
+                  ? "manageable"
+                  : "flood_prone";
             }
 
             let riskScore =
@@ -6965,7 +7012,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               );
             } else {
               console.log(
-                `✅ Using provided ${routeType} risk score: ${riskScore.toFixed(2)}`
+                `✅ Using provided ${routeType} risk score: ${riskScore.toFixed(
+                  2
+                )}`
               );
             }
 
@@ -7050,7 +7099,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         throw new Error("No valid routes generated");
       }
 
-      const distinctRoutes = await enforceDistinctRoutes(start, end, validRoutes);
+      const distinctRoutes = await enforceDistinctRoutes(
+        start,
+        end,
+        validRoutes
+      );
 
       // Sort routes by risk score (lowest to highest - safest first)
       const sortedRoutes = [...distinctRoutes].sort((a, b) => {
@@ -7068,7 +7121,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
         const referenceRoute = sortedRoutes[0];
         const multiplier =
-          routeType === "manageable" ? 1.6 : routeType === "flood_prone" ? 2.0 : 1.2;
+          routeType === "manageable"
+            ? 1.6
+            : routeType === "flood_prone"
+            ? 2.0
+            : 1.2;
 
         const forcedWaypoints = forceRouteSeparationEnhanced(
           referenceRoute.waypoints,
@@ -7092,7 +7149,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               : referenceRoute.riskScore + 3,
           warnings: [
             ...referenceRoute.warnings,
-            `Generated fallback ${routeType.replace("_", " ")} route for coverage`,
+            `Generated fallback ${routeType.replace(
+              "_",
+              " "
+            )} route for coverage`,
           ],
         });
       };
@@ -9944,11 +10004,15 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         `<div class="place-popup-title-block">`,
         `<div class="place-popup-name">${safeName}</div>`,
         categoryMarkup,
-        safeAddress ? `<div class="place-popup-address">${safeAddress}</div>` : "",
+        safeAddress
+          ? `<div class="place-popup-address">${safeAddress}</div>`
+          : "",
         `</div>`,
         `<button class="place-popup-action" id="${buttonId}" aria-label="Get directions to ${safeName}">${DIRECTIONS_ICON_SVG}</button>`,
         `</div>`,
-        safeDescription ? `<div class="place-popup-description">${safeDescription}</div>` : "",
+        safeDescription
+          ? `<div class="place-popup-description">${safeDescription}</div>`
+          : "",
         `</div>`,
       ]
         .filter(Boolean)
@@ -9960,7 +10024,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         if (button) {
           const handler = startDirectionsFromPlaceRef.current;
           if (handler) {
-            button.addEventListener("click", () => handler(place), { once: true });
+            button.addEventListener("click", () => handler(place), {
+              once: true,
+            });
           }
         }
       });
@@ -9991,20 +10057,21 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           `<div class="place-popup-row">`,
           `<div class="place-popup-title-block">`,
           `<div class="place-popup-name">${safeTitle}</div>`,
-          safeAddress ? `<div class="place-popup-address">${safeAddress}</div>` : "",
+          safeAddress
+            ? `<div class="place-popup-address">${safeAddress}</div>`
+            : "",
           `<div class="place-popup-coordinates">${safeCoordinates}</div>`,
           `</div>`,
           `<button class="place-popup-action" id="${buttonId}" aria-label="Get directions to ${safeTitle}">${DIRECTIONS_ICON_SVG}</button>`,
           `</div>`,
-          safeMessage ? `<div class="place-popup-small-muted">${safeMessage}</div>` : "",
+          safeMessage
+            ? `<div class="place-popup-small-muted">${safeMessage}</div>`
+            : "",
           `</div>`,
         ]
           .filter(Boolean)
           .join("\n");
-        popup
-          .setLatLng([point.lat, point.lng])
-          .setContent(html)
-          .openOn(map);
+        popup.setLatLng([point.lat, point.lng]).setContent(html).openOn(map);
         window.requestAnimationFrame(() => {
           const button = document.getElementById(buttonId);
           if (button) {
@@ -10211,7 +10278,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     if (!isMapReady) {
       return;
     }
-    const container = document.querySelector<HTMLElement>(".leaflet-control-geocoder");
+    const container = document.querySelector<HTMLElement>(
+      ".leaflet-control-geocoder"
+    );
     if (!container) {
       return;
     }
@@ -10227,7 +10296,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       container.removeEventListener("mouseleave", hide);
       container.removeEventListener("focusin", show);
       container.removeEventListener("focusout", hide);
-      container.classList.remove("geocoder-hover-visible", "geocoder-hover-toggle");
+      container.classList.remove(
+        "geocoder-hover-visible",
+        "geocoder-hover-toggle"
+      );
     };
   }, [isMapReady]);
 
@@ -10623,7 +10695,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             }}
           ></div>
         </div>
-
 
         {/* Action Buttons */}
         {onModalOpen && (
