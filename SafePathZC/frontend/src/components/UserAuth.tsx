@@ -1,5 +1,14 @@
-import React, { useState } from 'react';
-import { X, Eye, EyeOff, User, Mail, Phone, MapPin, Calendar } from 'lucide-react';
+import React, { useState } from "react";
+import {
+  X,
+  Eye,
+  EyeOff,
+  User,
+  Mail,
+  Phone,
+  MapPin,
+  Calendar,
+} from "lucide-react";
 
 interface UserAuthProps {
   isOpen: boolean;
@@ -7,44 +16,49 @@ interface UserAuthProps {
   onAuthSuccess: (user: any) => void;
 }
 
-export const UserAuth: React.FC<UserAuthProps> = ({ isOpen, onClose, onAuthSuccess }) => {
+export const UserAuth: React.FC<UserAuthProps> = ({
+  isOpen,
+  onClose,
+  onAuthSuccess,
+}) => {
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    name: '',
-    phone: '',
-    confirmPassword: ''
+    email: "",
+    password: "",
+    name: "",
+    phone: "",
+    confirmPassword: "",
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
-  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
+  const BACKEND_URL =
+    import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
+      [e.target.name]: e.target.value,
     });
   };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setError('');
+    setError("");
 
     try {
       // First try user login
       let response = await fetch(`${BACKEND_URL}/auth/login`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           email: formData.email,
-          password: formData.password
+          password: formData.password,
         }),
       });
 
@@ -52,33 +66,36 @@ export const UserAuth: React.FC<UserAuthProps> = ({ isOpen, onClose, onAuthSucce
 
       if (response.ok) {
         // User login successful
-        localStorage.setItem('user_token', data.token);
-        localStorage.setItem('user_data', JSON.stringify({...data.user, userType: 'user'}));
-        
+        localStorage.setItem("user_token", data.token);
+        localStorage.setItem(
+          "user_data",
+          JSON.stringify({ ...data.user, userType: "user" })
+        );
+
         // Clear form
         setFormData({
-          email: '',
-          password: '',
-          name: '',
-          phone: '',
-          confirmPassword: ''
+          email: "",
+          password: "",
+          name: "",
+          phone: "",
+          confirmPassword: "",
         });
-        
+
         // Notify parent component
-        onAuthSuccess({...data.user, userType: 'user'});
+        onAuthSuccess({ ...data.user, userType: "user" });
         onClose();
         return;
       }
 
       // If user login failed, try admin login
       response = await fetch(`${BACKEND_URL}/admin/auth/login`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           email: formData.email,
-          password: formData.password
+          password: formData.password,
         }),
       });
 
@@ -86,30 +103,36 @@ export const UserAuth: React.FC<UserAuthProps> = ({ isOpen, onClose, onAuthSucce
 
       if (response.ok) {
         // Admin login successful
-        localStorage.setItem('admin_token', data.token);
-        localStorage.setItem('admin_data', JSON.stringify({...data.user, userType: 'admin'}));
-        localStorage.setItem('user_token', data.token); // Also store as user_token for compatibility
-        localStorage.setItem('user_data', JSON.stringify({...data.user, userType: 'admin'}));
-        
+        localStorage.setItem("admin_token", data.token);
+        localStorage.setItem(
+          "admin_data",
+          JSON.stringify({ ...data.user, userType: "admin" })
+        );
+        localStorage.setItem("user_token", data.token); // Also store as user_token for compatibility
+        localStorage.setItem(
+          "user_data",
+          JSON.stringify({ ...data.user, userType: "admin" })
+        );
+
         // Clear form
         setFormData({
-          email: '',
-          password: '',
-          name: '',
-          phone: '',
-          confirmPassword: ''
+          email: "",
+          password: "",
+          name: "",
+          phone: "",
+          confirmPassword: "",
         });
-        
+
         // Notify parent component
-        onAuthSuccess({...data.user, userType: 'admin'});
+        onAuthSuccess({ ...data.user, userType: "admin" });
         onClose();
       } else {
         // Both user and admin login failed
-        setError('Invalid credentials');
+        setError("Invalid credentials");
       }
     } catch (error) {
-      console.error('Login error:', error);
-      setError('Failed to connect to server');
+      console.error("Login error:", error);
+      setError("Failed to connect to server");
     } finally {
       setIsLoading(false);
     }
@@ -118,32 +141,32 @@ export const UserAuth: React.FC<UserAuthProps> = ({ isOpen, onClose, onAuthSucce
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setError('');
+    setError("");
 
     // Validation
     if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
+      setError("Passwords do not match");
       setIsLoading(false);
       return;
     }
 
     if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters long');
+      setError("Password must be at least 6 characters long");
       setIsLoading(false);
       return;
     }
 
     try {
       const response = await fetch(`${BACKEND_URL}/auth/register`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           email: formData.email,
           password: formData.password,
           name: formData.name,
-          phone: formData.phone
+          phone: formData.phone,
         }),
       });
 
@@ -151,27 +174,27 @@ export const UserAuth: React.FC<UserAuthProps> = ({ isOpen, onClose, onAuthSucce
 
       if (response.ok) {
         // Store user token and data
-        localStorage.setItem('user_token', data.token);
-        localStorage.setItem('user_data', JSON.stringify(data.user));
-        
+        localStorage.setItem("user_token", data.token);
+        localStorage.setItem("user_data", JSON.stringify(data.user));
+
         // Clear form
         setFormData({
-          email: '',
-          password: '',
-          name: '',
-          phone: '',
-          confirmPassword: ''
+          email: "",
+          password: "",
+          name: "",
+          phone: "",
+          confirmPassword: "",
         });
-        
+
         // Notify parent component
         onAuthSuccess(data.user);
         onClose();
       } else {
-        setError(data.message || 'Registration failed');
+        setError(data.message || "Registration failed");
       }
     } catch (error) {
-      console.error('Registration error:', error);
-      setError('Failed to connect to server');
+      console.error("Registration error:", error);
+      setError("Failed to connect to server");
     } finally {
       setIsLoading(false);
     }
@@ -180,8 +203,8 @@ export const UserAuth: React.FC<UserAuthProps> = ({ isOpen, onClose, onAuthSucce
   const handleDemoLogin = () => {
     setFormData({
       ...formData,
-      email: 'maria.santos@email.com',
-      password: 'demo123'
+      email: "maria.santos@email.com",
+      password: "demo123",
     });
   };
 
@@ -192,7 +215,7 @@ export const UserAuth: React.FC<UserAuthProps> = ({ isOpen, onClose, onAuthSucce
       <div className="bg-white rounded-lg w-full max-w-md p-8">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold text-gray-900">
-            {isLogin ? 'Sign In' : 'Create Account'}
+            {isLogin ? "Sign In" : "Create Account"}
           </h2>
           <button
             onClick={onClose}
@@ -207,17 +230,22 @@ export const UserAuth: React.FC<UserAuthProps> = ({ isOpen, onClose, onAuthSucce
             <User className="w-8 h-8 text-blue-600" />
           </div>
           <p className="text-gray-600">
-            {isLogin 
-              ? 'Welcome back! Sign in to your account' 
-              : 'Join SafePath ZC community today'
-            }
+            {isLogin
+              ? "Welcome back! Sign in to your account"
+              : "Join SafePath ZC community today"}
           </p>
         </div>
 
-        <form onSubmit={isLogin ? handleLogin : handleRegister} className="space-y-4">
+        <form
+          onSubmit={isLogin ? handleLogin : handleRegister}
+          className="space-y-4"
+        >
           {!isLogin && (
             <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="name"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 Full Name
               </label>
               <div className="relative">
@@ -237,7 +265,10 @@ export const UserAuth: React.FC<UserAuthProps> = ({ isOpen, onClose, onAuthSucce
           )}
 
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+            <label
+              htmlFor="email"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
               Email Address
             </label>
             <div className="relative">
@@ -257,7 +288,10 @@ export const UserAuth: React.FC<UserAuthProps> = ({ isOpen, onClose, onAuthSucce
 
           {!isLogin && (
             <div>
-              <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="phone"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 Phone Number
               </label>
               <div className="relative">
@@ -277,12 +311,15 @@ export const UserAuth: React.FC<UserAuthProps> = ({ isOpen, onClose, onAuthSucce
           )}
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+            <label
+              htmlFor="password"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
               Password
             </label>
             <div className="relative">
               <input
-                type={showPassword ? 'text' : 'password'}
+                type={showPassword ? "text" : "password"}
                 id="password"
                 name="password"
                 value={formData.password}
@@ -296,19 +333,26 @@ export const UserAuth: React.FC<UserAuthProps> = ({ isOpen, onClose, onAuthSucce
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
               >
-                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                {showPassword ? (
+                  <EyeOff className="w-5 h-5" />
+                ) : (
+                  <Eye className="w-5 h-5" />
+                )}
               </button>
             </div>
           </div>
 
           {!isLogin && (
             <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="confirmPassword"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 Confirm Password
               </label>
               <div className="relative">
                 <input
-                  type={showConfirmPassword ? 'text' : 'password'}
+                  type={showConfirmPassword ? "text" : "password"}
                   id="confirmPassword"
                   name="confirmPassword"
                   value={formData.confirmPassword}
@@ -322,7 +366,11 @@ export const UserAuth: React.FC<UserAuthProps> = ({ isOpen, onClose, onAuthSucce
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
-                  {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  {showConfirmPassword ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
                 </button>
               </div>
             </div>
@@ -341,8 +389,10 @@ export const UserAuth: React.FC<UserAuthProps> = ({ isOpen, onClose, onAuthSucce
           >
             {isLoading ? (
               <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+            ) : isLogin ? (
+              "Sign In"
             ) : (
-              isLogin ? 'Sign In' : 'Create Account'
+              "Create Account"
             )}
           </button>
         </form>
@@ -353,18 +403,18 @@ export const UserAuth: React.FC<UserAuthProps> = ({ isOpen, onClose, onAuthSucce
             <button
               onClick={() => {
                 setIsLogin(!isLogin);
-                setError('');
+                setError("");
                 setFormData({
-                  email: '',
-                  password: '',
-                  name: '',
-                  phone: '',
-                  confirmPassword: ''
+                  email: "",
+                  password: "",
+                  name: "",
+                  phone: "",
+                  confirmPassword: "",
                 });
               }}
               className="text-blue-600 hover:text-blue-700 font-medium"
             >
-              {isLogin ? 'Sign up' : 'Sign in'}
+              {isLogin ? "Sign up" : "Sign in"}
             </button>
           </p>
         </div>

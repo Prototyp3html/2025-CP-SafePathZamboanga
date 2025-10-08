@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { NavigationBar } from '../components/NavigationBar';
+import React, { useState, useEffect } from "react";
+import { NavigationBar } from "../components/NavigationBar";
 import { useToast } from "@/hooks/use-toast";
 
 const AdminSettings = () => {
@@ -27,25 +27,32 @@ const AdminSettings = () => {
 
   // Load admin data
   useEffect(() => {
-    const adminData = localStorage.getItem('admin_data') || localStorage.getItem('user_data');
+    const adminData =
+      localStorage.getItem("admin_data") || localStorage.getItem("user_data");
     if (adminData) {
       const parsedAdmin = JSON.parse(adminData);
-      if (parsedAdmin.userType === 'admin' || parsedAdmin.role === 'admin') {
+      if (parsedAdmin.userType === "admin" || parsedAdmin.role === "admin") {
         setAdminUser(parsedAdmin);
       }
     }
   }, []);
 
   const handleAdminSettingChange = (key: string, value: any) => {
-    setAdminSettings(prev => ({ ...prev, [key]: value }));
+    setAdminSettings((prev) => ({ ...prev, [key]: value }));
     toast({
       title: "Setting updated",
-      description: `${key} has been ${typeof value === 'boolean' ? (value ? 'enabled' : 'disabled') : 'updated'}.`,
+      description: `${key} has been ${
+        typeof value === "boolean"
+          ? value
+            ? "enabled"
+            : "disabled"
+          : "updated"
+      }.`,
     });
   };
 
   const handleSecuritySettingChange = (key: string, value: any) => {
-    setSecuritySettings(prev => ({ ...prev, [key]: value }));
+    setSecuritySettings((prev) => ({ ...prev, [key]: value }));
     toast({
       title: "Security setting updated",
       description: `${key} has been updated.`,
@@ -55,11 +62,14 @@ const AdminSettings = () => {
   const handleSaveAllSettings = async () => {
     try {
       // Here you would save to backend
-      const token = localStorage.getItem('admin_token') || localStorage.getItem('user_token');
+      const token =
+        localStorage.getItem("admin_token") ||
+        localStorage.getItem("user_token");
       if (token) {
-        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
+        const BACKEND_URL =
+          import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
         // For now, just simulate the save
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
 
       toast({
@@ -76,11 +86,11 @@ const AdminSettings = () => {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('user_token');
-    localStorage.removeItem('user_data');
-    localStorage.removeItem('admin_token');
-    localStorage.removeItem('admin_data');
-    window.location.href = '/';
+    localStorage.removeItem("user_token");
+    localStorage.removeItem("user_data");
+    localStorage.removeItem("admin_token");
+    localStorage.removeItem("admin_data");
+    window.location.href = "/";
   };
 
   return (
@@ -90,29 +100,47 @@ const AdminSettings = () => {
         <div className="max-w-6xl mx-auto px-4 py-8">
           {/* Header */}
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Admin Settings</h1>
-            <p className="text-gray-600">Configure system settings and security options</p>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+              Admin Settings
+            </h1>
+            <p className="text-gray-600">
+              Configure system settings and security options
+            </p>
             <div className="mt-4">
-              <span className="text-sm text-gray-500">Logged in as: {adminUser?.name || 'Administrator'} ({adminUser?.email})</span>
+              <span className="text-sm text-gray-500">
+                Logged in as: {adminUser?.name || "Administrator"} (
+                {adminUser?.email})
+              </span>
             </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* System Settings */}
             <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">System Settings</h2>
-              
+              <h2 className="text-xl font-bold text-gray-900 mb-4">
+                System Settings
+              </h2>
+
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="font-medium text-gray-900">System Maintenance Mode</h3>
-                    <p className="text-sm text-gray-500">Temporarily disable user access</p>
+                    <h3 className="font-medium text-gray-900">
+                      System Maintenance Mode
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      Temporarily disable user access
+                    </p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={adminSettings.systemMaintenance}
-                      onChange={(e) => handleAdminSettingChange('systemMaintenance', e.target.checked)}
+                      onChange={(e) =>
+                        handleAdminSettingChange(
+                          "systemMaintenance",
+                          e.target.checked
+                        )
+                      }
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
@@ -121,14 +149,23 @@ const AdminSettings = () => {
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="font-medium text-gray-900">User Registration</h3>
-                    <p className="text-sm text-gray-500">Allow new user registrations</p>
+                    <h3 className="font-medium text-gray-900">
+                      User Registration
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      Allow new user registrations
+                    </p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={adminSettings.userRegistration}
-                      onChange={(e) => handleAdminSettingChange('userRegistration', e.target.checked)}
+                      onChange={(e) =>
+                        handleAdminSettingChange(
+                          "userRegistration",
+                          e.target.checked
+                        )
+                      }
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
@@ -137,14 +174,23 @@ const AdminSettings = () => {
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="font-medium text-gray-900">Public Reports</h3>
-                    <p className="text-sm text-gray-500">Allow anonymous safety reports</p>
+                    <h3 className="font-medium text-gray-900">
+                      Public Reports
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      Allow anonymous safety reports
+                    </p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={adminSettings.publicReports}
-                      onChange={(e) => handleAdminSettingChange('publicReports', e.target.checked)}
+                      onChange={(e) =>
+                        handleAdminSettingChange(
+                          "publicReports",
+                          e.target.checked
+                        )
+                      }
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
@@ -152,11 +198,18 @@ const AdminSettings = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Data Retention (Days)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Data Retention (Days)
+                  </label>
                   <input
                     type="number"
                     value={adminSettings.dataRetentionDays}
-                    onChange={(e) => handleAdminSettingChange('dataRetentionDays', parseInt(e.target.value))}
+                    onChange={(e) =>
+                      handleAdminSettingChange(
+                        "dataRetentionDays",
+                        parseInt(e.target.value)
+                      )
+                    }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     min="1"
                     max="3650"
@@ -164,11 +217,18 @@ const AdminSettings = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Max Reports Per User</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Max Reports Per User
+                  </label>
                   <input
                     type="number"
                     value={adminSettings.maxReportsPerUser}
-                    onChange={(e) => handleAdminSettingChange('maxReportsPerUser', parseInt(e.target.value))}
+                    onChange={(e) =>
+                      handleAdminSettingChange(
+                        "maxReportsPerUser",
+                        parseInt(e.target.value)
+                      )
+                    }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     min="1"
                     max="100"
@@ -179,19 +239,30 @@ const AdminSettings = () => {
 
             {/* Security Settings */}
             <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Security Settings</h2>
-              
+              <h2 className="text-xl font-bold text-gray-900 mb-4">
+                Security Settings
+              </h2>
+
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="font-medium text-gray-900">Email Verification</h3>
-                    <p className="text-sm text-gray-500">Require email verification for new accounts</p>
+                    <h3 className="font-medium text-gray-900">
+                      Email Verification
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      Require email verification for new accounts
+                    </p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={securitySettings.requireEmailVerification}
-                      onChange={(e) => handleSecuritySettingChange('requireEmailVerification', e.target.checked)}
+                      onChange={(e) =>
+                        handleSecuritySettingChange(
+                          "requireEmailVerification",
+                          e.target.checked
+                        )
+                      }
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
@@ -200,14 +271,23 @@ const AdminSettings = () => {
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="font-medium text-gray-900">Two-Factor Authentication</h3>
-                    <p className="text-sm text-gray-500">Require 2FA for all admin accounts</p>
+                    <h3 className="font-medium text-gray-900">
+                      Two-Factor Authentication
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      Require 2FA for all admin accounts
+                    </p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={securitySettings.enableTwoFactor}
-                      onChange={(e) => handleSecuritySettingChange('enableTwoFactor', e.target.checked)}
+                      onChange={(e) =>
+                        handleSecuritySettingChange(
+                          "enableTwoFactor",
+                          e.target.checked
+                        )
+                      }
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
@@ -215,11 +295,18 @@ const AdminSettings = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Session Timeout (Minutes)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Session Timeout (Minutes)
+                  </label>
                   <input
                     type="number"
                     value={securitySettings.sessionTimeout}
-                    onChange={(e) => handleSecuritySettingChange('sessionTimeout', parseInt(e.target.value))}
+                    onChange={(e) =>
+                      handleSecuritySettingChange(
+                        "sessionTimeout",
+                        parseInt(e.target.value)
+                      )
+                    }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     min="5"
                     max="1440"
@@ -227,11 +314,18 @@ const AdminSettings = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Max Login Attempts</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Max Login Attempts
+                  </label>
                   <input
                     type="number"
                     value={securitySettings.maxLoginAttempts}
-                    onChange={(e) => handleSecuritySettingChange('maxLoginAttempts', parseInt(e.target.value))}
+                    onChange={(e) =>
+                      handleSecuritySettingChange(
+                        "maxLoginAttempts",
+                        parseInt(e.target.value)
+                      )
+                    }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     min="3"
                     max="20"
@@ -239,11 +333,18 @@ const AdminSettings = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Minimum Password Length</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Minimum Password Length
+                  </label>
                   <input
                     type="number"
                     value={securitySettings.passwordMinLength}
-                    onChange={(e) => handleSecuritySettingChange('passwordMinLength', parseInt(e.target.value))}
+                    onChange={(e) =>
+                      handleSecuritySettingChange(
+                        "passwordMinLength",
+                        parseInt(e.target.value)
+                      )
+                    }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     min="6"
                     max="50"
@@ -256,8 +357,12 @@ const AdminSettings = () => {
           {/* Action Buttons */}
           <div className="mt-8 flex justify-between items-center bg-white rounded-lg shadow-md p-6">
             <div>
-              <h3 className="font-semibold text-gray-900">Save Admin Settings</h3>
-              <p className="text-sm text-gray-600">Apply all changes to the system configuration</p>
+              <h3 className="font-semibold text-gray-900">
+                Save Admin Settings
+              </h3>
+              <p className="text-sm text-gray-600">
+                Apply all changes to the system configuration
+              </p>
             </div>
             <div className="flex space-x-4">
               <button
