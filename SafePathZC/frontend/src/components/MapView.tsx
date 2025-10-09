@@ -1663,7 +1663,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         console.log(
           `📍 Using ${strategicWaypoints.length} terrain-based waypoints for ${priorityMode} route`
         );
-        route = await getRouteFromAPI(start, end, strategicWaypoints);
+        route = await getLocalOSRMRoute(start, end, strategicWaypoints);
       } else {
         const midpoint = computeMidpoint(start, end);
 
@@ -1672,13 +1672,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             biasTowardCityCenter(midpoint, 0.2),
             SAFE_CITY_BOUNDS
           );
-          route = await getRouteFromAPI(start, end, [safeWaypoint]);
+          route = await getLocalOSRMRoute(start, end, [safeWaypoint]);
         } else if (priorityMode === "manageable") {
           const manageableWaypoint = clampPointToBounds(
             { lat: midpoint.lat + 0.004, lng: midpoint.lng - 0.02 },
             SAFE_CITY_BOUNDS
           );
-          route = await getRouteFromAPI(start, end, [manageableWaypoint]);
+          route = await getLocalOSRMRoute(start, end, [manageableWaypoint]);
         } else if (priorityMode === "flood_prone") {
           const floodWaypoint = clampPointToBounds(
             {
@@ -1687,15 +1687,15 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             },
             SAFE_CITY_BOUNDS
           );
-          route = await getRouteFromAPI(start, end, [floodWaypoint]);
+          route = await getLocalOSRMRoute(start, end, [floodWaypoint]);
         } else if (priorityMode === "direct") {
-          route = await getRouteFromAPI(start, end, []);
+          route = await getLocalOSRMRoute(start, end, []);
         } else {
           const balancedWaypoint = clampPointToBounds(
             { lat: midpoint.lat + 0.005, lng: midpoint.lng },
             SAFE_CITY_BOUNDS
           );
-          route = await getRouteFromAPI(start, end, [balancedWaypoint]);
+          route = await getLocalOSRMRoute(start, end, [balancedWaypoint]);
         }
       }
 
@@ -1787,8 +1787,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         .map((point) => `${point.lng},${point.lat}`)
         .join(";");
 
-      // Use your backend's local OSRM endpoint
-      const localOSRMUrl = `${BACKEND_URL}/osrm/route?start=${start.lng},${
+      // Use your backend's routing endpoint
+      const localOSRMUrl = `${BACKEND_URL}/route?start=${start.lng},${
         start.lat
       }&end=${end.lng},${end.lat}${
         waypoints.length > 0
@@ -2410,813 +2410,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     // Convert to km² (approximate)
     return totalArea * 111 * 111;
-  };
-
-  const getRouteFromAPI = async (
-    start: LatLng,
-    end: LatLng,
-    waypoints: LatLng[] = []
-  ): Promise<LatLng[]> => {
-    // First try LOCAL OSRM (most accurate for Zamboanga), then GraphHopper, then public OSRM
-    if (USE_LOCAL_OSRM) {
-      try {
-        console.log(
-          "🚀 Trying local OSRM first for Zamboanga-specific routing..."
-        );
-        return await getLocalOSRMRoute(start, end, waypoints);
-      } catch (localError) {
-        console.warn(
-          "🔄 Local OSRM failed, falling back to external services:",
-          localError.message
-        );
-        // Continue to external services instead of throwing
-      }
-    } else {
-      console.log(
-        "📍 Local OSRM disabled via configuration, using external services..."
-      );
-    }
-
-    // Try GraphHopper first (better for routing with waypoints)
-    try {
-      const apiKey = import.meta.env.VITE_GRAPHHOPPER_API_KEY;
-      if (apiKey && apiKey !== "585bccb3-2df7-4dcb-b5bf-fc40a8bf4eea") {
-        console.log("🗺️ Using GraphHopper for routing...");
-        return await getGraphHopperRoute(start, end, waypoints);
-      }
-      console.log("⚠️ No valid GraphHopper API key, trying public OSRM...");
-    } catch (graphHopperError) {
-      console.warn(
-        "🔄 GraphHopper failed, falling back to public OSRM:",
-        graphHopperError.message
-      );
-    }
-
-    // Fallback to public OSRM
-    try {
-      console.log("🌐 Using public OSRM for routing...");
-      return await getOSRMRoute(start, end, waypoints);
-    } catch (osrmError) {
-      console.error("❌ All routing services failed:", osrmError.message);
-      throw new Error("No routing service available");
-    }
-  };
-
-  const getGraphHopperRoute = async (
-    start: LatLng,
-    end: LatLng,
-    waypoints: LatLng[] = []
-  ): Promise<LatLng[]> => {
-    try {
-      // Build the waypoints array for GraphHopper API
-      const allPoints = [start, ...waypoints, end];
-      const pointParams = allPoints
-        .map((point, index) => `point=${point.lat},${point.lng}`)
-        .join("&");
-
-      const apiKey =
-        import.meta.env.VITE_GRAPHHOPPER_API_KEY ||
-        "585bccb3-2df7-4dcb-b5bf-fc40a8bf4eea";
-      const response = await fetch(
-        `https://graphhopper.com/api/1/route?${pointParams}&vehicle=car&key=${apiKey}&calc_points=true&alternative_route.max_paths=3`
-      );
-
-      if (!response.ok) {
-        throw new Error(`GraphHopper API returned ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (data.paths && data.paths[0] && data.paths[0].points) {
-        // GraphHopper returns encoded polyline by default, but we requested calc_points=true
-        // Convert coordinates from GraphHopper format
-        const route = data.paths[0].points.coordinates.map(
-          (coord: number[]) => ({
-            lat: coord[1],
-            lng: coord[0],
-          })
-        );
-
-        // Add elevation data for the route
-        const elevationPromises = route.map(async (point) => {
-          try {
-            const elevationData = await getElevationData(point.lat, point.lng);
-            return elevationData ? elevationData.elevation : null;
-          } catch (error) {
-            console.error("Error getting elevation:", error);
-            return null;
-          }
-        });
-
-        const elevations = await Promise.all(elevationPromises);
-
-        // Filter points based on elevation and flood risk
-        const filteredRoute = route.filter((point, index) => {
-          const elevation = elevations[index];
-          if (elevation === null) return true; // Keep points without elevation data
-
-          // Calculate flood risk based on elevation
-          const riskLevel = calculateFloodRisk(elevation, point.lat, point.lng);
-          return riskLevel !== "prone"; // Filter out high-risk points
-        });
-
-        // Apply route simplification to reduce excessive waypoints
-        const finalRoute = filteredRoute.length > 1 ? filteredRoute : route;
-        const simplifiedRoute = simplifyRoute(finalRoute, 0.0001);
-
-        return simplifiedRoute;
-      }
-      return [];
-    } catch (error) {
-      console.error("Error fetching GraphHopper route:", error);
-      return [];
-    }
-  };
-
-  const getOSRMRoute = async (
-    start: LatLng,
-    end: LatLng,
-    waypoints: LatLng[] = []
-  ): Promise<LatLng[]> => {
-    try {
-      // Build the waypoints string for the URL
-      const waypointsStr = waypoints
-        .map((wp) => `${wp.lng},${wp.lat}`)
-        .join(";");
-
-      const coordinatesStr = `${start.lng},${start.lat};${waypointsStr}${
-        waypointsStr ? ";" : ""
-      }${end.lng},${end.lat}`;
-
-      const response = await fetch(
-        `https://router.project-osrm.org/route/v1/driving/${coordinatesStr}?overview=full&geometries=geojson&alternatives=true`
-      );
-
-      if (!response.ok) {
-        throw new Error(`OSRM API returned ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (data.routes && data.routes[0]) {
-        // Convert coordinates and analyze terrain for each point
-        const route = data.routes[0].geometry.coordinates.map(
-          (coord: number[]) => ({
-            lat: coord[1],
-            lng: coord[0],
-          })
-        );
-
-        // Add elevation data for the route
-        const elevationPromises = route.map(async (point) => {
-          try {
-            const elevationData = await getElevationData(point.lat, point.lng);
-            return elevationData ? elevationData.elevation : null;
-          } catch (error) {
-            console.error("Error getting elevation:", error);
-            return null;
-          }
-        });
-
-        const elevations = await Promise.all(elevationPromises);
-
-        // Filter points based on elevation and flood risk
-        const filteredRoute = route.filter((point, index) => {
-          const elevation = elevations[index];
-          if (elevation === null) return true; // Keep points without elevation data
-
-          // Calculate flood risk based on elevation
-          const riskLevel = calculateFloodRisk(elevation, point.lat, point.lng);
-          return riskLevel !== "prone"; // Filter out high-risk points
-        });
-
-        // Apply route simplification to reduce excessive waypoints
-        const finalRoute = filteredRoute.length > 1 ? filteredRoute : route;
-        const simplifiedRoute = simplifyRoute(finalRoute, 0.0001);
-
-        return simplifiedRoute;
-      }
-      return [];
-    } catch (error) {
-      console.error("Error fetching OSRM route:", error);
-      return [];
-    }
-  };
-
-  // NEW FUNCTION - Add this after getOSRMRoute
-  interface TerrainAnalysis {
-    avgElevation: number;
-    lowPoints: number;
-    coastalPoints: number;
-    terrainProfile: number[];
-  }
-
-  interface RouteAnalysis {
-    routes: LatLng[][];
-    analyses: TerrainAnalysis[];
-  }
-
-  const analyzeRouteElevation = async (
-    waypoints: LatLng[]
-  ): Promise<TerrainAnalysis> => {
-    const sampleSize = Math.min(waypoints.length, 20); // Sample points along route
-    const step = Math.max(1, Math.floor(waypoints.length / sampleSize));
-    let elevationSum = 0;
-    let lowPoints = 0;
-    let coastalPoints = 0;
-    const terrainProfile: number[] = [];
-
-    const cityCenter = { lat: 6.9214, lng: 122.079 }; // Zamboanga City center
-
-    for (let i = 0; i < waypoints.length; i += step) {
-      const point = waypoints[i];
-      const elevationData = await getElevationData(point.lat, point.lng);
-
-      if (elevationData) {
-        elevationSum += elevationData.elevation;
-        terrainProfile.push(elevationData.elevation);
-
-        if (elevationData.elevation < 5) lowPoints++;
-
-        // Check if point is coastal
-        const distanceFromCenter =
-          Math.sqrt(
-            Math.pow(point.lat - cityCenter.lat, 2) +
-              Math.pow(point.lng - cityCenter.lng, 2)
-          ) * 111; // Convert to km
-
-        if (distanceFromCenter < 3) coastalPoints++;
-      }
-    }
-
-    return {
-      avgElevation: elevationSum / (terrainProfile.length || 1),
-      lowPoints,
-      coastalPoints,
-      terrainProfile,
-    };
-  };
-
-  // Local OSRM alternative routes for better Zamboanga-specific routing
-  const getLocalOSRMAlternativeRoutes = async (
-    start: LatLng,
-    end: LatLng
-  ): Promise<RouteAnalysis> => {
-    try {
-      // Use your backend's local OSRM endpoint for alternatives
-      const response = await fetch(
-        `${BACKEND_URL}/osrm/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`,
-        {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(
-          `Local OSRM alternatives API returned ${response.status}`
-        );
-      }
-
-      const data = await response.json();
-      console.log("🗺️ Local OSRM Alternative Routes Response:", data);
-
-      const routes: LatLng[][] = [];
-      const analyses = [];
-
-      if (
-        data.source === "local_osrm" &&
-        data.routes &&
-        data.routes.length > 0
-      ) {
-        console.log(
-          `✅ Local OSRM returned ${data.routes.length} alternative routes for Zamboanga`
-        );
-
-        // Process each route from local OSRM
-        for (const route of data.routes) {
-          if (!route.geometry || !route.geometry.coordinates) {
-            console.warn("Route missing geometry data");
-            continue;
-          }
-
-          const waypoints = route.geometry.coordinates.map(
-            (coord: number[]) => ({
-              lat: coord[1],
-              lng: coord[0],
-            })
-          );
-
-          // Get detailed analysis for local route
-          const analysis = await analyzeRouteElevation(waypoints);
-          routes.push(waypoints);
-          analyses.push(analysis);
-        }
-
-        // Sort routes by risk score if we have multiple
-        if (routes.length > 1) {
-          const routePairs = routes.map((route, index) => ({
-            route,
-            analysis: analyses[index],
-          }));
-
-          // Sort by average elevation (higher is generally safer in flood-prone areas)
-          routePairs.sort(
-            (a, b) => b.analysis.avgElevation - a.analysis.avgElevation
-          );
-
-          return {
-            routes: routePairs.map((pair) => pair.route),
-            analyses: routePairs.map((pair) => pair.analysis),
-          };
-        }
-
-        return { routes, analyses };
-      }
-
-      throw new Error("No valid routes found in local OSRM response");
-    } catch (error) {
-      console.error("❌ Local OSRM alternatives failed:", error);
-      throw error;
-    }
-  };
-
-  const getAlternativeRoutesFromAPI = async (
-    start: LatLng,
-    end: LatLng
-  ): Promise<RouteAnalysis> => {
-    // First try LOCAL OSRM alternatives, then GraphHopper, then public OSRM
-    if (USE_LOCAL_OSRM) {
-      try {
-        console.log(
-          "🚀 Trying local OSRM alternatives first for Zamboanga-specific routing..."
-        );
-        return await getLocalOSRMAlternativeRoutes(start, end);
-      } catch (localError) {
-        console.warn(
-          "🔄 Local OSRM alternatives failed, falling back to GraphHopper:",
-          localError.message
-        );
-      }
-    } else {
-      console.log(
-        "📍 Local OSRM disabled via configuration, using external alternatives..."
-      );
-    }
-
-    try {
-      const apiKey = import.meta.env.VITE_GRAPHHOPPER_API_KEY;
-      if (apiKey && apiKey !== "585bccb3-2df7-4dcb-b5bf-fc40a8bf4eea") {
-        return await getGraphHopperAlternativeRoutes(start, end);
-      }
-      throw new Error("No GraphHopper API key");
-    } catch (graphHopperError) {
-      console.warn(
-        "🔄 GraphHopper alternatives failed, falling back to public OSRM:",
-        graphHopperError.message
-      );
-      return await getOSRMAlternativeRoutes(start, end);
-    }
-  };
-
-  const getGraphHopperAlternativeRoutes = async (
-    start: LatLng,
-    end: LatLng
-  ): Promise<RouteAnalysis> => {
-    try {
-      // Get multiple route alternatives with GraphHopper
-      const apiKey =
-        import.meta.env.VITE_GRAPHHOPPER_API_KEY ||
-        "585bccb3-2df7-4dcb-b5bf-fc40a8bf4eea";
-      const response = await fetch(
-        `https://graphhopper.com/api/1/route?point=${start.lat},${start.lng}&point=${end.lat},${end.lng}&vehicle=car&key=${apiKey}&calc_points=true&alternative_route.max_paths=3&instructions=true`
-      );
-
-      if (!response.ok) {
-        throw new Error(`GraphHopper API returned ${response.status}`);
-      }
-
-      const data = await response.json();
-      const routes: LatLng[][] = [];
-      const analyses = [];
-
-      if (data.paths && data.paths.length > 0) {
-        console.log(
-          `GraphHopper returned ${data.paths.length} alternative routes`
-        );
-
-        // Get terrain data for potential waypoints
-        const searchRadius = 0.005; // ~500m
-        const elevationData = new Map<string, number>();
-
-        // Pre-fetch elevation data for route areas
-        const midPoint = {
-          lat: (start.lat + end.lat) / 2,
-          lng: (start.lng + end.lng) / 2,
-        };
-
-        for (const angle of [0, 45, 90, 135, 180, 225, 270, 315]) {
-          const rad = (angle * Math.PI) / 180;
-          const point = {
-            lat: midPoint.lat + searchRadius * Math.cos(rad),
-            lng: midPoint.lng + searchRadius * Math.sin(rad),
-          };
-          const elevation = await getElevationData(point.lat, point.lng);
-          if (elevation) {
-            elevationData.set(`${point.lat},${point.lng}`, elevation.elevation);
-          }
-        }
-
-        // Process each path (GraphHopper uses "paths" instead of "routes")
-        for (const path of data.paths) {
-          if (!path.points || !path.points.coordinates) {
-            console.warn("Path missing geometry data");
-            continue;
-          }
-
-          const waypoints = path.points.coordinates.map((coord: number[]) => ({
-            lat: coord[1],
-            lng: coord[0],
-          }));
-
-          // Get detailed analysis including pre-fetched elevation data
-          const analysis = await analyzeRouteElevation(waypoints);
-
-          // Calculate flood risk score
-          const riskScore = calculateDetailedRiskScore(
-            waypoints,
-            analysis,
-            elevationData
-          );
-
-          routes.push(waypoints);
-          analyses.push({
-            ...analysis,
-            riskScore,
-          });
-        }
-
-        // Sort routes by risk score
-        const routePairs = routes.map((route, index) => ({
-          route,
-          analysis: analyses[index],
-        }));
-
-        routePairs.sort((a, b) => a.analysis.riskScore - b.analysis.riskScore);
-
-        return {
-          routes: routePairs.map((pair) => pair.route),
-          analyses: routePairs.map((pair) => pair.analysis),
-        };
-      }
-
-      if (routes.length === 0) {
-        // No valid routes found - don't create direct fallback
-        console.warn("No valid GraphHopper routes found for this route");
-        return {
-          routes: [],
-          analyses: [],
-        };
-      }
-
-      return { routes, analyses };
-    } catch (error) {
-      console.error("Error fetching GraphHopper alternative routes:", error);
-
-      // Don't fallback to direct route
-      return {
-        routes: [],
-        analyses: [],
-      };
-    }
-  };
-
-  const getOSRMAlternativeRoutes = async (
-    start: LatLng,
-    end: LatLng
-  ): Promise<RouteAnalysis> => {
-    try {
-      // Get multiple route alternatives with more options
-      const response = await fetch(
-        `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson&alternatives=3&steps=true&continue_straight=false`
-      );
-
-      if (!response.ok) {
-        throw new Error(`OSRM API returned ${response.status}`);
-      }
-
-      const data = await response.json();
-      const routes: LatLng[][] = [];
-      const analyses = [];
-
-      if (data.routes && data.routes.length > 0) {
-        console.log(`OSRM returned ${data.routes.length} alternative routes`);
-
-        // Get terrain data for potential waypoints
-        const searchRadius = 0.005; // ~500m
-        const elevationData = new Map<string, number>();
-
-        // Pre-fetch elevation data for route areas
-        const midPoint = {
-          lat: (start.lat + end.lat) / 2,
-          lng: (start.lng + end.lng) / 2,
-        };
-
-        for (const angle of [0, 45, 90, 135, 180, 225, 270, 315]) {
-          const rad = (angle * Math.PI) / 180;
-          const point = {
-            lat: midPoint.lat + searchRadius * Math.cos(rad),
-            lng: midPoint.lng + searchRadius * Math.sin(rad),
-          };
-          const elevation = await getElevationData(point.lat, point.lng);
-          if (elevation) {
-            elevationData.set(`${point.lat},${point.lng}`, elevation.elevation);
-          }
-        }
-
-        // Process each route
-        for (const route of data.routes) {
-          if (!route.geometry || !route.geometry.coordinates) {
-            console.warn("Route missing geometry data");
-            continue;
-          }
-
-          const waypoints = route.geometry.coordinates.map(
-            (coord: number[]) => ({
-              lat: coord[1],
-              lng: coord[0],
-            })
-          );
-
-          // Get detailed analysis including pre-fetched elevation data
-          const analysis = await analyzeRouteElevation(waypoints);
-
-          // Calculate flood risk score
-          const riskScore = calculateDetailedRiskScore(
-            waypoints,
-            analysis,
-            elevationData
-          );
-
-          routes.push(waypoints);
-          analyses.push({
-            ...analysis,
-            riskScore,
-          });
-        }
-
-        // Sort routes by risk score
-        const routePairs = routes.map((route, index) => ({
-          route,
-          analysis: analyses[index],
-        }));
-
-        routePairs.sort((a, b) => a.analysis.riskScore - b.analysis.riskScore);
-
-        return {
-          routes: routePairs.map((pair) => pair.route),
-          analyses: routePairs.map((pair) => pair.analysis),
-        };
-      }
-
-      if (routes.length === 0) {
-        // No valid routes found - don't create direct fallback
-        console.warn("No valid OSRM routes found for this route");
-        return {
-          routes: [],
-          analyses: [],
-        };
-      }
-
-      return { routes, analyses };
-    } catch (error) {
-      console.error("Error fetching OSRM alternative routes:", error);
-
-      // Don't fallback to direct route
-      return {
-        routes: [],
-        analyses: [],
-      };
-    }
-  };
-
-  // Local OSRM route with waypoints for Zamboanga-specific routing
-  const getLocalOSRMRouteWithWaypoint = async (
-    start: LatLng,
-    waypoint: LatLng,
-    end: LatLng
-  ): Promise<LatLng[]> => {
-    try {
-      // Use your backend's local OSRM endpoint with waypoints
-      const response = await fetch(
-        `${BACKEND_URL}/osrm/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&waypoints=${waypoint.lng},${waypoint.lat}`,
-        {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`Local OSRM waypoint API returned ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log("🗺️ Local OSRM Waypoint Response:", data);
-
-      // Check for OSRM response structure
-      if (data.routes && data.routes[0] && data.routes[0].geometry) {
-        let coordinates = [];
-
-        // Handle different OSRM response formats
-        if (data.routes[0].geometry.coordinates) {
-          // GeoJSON format
-          coordinates = data.routes[0].geometry.coordinates;
-        } else if (data.routes[0].geometry.type === "LineString") {
-          // Alternative GeoJSON format
-          coordinates = data.routes[0].geometry.coordinates;
-        } else {
-          throw new Error(
-            "Unsupported geometry format in OSRM waypoint response"
-          );
-        }
-
-        // Convert coordinates from OSRM format [lng, lat] to LatLng {lat, lng}
-        const route = coordinates.map((coord: number[]) => ({
-          lat: coord[1],
-          lng: coord[0],
-        }));
-
-        console.log(
-          `✅ Local OSRM waypoint success: Got ${route.length} waypoints for Zamboanga route`
-        );
-        return route;
-      }
-
-      // Check for error in response
-      if (data.code && data.code !== "Ok") {
-        throw new Error(
-          `OSRM Waypoint Error: ${data.code} - ${
-            data.message || "No route found"
-          }`
-        );
-      }
-
-      throw new Error("No valid waypoint route found in local OSRM response");
-    } catch (error) {
-      console.error("❌ Local OSRM waypoint failed:", error);
-      throw error;
-    }
-  };
-
-  const getRouteWithWaypointFromAPI = async (
-    start: LatLng,
-    waypoint: LatLng,
-    end: LatLng
-  ): Promise<LatLng[]> => {
-    // First try LOCAL OSRM, then GraphHopper, then public OSRM
-    if (USE_LOCAL_OSRM) {
-      try {
-        console.log(
-          "🚀 Trying local OSRM waypoint first for Zamboanga-specific routing..."
-        );
-        return await getLocalOSRMRouteWithWaypoint(start, waypoint, end);
-      } catch (localError) {
-        console.warn(
-          "🔄 Local OSRM waypoint failed, falling back to GraphHopper:",
-          localError.message
-        );
-      }
-    } else {
-      console.log(
-        "📍 Local OSRM disabled via configuration, using external waypoint routing..."
-      );
-    }
-
-    try {
-      const apiKey = import.meta.env.VITE_GRAPHHOPPER_API_KEY;
-      if (apiKey && apiKey !== "585bccb3-2df7-4dcb-b5bf-fc40a8bf4eea") {
-        return await getGraphHopperRouteWithWaypoint(start, waypoint, end);
-      }
-      throw new Error("No GraphHopper API key");
-    } catch (graphHopperError) {
-      console.warn(
-        "🔄 GraphHopper waypoint failed, falling back to public OSRM:",
-        graphHopperError.message
-      );
-      return await getOSRMRouteWithWaypoint(start, waypoint, end);
-    }
-  };
-
-  const getGraphHopperRouteWithWaypoint = async (
-    start: LatLng,
-    waypoint: LatLng,
-    end: LatLng
-  ): Promise<LatLng[]> => {
-    try {
-      const apiKey =
-        import.meta.env.VITE_GRAPHHOPPER_API_KEY ||
-        "585bccb3-2df7-4dcb-b5bf-fc40a8bf4eea";
-      const response = await fetch(
-        `https://graphhopper.com/api/1/route?point=${start.lat},${start.lng}&point=${waypoint.lat},${waypoint.lng}&point=${end.lat},${end.lng}&vehicle=car&key=${apiKey}&calc_points=true`
-      );
-      const data = await response.json();
-
-      if (data.paths && data.paths[0] && data.paths[0].points) {
-        return data.paths[0].points.coordinates.map((coord: number[]) => ({
-          lat: coord[1],
-          lng: coord[0],
-        }));
-      }
-      return [];
-    } catch (error) {
-      console.error("Error fetching GraphHopper route with waypoint:", error);
-      return [];
-    }
-  };
-
-  const getOSRMRouteWithWaypoint = async (
-    start: LatLng,
-    waypoint: LatLng,
-    end: LatLng
-  ): Promise<LatLng[]> => {
-    try {
-      const response = await fetch(
-        `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${waypoint.lng},${waypoint.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`
-      );
-      const data = await response.json();
-
-      if (data.routes && data.routes[0]) {
-        return data.routes[0].geometry.coordinates.map((coord: number[]) => ({
-          lat: coord[1],
-          lng: coord[0],
-        }));
-      }
-      return [];
-    } catch (error) {
-      console.error("Error fetching OSRM route with waypoint:", error);
-      return [];
-    }
-  };
-
-  // Calculate detailed risk score considering multiple factors
-  const calculateDetailedRiskScore = (
-    waypoints: LatLng[],
-    analysis: TerrainAnalysis,
-    elevationData: Map<string, number>
-  ): number => {
-    const cityCenter = { lat: 6.9214, lng: 122.079 };
-    let riskScore = 0;
-
-    // Analyze each waypoint
-    waypoints.forEach((point) => {
-      // 1. Elevation risk (0-40 points)
-      const elevation =
-        elevationData.get(`${point.lat},${point.lng}`) || analysis.avgElevation;
-      if (elevation < 5) riskScore += 40;
-      else if (elevation < 10) riskScore += 30;
-      else if (elevation < 15) riskScore += 20;
-      else if (elevation < 20) riskScore += 10;
-
-      // 2. Coastal proximity risk (0-30 points)
-      const distanceFromCenter =
-        Math.sqrt(
-          Math.pow(point.lat - cityCenter.lat, 2) +
-            Math.pow(point.lng - cityCenter.lng, 2)
-        ) * 111; // Convert to km
-
-      if (distanceFromCenter < 2) riskScore += 30;
-      else if (distanceFromCenter < 4) riskScore += 20;
-      else if (distanceFromCenter < 6) riskScore += 10;
-
-      // 3. Known flood-prone areas (0-30 points)
-      // Add specific flood-prone areas of Zamboanga
-      const floodProneAreas = [
-        { lat: 6.9214, lng: 122.079, radius: 2 }, // City center
-        { lat: 6.9167, lng: 122.0747, radius: 1.5 }, // Pueblo
-        // Add more known flood-prone areas
-      ];
-
-      floodProneAreas.forEach((area) => {
-        const distanceToArea =
-          Math.sqrt(
-            Math.pow(point.lat - area.lat, 2) +
-              Math.pow(point.lng - area.lng, 2)
-          ) * 111;
-
-        if (distanceToArea < area.radius) {
-          riskScore += 30 * (1 - distanceToArea / area.radius);
-        }
-      });
-    });
-
-    // Normalize score to 0-100 range
-    return Math.min(100, riskScore / waypoints.length);
   };
 
   // Calculate flood risk based on detailed risk score
@@ -4018,24 +3211,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       }
     } else {
       console.log(
-        `  Local OSRM disabled for ${routeName}, using external services...`
+        `  Local OSRM disabled for ${routeName}, returning null...`
       );
     }
 
-    try {
-      // Then try public OSRM (free, no rate limits)
-      return await tryOSRMRouting(waypoints, routeName, timeout);
-    } catch (osrmError) {
-      console.log(
-        `  Public OSRM failed for ${routeName}, trying GraphHopper fallback...`
-      );
-      try {
-        return await tryGraphHopperRouting(waypoints, routeName, timeout);
-      } catch (ghError) {
-        console.log(`  All routing services failed for ${routeName}`);
-        return null;
-      }
-    }
+    // No external routing fallbacks - only use local OSRM
+    console.log(`  No more routing attempts for ${routeName}`);
+    return null;
   };
 
   const tryLocalOSRMRouting = async (
@@ -4110,223 +3292,34 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     throw new Error("No route geometry from local OSRM");
   };
 
-  const tryOSRMRouting = async (
-    waypoints: LatLng[],
-    routeName: string,
-    timeout: number
-  ): Promise<LatLng[] | null> => {
-    const waypointStr = waypoints.map((wp) => `${wp.lng},${wp.lat}`).join(";");
-
-    const fetchPromise = fetch(
-      `https://router.project-osrm.org/route/v1/driving/${waypointStr}?overview=full&geometries=geojson&continue_straight=true`,
-      {
-        method: "GET",
-        headers: { Accept: "application/json" },
-      }
-    );
-
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`${routeName} OSRM timeout`)), timeout)
-    );
-
-    const response = (await Promise.race([
-      fetchPromise,
-      timeoutPromise,
-    ])) as Response;
-
-    if (!response.ok) {
-      throw new Error(`OSRM API returned ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    if (data.routes && data.routes[0] && data.routes[0].geometry) {
-      const rawWaypoints = data.routes[0].geometry.coordinates.map(
-        (coord: number[]) => ({
-          lat: coord[1],
-          lng: coord[0],
-        })
-      );
-
-      // CLEAN UP: Remove dead-end segments first
-      const cleanedWaypoints = removeDeadEndSegments(
-        rawWaypoints,
-        waypoints[0],
-        waypoints[waypoints.length - 1]
-      );
-
-      // CRITICAL: Validate route is not chaotic
-      const isValid = validateRouteIsNotChaotic(
-        cleanedWaypoints,
-        waypoints[0],
-        waypoints[waypoints.length - 1],
-        true
-      );
-
-      if (!isValid) {
-        throw new Error(`Route is chaotic - rejecting`);
-      }
-
-      console.log(
-        `    ✓ ${routeName} OSRM success: ${cleanedWaypoints.length} points, clean route (removed dead-ends)`
-      );
-      return cleanedWaypoints;
-    }
-
-    throw new Error("No route geometry");
-  };
-
-  const tryGraphHopperRouting = async (
-    waypoints: LatLng[],
-    routeName: string,
-    timeout: number
-  ): Promise<LatLng[] | null> => {
-    try {
-      // Rate limiting - ensure delay between requests
-      const now = Date.now();
-      const timeSinceLastRequest = now - lastGraphHopperRequest.current;
-      if (timeSinceLastRequest < GRAPHHOPPER_DELAY) {
-        const delayTime = GRAPHHOPPER_DELAY - timeSinceLastRequest;
-        console.log(
-          `  Rate limiting: waiting ${delayTime}ms before GraphHopper request...`
-        );
-        await delay(delayTime);
-      }
-      lastGraphHopperRequest.current = Date.now();
-
-      // Build GraphHopper URL with waypoints
-      const pointParams = waypoints
-        .map((wp) => `point=${wp.lat},${wp.lng}`)
-        .join("&");
-      const apiKey =
-        import.meta.env.VITE_GRAPHHOPPER_API_KEY ||
-        "585bccb3-2df7-4dcb-b5bf-fc40a8bf4eea";
-      const apiUrl = `https://graphhopper.com/api/1/route?${pointParams}&vehicle=car&key=${apiKey}&calc_points=true`;
-
-      // Use Promise.race for timeout
-      const fetchPromise = fetch(apiUrl, {
-        method: "GET",
-        headers: { Accept: "application/json" },
+  // Simple elevation estimation based on terrain data
+  const getPointElevation = async (lat: number, lng: number): Promise<number> => {
+    // Try to find nearby terrain feature (if terrain data is a FeatureCollection)
+    if (terrainData && 'features' in terrainData) {
+      const nearbyFeature = (terrainData as any).features.find((f: any) => {
+        const coords = f.geometry.coordinates;
+        if (f.geometry.type === "LineString") {
+          return coords.some((c: number[]) => {
+            const distance = Math.sqrt(Math.pow(c[1] - lat, 2) + Math.pow(c[0] - lng, 2));
+            return distance < 0.001; // ~100m
+          });
+        }
+        return false;
       });
 
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(
-          () => reject(new Error(`${routeName} GraphHopper timeout`)),
-          timeout
-        )
-      );
-
-      const response = (await Promise.race([
-        fetchPromise,
-        timeoutPromise,
-      ])) as Response;
-
-      if (!response.ok) {
-        if (response.status === 429) {
-          console.log(
-            `    ✗ ${routeName} GraphHopper rate limited (429) - backing off...`
-          );
-          // Increase delay for future requests
-          lastGraphHopperRequest.current = Date.now() + 2000; // Extra 2 second penalty
-        } else {
-          console.log(
-            `    ✗ ${routeName} GraphHopper failed: HTTP ${response.status}`
-          );
-        }
-        return null;
+      if (nearbyFeature?.properties?.elev_mean !== undefined) {
+        return nearbyFeature.properties.elev_mean;
       }
-
-      const data = await response.json();
-
-      // Check for GraphHopper error response
-      if (data.message || data.error) {
-        console.log(
-          `    ✗ ${routeName} GraphHopper API error: ${
-            data.message || data.error
-          }`
-        );
-        return null;
-      }
-
-      if (
-        data.paths &&
-        data.paths[0] &&
-        data.paths[0].points &&
-        data.paths[0].points.coordinates
-      ) {
-        const rawWaypoints = data.paths[0].points.coordinates.map(
-          (coord: number[]) => ({
-            lat: coord[1],
-            lng: coord[0],
-          })
-        );
-
-        // CLEAN UP: Remove dead-end segments first
-        const cleanedWaypoints = removeDeadEndSegments(
-          rawWaypoints,
-          waypoints[0],
-          waypoints[waypoints.length - 1]
-        );
-
-        // CRITICAL: Validate route is not chaotic
-        const isValid = validateRouteIsNotChaotic(
-          cleanedWaypoints,
-          waypoints[0],
-          waypoints[waypoints.length - 1],
-          true
-        ); // Mark as GraphHopper route
-
-        if (!isValid) {
-          console.log(
-            `    ✗ ${routeName} GraphHopper route is chaotic - rejecting`
-          );
-          return null;
-        }
-
-        console.log(
-          `    ✓ ${routeName} GraphHopper success: ${cleanedWaypoints.length} points, clean route (removed dead-ends)`
-        );
-        return cleanedWaypoints;
-      }
-
-      console.log(`    ✗ ${routeName} GraphHopper failed: No route geometry`);
-      return null;
-    } catch (error) {
-      console.log(`    ✗ ${routeName} GraphHopper error:`, error.message);
-      return null;
-    }
-  };
-
-  // Get elevation data for a specific point with enhanced caching and fallback
-  const getPointElevation = async (
-    lat: number,
-    lng: number
-  ): Promise<number> => {
-    const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
-
-    // Check cache first
-    if (elevationCacheRef.current.has(cacheKey)) {
-      const cachedData = elevationCacheRef.current.get(cacheKey);
-      return cachedData ? cachedData.elevation : 10; // Default fallback
     }
 
-    try {
-      const elevationData = await getElevationData(lat, lng);
-      return elevationData ? elevationData.elevation : 10;
-    } catch (error) {
-      // Fallback to geographic estimation
-      const cityCenter = { lat: 6.9214, lng: 122.079 };
-      const distanceFromCenter =
-        Math.sqrt(
-          Math.pow(lat - cityCenter.lat, 2) + Math.pow(lng - cityCenter.lng, 2)
-        ) * 111;
+    // Fallback: estimate based on distance from coast
+    const coastalPoint = { lat: 6.9056, lng: 122.0756 };
+    const distanceFromCoast = Math.sqrt(
+      Math.pow(lat - coastalPoint.lat, 2) + Math.pow(lng - coastalPoint.lng, 2)
+    ) * 111 * 1000; // Convert to meters
 
-      // Zamboanga geography: coastal areas are lower, inland/hills are higher
-      return Math.max(
-        2,
-        Math.min(50, distanceFromCenter * 8 + Math.random() * 5)
-      );
-    }
+    // Simple elevation model: 0m at coast, increases with distance
+    return Math.min(distanceFromCoast / 200, 50); // Max 50m
   };
 
   // Find route waypoints that GUARANTEE separation even for short distances
@@ -5382,11 +4375,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       };
 
       try {
-        safeRoute = await getLocalOSRMRouteWithWaypoint(
-          start,
-          safeWaypoint1,
-          end
-        );
+        safeRoute = await getLocalOSRMRoute(start, end, [safeWaypoint1]);
         console.log("  ✅ Local OSRM northern route successful");
       } catch (error) {
         console.log(
@@ -5403,11 +4392,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       };
 
       try {
-        safeRoute = await getLocalOSRMRouteWithWaypoint(
-          start,
-          altWaypoint,
-          end
-        );
+        safeRoute = await getLocalOSRMRoute(start, end, [altWaypoint]);
         console.log("  ✅ Local OSRM alternative waypoint successful");
       } catch (error) {
         console.log(
@@ -5527,11 +4512,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     if (USE_LOCAL_OSRM) {
       try {
-        moderateRoute = await getLocalOSRMRouteWithWaypoint(
-          start,
-          earlyAlternative,
-          end
-        );
+        moderateRoute = await getLocalOSRMRoute(start, end, [earlyAlternative]);
         console.log("  ✅ Local OSRM alternative highway route successful");
       } catch (error) {
         console.log(
@@ -5559,11 +4540,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         lng: start.lng + (end.lng - start.lng) * 0.2 - 0.012,
       };
       try {
-        moderateRoute = await getLocalOSRMRouteWithWaypoint(
-          start,
-          westHighwayDirection,
-          end
-        );
+        moderateRoute = await getLocalOSRMRoute(start, end, [westHighwayDirection]);
         console.log("  ✅ Local OSRM western highway route successful");
       } catch (error) {
         console.log(
@@ -5580,11 +4557,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         lng: (start.lng + end.lng) / 2 + eastOffset,
       };
       try {
-        moderateRoute = await getLocalOSRMRouteWithWaypoint(
-          start,
-          eastWaypoint,
-          end
-        );
+        moderateRoute = await getLocalOSRMRoute(start, end, [eastWaypoint]);
         console.log("  ✅ Local OSRM eastern variation successful");
       } catch (error) {
         console.log(
@@ -5692,11 +4665,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     if (USE_LOCAL_OSRM) {
       try {
-        riskyRoute = await getLocalOSRMRouteWithWaypoint(
-          start,
-          earlyEastern,
-          end
-        );
+        riskyRoute = await getLocalOSRMRoute(start, end, [earlyEastern]);
         console.log("  ✅ Local OSRM eastern coastal route successful");
       } catch (error) {
         console.log(
@@ -5709,11 +4678,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       console.log("  Trying coastal waypoints via local OSRM (port areas)...");
       const portWaypoint = { lat: 6.9056, lng: 122.0756 }; // Port area (known low elevation)
       try {
-        riskyRoute = await getLocalOSRMRouteWithWaypoint(
-          start,
-          portWaypoint,
-          end
-        );
+        riskyRoute = await getLocalOSRMRoute(start, end, [portWaypoint]);
         console.log("  ✅ Local OSRM port area route successful");
       } catch (error) {
         console.log(
@@ -5726,11 +4691,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       console.log("  Trying downtown coastal route via local OSRM...");
       const downtownCoastal = { lat: 6.91, lng: 122.072 }; // Downtown coastal
       try {
-        riskyRoute = await getLocalOSRMRouteWithWaypoint(
-          start,
-          downtownCoastal,
-          end
-        );
+        riskyRoute = await getLocalOSRMRoute(start, end, [downtownCoastal]);
         console.log("  ✅ Local OSRM downtown coastal route successful");
       } catch (error) {
         console.log(
@@ -5743,11 +4704,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       console.log("  Trying southern coastal area via local OSRM...");
       const southernCoastal = { lat: 6.9, lng: 122.065 }; // Southern coastal area (low elevation)
       try {
-        riskyRoute = await getLocalOSRMRouteWithWaypoint(
-          start,
-          southernCoastal,
-          end
-        );
+        riskyRoute = await getLocalOSRMRoute(start, end, [southernCoastal]);
         console.log("  ✅ Local OSRM southern coastal route successful");
       } catch (error) {
         console.log(
@@ -6309,7 +5266,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   ): Promise<RouteDetails> => {
     try {
       console.log(
-        "🚀 Generating multiple route alternatives with risk analysis..."
+        "🚀 HYBRID ROUTING: Calling backend for OSRM routes + flood analysis..."
       );
       console.log("📍 DEBUG: Input coordinates:");
       console.log(`   Start: lat=${start.lat}, lng=${start.lng}`);
@@ -6340,1442 +5297,105 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         );
       }
 
-      // Try backend route API first, fallback to OSRM if it fails
-      let routes: any[] = [];
-      let routeAnalyses: any[] = [];
-
+      // Call backend hybrid endpoint that uses OSRM + flood analysis
       try {
-        // First try the local routing service on port 8001 (with GeoJSON road data)
-        console.log(
-          "🚀 Trying local routing service with GeoJSON road data..."
+        console.log("🌐 Fetching hybrid routes from backend...");
+        const response = await fetch(
+          `${BACKEND_URL}/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`
         );
-        const localRoute = await getLocalRoutingServiceRoute(start, end);
 
-        // Handle both local routing format and OSRM fallback format
-        let waypoints = [];
-        let distance = 0;
-        let duration = 0;
-
-        if (localRoute && localRoute.route && localRoute.route.length > 0) {
-          console.log("✅ Got route from local routing service!");
-
-          // Convert the route points to waypoints format
-          waypoints = localRoute.route.map((point: any) => ({
-            lat: point.lat,
-            lng: point.lng,
-          }));
-          distance = localRoute.distance || 0;
-          duration = localRoute.duration || 0;
-        } else if (
-          localRoute &&
-          localRoute.routes &&
-          localRoute.routes.length > 0
-        ) {
-          console.log(
-            `✅ Got ${localRoute.routes.length} route(s) from OSRM fallback service!`
-          );
-
-          // Handle OSRM format with multiple routes if available
-          if (localRoute.routes.length >= 3) {
-            console.log("🎯 Using 3 different OSRM alternative routes");
-            // Use the first 3 routes as different alternatives
-            const route1 = localRoute.routes[0];
-            const route2 = localRoute.routes[1];
-            const route3 = localRoute.routes[2];
-
-            // Will be processed separately below for each route type
-          } else {
-            console.log(
-              "⚠️ Only got 1-2 routes, will create variations of the main route"
-            );
-            // Use first route and create variations
-            const route = localRoute.routes[0];
-            waypoints = route.geometry.coordinates.map((coord: any) => ({
-              lat: coord[1],
-              lng: coord[0],
-            }));
-            distance = (route.distance || 0) / 1000; // Convert from meters to km
-            duration = (route.duration || 0) / 60; // Convert from seconds to minutes
-          }
+        if (!response.ok) {
+          throw new Error(`Backend returned ${response.status}: ${response.statusText}`);
         }
 
-        // Create route objects based on available data
-        let safeRoute: FloodRoute;
-        let manageableRoute: FloodRoute;
-        let proneRoute: FloodRoute;
+        const data = await response.json();
+        console.log("✅ Got hybrid routing response:", data);
 
-        // Handle multiple OSRM routes if available
-        if (localRoute && localRoute.routes && localRoute.routes.length >= 3) {
-          console.log("🎯 Using 3 different OSRM alternative routes");
-
-          // Route 1: Safe (best/fastest route)
-          const route1 = localRoute.routes[0];
-          const waypoints1 = route1.geometry.coordinates.map((coord: any) => ({
-            lat: coord[1],
-            lng: coord[0],
-          }));
-          safeRoute = {
-            waypoints: waypoints1,
-            distance: `${((route1.distance || 0) / 1000).toFixed(1)} km`,
-            time: `${((route1.duration || 0) / 60).toFixed(0)} min`,
-            riskLevel: "Safe Route",
-            floodRisk: "safe",
-            color: "#27ae60",
-            description: "Recommended safe route (fastest)",
-          };
-
-          // Route 2: Manageable (alternative route)
-          const route2 = localRoute.routes[1];
-          const waypoints2 = route2.geometry.coordinates.map((coord: any) => ({
-            lat: coord[1],
-            lng: coord[0],
-          }));
-          manageableRoute = {
-            waypoints: waypoints2,
-            distance: `${((route2.distance || 0) / 1000).toFixed(1)} km`,
-            time: `${((route2.duration || 0) / 60).toFixed(0)} min`,
-            riskLevel: "Manageable Risk",
-            floodRisk: "manageable",
-            color: "#f39c12",
-            description: "Alternative route with manageable risk",
-          };
-
-          // Route 3: High Risk (third alternative)
-          const route3 = localRoute.routes[2];
-          const waypoints3 = route3.geometry.coordinates.map((coord: any) => ({
-            lat: coord[1],
-            lng: coord[0],
-          }));
-          proneRoute = {
-            waypoints: waypoints3,
-            distance: `${((route3.distance || 0) / 1000).toFixed(1)} km`,
-            time: `${((route3.duration || 0) / 60).toFixed(0)} min`,
-            riskLevel: "High Risk",
-            floodRisk: "prone",
-            color: "#e74c3c",
-            description: "High risk alternative route",
-          };
-
-          console.log(
-            `📍 Using 3 different routes: Safe(${waypoints1.length} pts), Manageable(${waypoints2.length} pts), Prone(${waypoints3.length} pts)`
-          );
-        } else if (waypoints.length > 0) {
-          console.log(
-            `📍 Using single route with variations: ${
-              waypoints.length
-            } waypoints, ${distance.toFixed(1)}km, ${duration.toFixed(0)}min`
-          );
-
-          // Create route objects for each risk level with the same waypoints but different styling
-          safeRoute = {
-            waypoints,
-            distance: `${distance.toFixed(1)} km`,
-            time: `${duration.toFixed(0)} min`,
-            riskLevel: "Safe Route",
-            floodRisk: "safe",
-            color: "#27ae60",
-            description: "Recommended safe route using local road data",
-          };
-
-          manageableRoute = {
-            waypoints,
-            distance: `${distance.toFixed(1)} km`,
-            time: `${(duration * 1.2).toFixed(0)} min`,
-            riskLevel: "Manageable Risk",
-            floodRisk: "manageable",
-            color: "#f39c12",
-            description: "Alternative route with manageable flood risk",
-          };
-
-          proneRoute = {
-            waypoints,
-            distance: `${distance.toFixed(1)} km`,
-            time: `${(duration * 1.5).toFixed(0)} min`,
-            riskLevel: "High Risk",
-            floodRisk: "prone",
-            color: "#e74c3c",
-            description: "High risk route - use with caution during floods",
-          };
-        } else {
-          // No valid routes found, continue to fallback
-          console.log("❌ No valid routes found from local service");
+        if (!data.routes || data.routes.length === 0) {
+          throw new Error("Backend returned no routes");
         }
 
-        // Return routes if we have them
-        if (safeRoute && manageableRoute && proneRoute) {
+        if (!data.analyses || data.analyses.length === 0) {
+          throw new Error("Backend returned no flood analyses");
+        }
+
+        // Extract routes and analyses
+        const routes = data.routes;
+        const analyses = data.analyses;
+
+        console.log(`📊 Processing ${routes.length} routes with flood analysis...`);
+
+        // Convert routes to waypoints
+        const routeDetails = routes.map((route: any, index: number) => {
+          const coords = route.geometry?.coordinates || [];
+          const waypoints = coords.map((coord: number[]) => ({
+            lat: coord[1],
+            lng: coord[0]
+          }));
+
+          const analysis = analyses[index] || {};
+          
           return {
-            safeRoute,
-            manageableRoute,
-            proneRoute,
-            startName: selectedStartLocation?.display_name || "Start Point",
-            endName: selectedEndLocation?.display_name || "End Point",
+            waypoints,
+            distance: `${((route.distance || 0) / 1000).toFixed(1)} km`,
+            time: `${Math.round((route.duration || 0) / 60)} min`,
+            floodPercentage: analysis.flooded_percentage || 0,
+            floodedDistance: analysis.flooded_distance_m || 0,
+            safeDistance: analysis.safe_distance_m || 0,
+            segmentsAnalyzed: analysis.segments_analyzed || 0,
+            riskLevel: analysis.risk_level || "unknown",
+            description: analysis.description || "Route analysis unavailable"
           };
-        }
+        });
 
-        // Fallback to the original backend service if local routing fails
-        console.log(
-          "⚠️ Local routing service failed, falling back to backend service..."
-        );
-        console.log(
-          `🌐 Calling route API: ${BACKEND_URL}/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`
-        );
+        // Find routes by classification (safe, manageable, prone)
+        const safeRoute = routeDetails.find((r: any) => r.riskLevel === "safe") || routeDetails[0];
+        const manageableRoute = routeDetails.find((r: any) => r.riskLevel === "manageable") || routeDetails[1] || routeDetails[0];
+        const proneRoute = routeDetails.find((r: any) => r.riskLevel === "prone") || routeDetails[2] || routeDetails[0];
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+        console.log("✅ Route classification:");
+        console.log(`  Safe: ${safeRoute.floodPercentage?.toFixed(1)}% flooded`);
+        console.log(`  Manageable: ${manageableRoute.floodPercentage?.toFixed(1)}% flooded`);
+        console.log(`  Prone: ${proneRoute.floodPercentage?.toFixed(1)}% flooded`);
 
-        const routeResponse = await fetch(
-          `${BACKEND_URL}/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`,
-          {
-            signal: controller.signal,
-            headers: {
-              "Content-Type": "application/json",
-            },
-          }
-        );
-
-        clearTimeout(timeoutId);
-
-        if (!routeResponse.ok) {
-          throw new Error(
-            `Route API failed with status: ${routeResponse.status}`
-          );
-        }
-
-        const routeData = await routeResponse.json();
-        console.log("Route API response:", routeData);
-        routes = routeData.routes || [];
-        routeAnalyses = routeData.analyses || [];
-
-        if (routes.length === 0) {
-          throw new Error("No routes found from backend API");
-        }
-
-        console.log(`Got ${routes.length} route alternatives from backend API`);
-      } catch (backendError) {
-        console.warn(
-          "Backend route API failed, using OSRM fallback:",
-          backendError
-        );
-
-        // Fallback to OSRM routing
-        try {
-          console.log("Attempting fallback to direct OSRM route...");
-          const directRoute = await getRouteFromAPI(start, end);
-          if (directRoute.length > 0) {
-            routes = [directRoute];
-
-            // Generate 2 alternative routes with waypoints for variety
-            const alternatives = await getAlternativeRoutesFromAPI(start, end);
-            routes = [...routes, ...alternatives.routes].slice(0, 3);
-            console.log(
-              `Generated ${routes.length} routes using OSRM fallback`
-            );
-          } else {
-            throw new Error("OSRM also returned empty route");
-          }
-        } catch (osrmError) {
-          console.error("OSRM fallback also failed:", osrmError);
-          // Use simple direct route as absolute last resort
-          routes = [[start, end]];
-          console.log("Using simple direct route as last resort");
-        }
-      }
-
-      // Generate distinct routes using terrain-aware routing
-      console.log("Generating 3 distinct routes with terrain-aware routing...");
-
-      // Use terrain-aware routing for different priority modes
-      console.log(
-        `🚀 Generating terrain-aware routes from ${start.lat},${start.lng} to ${end.lat},${end.lng}`
-      );
-      console.log(
-        `📊 Route bounds check: Start in bounds? ${
-          start.lat >= 6.8 &&
-          start.lat <= 7.2 &&
-          start.lng >= 122.0 &&
-          start.lng <= 122.3
-        }`
-      );
-      console.log(
-        `📊 Route bounds check: End in bounds? ${
-          end.lat >= 6.8 &&
-          end.lat <= 7.2 &&
-          end.lng >= 122.0 &&
-          end.lng <= 122.3
-        }`
-      );
-
-      // Add timeout wrapper for route calculations to prevent hanging
-      const calculateRouteWithTimeout = async (
-        start: LatLng,
-        end: LatLng,
-        profile: string,
-        timeoutMs: number = 3000
-      ) => {
-        try {
-          return await Promise.race([
-            localRoutingService.calculateRoute(
-              start.lat,
-              start.lng,
-              end.lat,
-              end.lng
-            ),
-            new Promise<never>((_, reject) =>
-              setTimeout(
-                () =>
-                  reject(
-                    new Error(`Route calculation timeout after ${timeoutMs}ms`)
-                  ),
-                timeoutMs
-              )
-            ),
-          ]);
-        } catch (error) {
-          console.warn(`Route calculation failed for ${profile}:`, error);
-          return null;
-        }
-      };
-
-      console.log(
-        "🚀 Attempting terrain-aware route calculations with terrain scoring..."
-      );
-
-      const terrainRouteStats: Record<
-        "safe" | "manageable" | "flood_prone",
-        RouteTerrainStats | null
-      > = {
-        safe: null,
-        manageable: null,
-        flood_prone: null,
-      };
-
-      const safeTerrainWaypoints = await getTerrainAwareRoute(
-        start,
-        end,
-        "safe",
-        { excludeRoadIds: distinctRouteRoadIds }
-      );
-
-      if (
-        terrainRoadsData &&
-        safeTerrainWaypoints &&
-        safeTerrainWaypoints.length >= 2
-      ) {
-        const stats = computeRouteTerrainStats(
-          safeTerrainWaypoints,
-          terrainRoadsData.features,
-          terrainRoadsMetaRef.current,
-          terrainSpatialIndexRef.current
-        );
-        if (stats) {
-          terrainRouteStats.safe = stats;
-          stats.usedRoadIds.forEach((id) => distinctRouteRoadIds.add(id));
-        }
-      }
-
-      const manageableTerrainWaypoints = await getTerrainAwareRoute(
-        start,
-        end,
-        "manageable",
-        { excludeRoadIds: distinctRouteRoadIds }
-      );
-
-      if (
-        terrainRoadsData &&
-        manageableTerrainWaypoints &&
-        manageableTerrainWaypoints.length >= 2
-      ) {
-        const stats = computeRouteTerrainStats(
-          manageableTerrainWaypoints,
-          terrainRoadsData.features,
-          terrainRoadsMetaRef.current,
-          terrainSpatialIndexRef.current
-        );
-        if (stats) {
-          terrainRouteStats.manageable = stats;
-          stats.usedRoadIds.forEach((id) => distinctRouteRoadIds.add(id));
-        }
-      }
-
-      const floodProneTerrainWaypoints = await getTerrainAwareRoute(
-        start,
-        end,
-        "flood_prone",
-        { excludeRoadIds: distinctRouteRoadIds }
-      );
-
-      if (
-        terrainRoadsData &&
-        floodProneTerrainWaypoints &&
-        floodProneTerrainWaypoints.length >= 2
-      ) {
-        const stats = computeRouteTerrainStats(
-          floodProneTerrainWaypoints,
-          terrainRoadsData.features,
-          terrainRoadsMetaRef.current,
-          terrainSpatialIndexRef.current
-        );
-        if (stats) {
-          terrainRouteStats.flood_prone = stats;
-          stats.usedRoadIds.forEach((id) => distinctRouteRoadIds.add(id));
-        }
-      }
-
-      const terrainCandidates = [
-        { routeType: "safe" as const, waypoints: safeTerrainWaypoints },
-        {
-          routeType: "manageable" as const,
-          waypoints: manageableTerrainWaypoints,
-        },
-        {
-          routeType: "flood_prone" as const,
-          waypoints: floodProneTerrainWaypoints,
-        },
-      ].filter(
-        (candidate) => candidate.waypoints && candidate.waypoints.length >= 2
-      );
-
-      console.log(
-        `🧭 Terrain candidates generated: ${terrainCandidates.length}`
-      );
-
-      const distinctTerrainCandidates: {
-        routeType: "safe" | "manageable" | "flood_prone";
-        waypoints: LatLng[];
-        forced?: boolean;
-      }[] = [];
-
-      for (const candidate of terrainCandidates) {
-        let overlappingWith: (typeof distinctTerrainCandidates)[number] | null =
-          null;
-
-        for (const existing of distinctTerrainCandidates) {
-          const overlap = calculateOverlapRatio(
-            existing.waypoints,
-            candidate.waypoints
-          );
-          if (overlap > 0.55) {
-            overlappingWith = existing;
-            break;
-          }
-        }
-
-        if (overlappingWith) {
-          console.log(
-            `⚠️ Terrain candidate for ${candidate.routeType} overlapped ${overlappingWith.routeType}, forcing separation`
-          );
-          const multiplier =
-            candidate.routeType === "manageable"
-              ? 1.8
-              : candidate.routeType === "flood_prone"
-              ? 2.3
-              : 1.4;
-          const separatedWaypoints = forceRouteSeparationEnhanced(
-            overlappingWith.waypoints,
-            candidate.waypoints,
-            start,
-            end,
-            candidate.routeType,
-            multiplier
-          );
-          distinctTerrainCandidates.push({
-            ...candidate,
-            waypoints: separatedWaypoints,
-            forced: true,
-          });
-        } else {
-          distinctTerrainCandidates.push(candidate);
-        }
-      }
-
-      if (distinctTerrainCandidates.length > 0) {
-        const enrichedTerrainRoutes = await Promise.all(
-          distinctTerrainCandidates.map(async (candidate) => {
-            const distanceKm = calculateRouteDistance(candidate.waypoints);
-            const analysis = await analyzeRouteElevation(candidate.waypoints);
-            const elevationData = new Map<string, number>();
-            const rawRisk = calculateDetailedRiskScore(
-              candidate.waypoints,
-              analysis,
-              elevationData
-            );
-
-            let normalizedRisk = rawRisk;
-            if (candidate.routeType === "safe") {
-              normalizedRisk = Math.min(rawRisk, 3.5);
-            } else if (candidate.routeType === "manageable") {
-              normalizedRisk = Math.max(4.5, Math.min(rawRisk, 6.5));
-            } else {
-              normalizedRisk = Math.max(7.0, Math.min(rawRisk, 9.0));
-            }
-
-            const averageSpeedKmH =
-              candidate.routeType === "safe"
-                ? 38
-                : candidate.routeType === "manageable"
-                ? 34
-                : 28;
-
-            return {
-              geometry: {
-                coordinates: candidate.waypoints.map((wp) => [wp.lng, wp.lat]),
-              },
-              distance: Math.round(distanceKm * 1000),
-              duration: Math.max(
-                420,
-                Math.round((distanceKm / averageSpeedKmH) * 3600)
-              ),
-              routeType: candidate.routeType,
-              riskScore: Number(normalizedRisk.toFixed(2)),
-              terrainAnalysis: analysis,
-              waypointSource: candidate.forced ? "forced" : "terrain",
-            };
-          })
-        );
-
-        routes = enrichedTerrainRoutes;
-        console.log(
-          `🛣️ Built ${routes.length} terrain-scored candidate routes from GeoJSON`
-        );
-      } else {
-        console.log(
-          "⚠️ No terrain-scored candidates produced, retaining backend routes"
-        );
-      }
-
-      if (!Array.isArray(routes)) {
-        routes = [];
-      }
-
-      const fallbackBlueprints = [
-        {
-          routeType: "safe" as const,
-          waypoints: [start, end],
-          riskScore: 3.2,
-          speed: 36,
-        },
-        {
-          routeType: "manageable" as const,
-          waypoints: [
-            start,
-            clampPointToBounds(
-              {
-                lat: Math.min(
-                  7.04,
-                  Math.max(6.88, (start.lat + end.lat) / 2 + 0.006)
-                ),
-                lng: Math.max(
-                  122.03,
-                  Math.min(122.12, (start.lng + end.lng) / 2 - 0.02)
-                ),
-              },
-              SAFE_CITY_BOUNDS
-            ),
-            end,
-          ],
-          riskScore: 5.8,
-          speed: 32,
-        },
-        {
-          routeType: "flood_prone" as const,
-          waypoints: [
-            start,
-            clampPointToBounds(
-              {
-                lat: Math.max(
-                  6.87,
-                  Math.min(7.02, (start.lat + end.lat) / 2 - 0.02)
-                ),
-                lng: Math.max(
-                  122.02,
-                  Math.min(122.14, (start.lng + end.lng) / 2 - 0.03)
-                ),
-              },
-              SAFE_CITY_BOUNDS
-            ),
-            end,
-          ],
-          riskScore: 7.6,
-          speed: 26,
-        },
-      ];
-
-      const existingTypes = new Set(
-        routes
-          .map((route: any) =>
-            typeof route.routeType === "string" ? route.routeType : null
-          )
-          .filter(Boolean)
-      );
-
-      for (const blueprint of fallbackBlueprints) {
-        if (existingTypes.has(blueprint.routeType)) {
-          continue;
-        }
-
-        const distanceKm = calculateRouteDistance(blueprint.waypoints);
-        routes.push({
-          geometry: {
-            coordinates: blueprint.waypoints.map((wp) => [wp.lng, wp.lat]),
+        return {
+          safeRoute: {
+            waypoints: safeRoute.waypoints,
+            distance: safeRoute.distance,
+            time: safeRoute.time,
+            riskLevel: "Safe Route",
+            floodRisk: "safe",
+            color: "#27ae60",
+            description: `${safeRoute.floodPercentage?.toFixed(1)}% flooded (${(safeRoute.floodedDistance / 1000).toFixed(2)} km)`,
           },
-          distance: Math.round(distanceKm * 1000),
-          duration: Math.max(
-            420,
-            Math.round((distanceKm / blueprint.speed) * 3600)
-          ),
-          routeType: blueprint.routeType,
-          riskScore: blueprint.riskScore,
-          waypointSource: "fallback",
-        });
-        existingTypes.add(blueprint.routeType);
-      }
-
-      console.log(`Generated ${routes.length} terrain-informed routes`);
-
-      if (routes.length > 3) {
-        routes = routes.slice(0, 3);
-      }
-
-      routes = routes.slice(0, 5);
-
-      // Process each route with DISTINCT risk characteristics
-      const processedRoutes = await Promise.all(
-        routes.map(async (route: any, index: number) => {
-          try {
-            console.log(`📍 Analyzing risk for route ${index + 1}...`);
-
-            // Ensure route has proper structure
-            let routeCoordinates;
-            if (route.geometry && route.geometry.coordinates) {
-              routeCoordinates = route.geometry.coordinates;
-            } else if (Array.isArray(route) && route.length > 0) {
-              // Handle array of coordinate objects
-              routeCoordinates = route.map((point: any) => [
-                point.lng,
-                point.lat,
-              ]);
-            } else {
-              throw new Error(`Invalid route structure for route ${index + 1}`);
-            }
-
-            console.log(`🗺️ Route ${index + 1} coordinates:`, {
-              totalPoints: routeCoordinates.length,
-              firstPoint: routeCoordinates[0],
-              lastPoint: routeCoordinates[routeCoordinates.length - 1],
-              midPoint:
-                routeCoordinates[Math.floor(routeCoordinates.length / 2)],
-            });
-
-            // Basic route data with fallback values
-            const routeDistance =
-              typeof route.distance === "number"
-                ? route.distance
-                : 5000 + index * 2000;
-            const routeDuration =
-              typeof route.duration === "number"
-                ? route.duration
-                : 600 + index * 300;
-
-            // Determine route type and risk score using provided metadata when possible
-            let routeType: "safe" | "manageable" | "flood_prone";
-            if (
-              typeof route.routeType === "string" &&
-              (route.routeType === "safe" ||
-                route.routeType === "manageable" ||
-                route.routeType === "flood_prone")
-            ) {
-              routeType = route.routeType;
-            } else {
-              routeType =
-                index === 0
-                  ? "safe"
-                  : index === 1
-                  ? "manageable"
-                  : "flood_prone";
-            }
-
-            let riskScore =
-              typeof route.riskScore === "number" ? route.riskScore : undefined;
-
-            if (riskScore === undefined) {
-              if (routeType === "safe") {
-                riskScore = 2.8 + Math.random() * 0.9;
-              } else if (routeType === "manageable") {
-                riskScore = 4.9 + Math.random() * 1.1;
-              } else {
-                riskScore = 7.3 + Math.random() * 1.0;
-              }
-              console.log(
-                `ℹ️ Derived ${routeType} risk from fallback range: ${riskScore.toFixed(
-                  2
-                )}`
-              );
-            } else {
-              console.log(
-                `✅ Using provided ${routeType} risk score: ${riskScore.toFixed(
-                  2
-                )}`
-              );
-            }
-
-            return {
-              id: index + 1,
-              routeType,
-              waypoints: routeCoordinates.map((coord: number[]) => ({
-                lat: coord[1],
-                lng: coord[0],
-              })),
-              distance: (routeDistance / 1000).toFixed(1),
-              duration: Math.ceil(routeDuration / 60),
-              riskScore: riskScore, // Distinct risk scores
-              warnings: [],
-              originalRoute: route,
-            };
-          } catch (error) {
-            console.warn(
-              `Failed to process route ${index + 1}, using fallback:`,
-              error
-            );
-
-            // Create DISTINCT fallback routes
-            const cityCenter = { lat: 6.9214, lng: 122.079 };
-            const coastalPoint = { lat: 6.9056, lng: 122.0756 };
-
-            let fallbackWaypoints;
-            let fallbackRisk;
-            let fallbackDistance;
-
-            if (index === 0) {
-              // Direct route - safest
-              fallbackWaypoints = [start, end];
-              fallbackRisk = 3.0;
-              fallbackDistance = 5;
-            } else if (index === 1) {
-              // City center route - manageable
-              fallbackWaypoints = [start, cityCenter, end];
-              fallbackRisk = 5.5;
-              fallbackDistance = 7;
-            } else {
-              // Coastal route - flood prone
-              fallbackWaypoints = [start, coastalPoint, end];
-              fallbackRisk = 7.5;
-              fallbackDistance = 8;
-            }
-
-            return {
-              id: index + 1,
-              routeType:
-                index === 0
-                  ? "safe"
-                  : index === 1
-                  ? "manageable"
-                  : "flood_prone",
-              waypoints: fallbackWaypoints,
-              distance: fallbackDistance.toFixed(1),
-              duration: Math.ceil(fallbackDistance * 2), // 2 min per km
-              riskScore: fallbackRisk, // Distinct risk scores
-              warnings: [`Route ${index + 1}: Using fallback data`],
-              originalRoute: route,
-            };
-          }
-        })
-      );
-
-      console.log(
-        `Processed ${processedRoutes.length} routes, sorting by risk...`
-      );
-
-      // Filter out any invalid routes and ensure all have riskScore
-      const validRoutes = processedRoutes.filter(
-        (route) =>
-          route &&
-          typeof route.riskScore === "number" &&
-          !isNaN(route.riskScore) &&
-          route.waypoints &&
-          route.waypoints.length >= 2
-      );
-
-      if (validRoutes.length === 0) {
-        throw new Error("No valid routes generated");
-      }
-
-      const distinctRoutes = await enforceDistinctRoutes(
-        start,
-        end,
-        validRoutes
-      );
-
-      // Sort routes by risk score (lowest to highest - safest first)
-      const sortedRoutes = [...distinctRoutes].sort((a, b) => {
-        const riskA = typeof a.riskScore === "number" ? a.riskScore : 5.0;
-        const riskB = typeof b.riskScore === "number" ? b.riskScore : 5.0;
-        return riskA - riskB;
-      });
-
-      const ensureRouteForType = (
-        routeType: "safe" | "manageable" | "flood_prone"
-      ) => {
-        if (sortedRoutes.some((route) => route.routeType === routeType)) {
-          return;
-        }
-
-        const referenceRoute = sortedRoutes[0];
-        const multiplier =
-          routeType === "manageable"
-            ? 1.6
-            : routeType === "flood_prone"
-            ? 2.0
-            : 1.2;
-
-        const forcedWaypoints = forceRouteSeparationEnhanced(
-          referenceRoute.waypoints,
-          referenceRoute.waypoints,
-          start,
-          end,
-          routeType,
-          multiplier
-        );
-
-        sortedRoutes.push({
-          ...referenceRoute,
-          id: sortedRoutes.length + 1,
-          routeType,
-          waypoints: forcedWaypoints,
-          riskScore:
-            routeType === "safe"
-              ? Math.min(referenceRoute.riskScore, 3.2)
-              : routeType === "manageable"
-              ? referenceRoute.riskScore + 1.5
-              : referenceRoute.riskScore + 3,
-          warnings: [
-            ...referenceRoute.warnings,
-            `Generated fallback ${routeType.replace(
-              "_",
-              " "
-            )} route for coverage`,
-          ],
-        });
-      };
-
-      ensureRouteForType("safe");
-      ensureRouteForType("manageable");
-      ensureRouteForType("flood_prone");
-
-      // SMART ROUTE ASSIGNMENT: Safe route should be shortest/fastest
-      sortedRoutes.sort((a, b) => {
-        // Calculate route distance (rough estimate from waypoint count)
-        const aDistance = a.waypoints?.length || 0;
-        const bDistance = b.waypoints?.length || 0;
-
-        // Primary sort: shorter routes first (for safe route)
-        if (Math.abs(aDistance - bDistance) > 50) {
-          return aDistance - bDistance;
-        }
-
-        // Secondary sort: lower risk score for similar distances
-        return a.riskScore - b.riskScore;
-      });
-
-      // FORCE DISTINCT risk levels and ensure proper ordering
-      sortedRoutes[0].riskScore = Math.min(3.5, sortedRoutes[0].riskScore); // Force safest
-      if (sortedRoutes.length > 1) {
-        sortedRoutes[1].riskScore = Math.max(
-          4.5,
-          Math.min(6.5, sortedRoutes[1].riskScore)
-        ); // Force manageable
-      }
-      if (sortedRoutes.length > 2) {
-        sortedRoutes[2].riskScore = Math.max(7.0, sortedRoutes[2].riskScore); // Force flood prone
-      }
-
-      // Assign the three main routes for display with GUARANTEED distinct characteristics
-      const safeRoute = sortedRoutes[0];
-      let midRoute = sortedRoutes[Math.min(1, sortedRoutes.length - 1)];
-      let riskRoute = sortedRoutes[Math.min(2, sortedRoutes.length - 1)];
-
-      // CRITICAL FIX: Always use the original distinct routes from generateDistinctRoutes
-      // These routes were specifically designed to be different from each other
-      console.log(
-        "🔧 Ensuring route distinctness using original generated routes..."
-      );
-
-      // Map the sorted routes to the original distinct routes by type
-      if (routes.length >= 3) {
-        // Use the original routes in their intended order for maximum distinctness
-        const originalSafeRoute = routes.find(
-          (r) => (r as any)?.type === "safe_terrain"
-        );
-        const originalModerateRoute = routes.find(
-          (r) => (r as any)?.type === "manageable_terrain"
-        );
-        const originalRiskyRoute = routes.find(
-          (r) => (r as any)?.type === "flood_prone_terrain"
-        );
-
-        if (originalSafeRoute && originalModerateRoute && originalRiskyRoute) {
-          console.log(
-            "✅ Found all 3 distinct original routes - using them directly"
-          );
-          safeRoute.waypoints = (originalSafeRoute as any)?.waypoints || [];
-          midRoute.waypoints = (originalModerateRoute as any)?.waypoints || [];
-          riskRoute.waypoints = (originalRiskyRoute as any)?.waypoints || [];
-        } else {
-          console.log(
-            "⚠️ Some original routes missing, using fallback logic with distinctness check"
-          );
-
-          // BETTER FALLBACK: Ensure we don't assign identical routes
-          const usedRoutes = new Set<string>();
-
-          // Helper to get route signature for uniqueness checking
-          const getRouteSignature = (route: LatLng[]) => {
-            if (!route || route.length < 5) return "empty";
-            const mid = Math.floor(route.length / 2);
-            return `${route[0].lat.toFixed(6)},${route[0].lng.toFixed(
-              6
-            )}-${route[mid].lat.toFixed(6)},${route[mid].lng.toFixed(
-              6
-            )}-${route[route.length - 1].lat.toFixed(6)},${route[
-              route.length - 1
-            ].lng.toFixed(6)}`;
-          };
-
-          // Assign routes ensuring distinctness
-          for (let i = 0; i < routes.length && i < 3; i++) {
-            if (Array.isArray(routes[i]) && routes[i].length > 10) {
-              const signature = getRouteSignature(routes[i]);
-
-              if (!usedRoutes.has(signature)) {
-                if (!safeRoute.waypoints || safeRoute.waypoints.length < 10) {
-                  safeRoute.waypoints = routes[i];
-                  usedRoutes.add(signature);
-                  console.log(
-                    `  Assigned route ${i} to SAFE (${routes[i].length} waypoints)`
-                  );
-                } else if (
-                  !midRoute.waypoints ||
-                  midRoute.waypoints.length < 10
-                ) {
-                  midRoute.waypoints = routes[i];
-                  usedRoutes.add(signature);
-                  console.log(
-                    `  Assigned route ${i} to MANAGEABLE (${routes[i].length} waypoints)`
-                  );
-                } else if (
-                  !riskRoute.waypoints ||
-                  riskRoute.waypoints.length < 10
-                ) {
-                  riskRoute.waypoints = routes[i];
-                  usedRoutes.add(signature);
-                  console.log(
-                    `  Assigned route ${i} to RISK (${routes[i].length} waypoints)`
-                  );
-                }
-              } else {
-                console.log(
-                  `  Skipped route ${i} - identical to already assigned route`
-                );
-              }
-            }
-          }
-        }
-      }
-
-      // Final check: if routes are still identical, force alternative paths
-      // Improved distinctness check: Compare middle sections instead of start/end
-      const getMiddleSection = (waypoints: LatLng[], sampleSize = 5) => {
-        if (!waypoints || waypoints.length < 10) return waypoints;
-        const start = Math.floor(waypoints.length * 0.3); // Start at 30% of route
-        const end = Math.floor(waypoints.length * 0.7); // End at 70% of route
-        return waypoints.slice(start, start + sampleSize);
-      };
-
-      const safeMiddle = getMiddleSection(safeRoute.waypoints);
-      const midMiddle = getMiddleSection(midRoute.waypoints);
-      const riskMiddle = getMiddleSection(riskRoute.waypoints);
-
-      const safeWaypointsCheck = JSON.stringify(safeMiddle);
-      const midWaypointsCheck = JSON.stringify(midMiddle);
-      const riskWaypointsCheck = JSON.stringify(riskMiddle);
-
-      // Calculate route separation percentages
-      const calculateSeparation = (route1: LatLng[], route2: LatLng[]) => {
-        if (!route1 || !route2 || route1.length < 5 || route2.length < 5)
-          return 0;
-        const samples = Math.min(route1.length, route2.length, 10);
-        let separationSum = 0;
-
-        for (let i = 0; i < samples; i++) {
-          const idx1 = Math.floor((i / samples) * route1.length);
-          const idx2 = Math.floor((i / samples) * route2.length);
-          const distance =
-            Math.sqrt(
-              Math.pow(route1[idx1].lat - route2[idx2].lat, 2) +
-                Math.pow(route1[idx1].lng - route2[idx2].lng, 2)
-            ) * 111000; // Rough conversion to meters
-          separationSum += distance;
-        }
-
-        return separationSum / samples;
-      };
-
-      const safeMidSeparation = calculateSeparation(
-        safeRoute.waypoints,
-        midRoute.waypoints
-      );
-      const safeRiskSeparation = calculateSeparation(
-        safeRoute.waypoints,
-        riskRoute.waypoints
-      );
-      const midRiskSeparation = calculateSeparation(
-        midRoute.waypoints,
-        riskRoute.waypoints
-      );
-
-      console.log(`🔍 Route separation analysis:
-        Safe ↔ Mid: ${safeMidSeparation.toFixed(0)}m avg separation
-        Safe ↔ Risk: ${safeRiskSeparation.toFixed(0)}m avg separation  
-        Mid ↔ Risk: ${midRiskSeparation.toFixed(0)}m avg separation`);
-
-      // Only create forced alternatives if routes are REALLY too close (< 500m average separation)
-      const minSeparation = Math.min(
-        safeMidSeparation,
-        safeRiskSeparation,
-        midRiskSeparation
-      );
-
-      // Check route overlap percentage as well
-      const calculateRouteOverlap = (route1: LatLng[], route2: LatLng[]) => {
-        if (!route1 || !route2 || route1.length < 5 || route2.length < 5)
-          return 0;
-
-        const samplePoints = Math.min(route1.length, route2.length, 20);
-        let overlapCount = 0;
-        const overlapThreshold = 100; // meters - points closer than this are considered overlapping
-
-        for (let i = 0; i < samplePoints; i++) {
-          const idx1 = Math.floor((i / samplePoints) * route1.length);
-          const idx2 = Math.floor((i / samplePoints) * route2.length);
-
-          const distance =
-            Math.sqrt(
-              Math.pow(route1[idx1].lat - route2[idx2].lat, 2) +
-                Math.pow(route1[idx1].lng - route2[idx2].lng, 2)
-            ) * 111000; // Convert to meters
-
-          if (distance < overlapThreshold) {
-            overlapCount++;
-          }
-        }
-
-        return (overlapCount / samplePoints) * 100;
-      };
-
-      // Analyze route overlaps
-      const safeVsMid = calculateRouteOverlap(
-        safeRoute.waypoints,
-        midRoute.waypoints
-      );
-      const safeVsRisk = calculateRouteOverlap(
-        safeRoute.waypoints,
-        riskRoute.waypoints
-      );
-      const midVsRisk = calculateRouteOverlap(
-        midRoute.waypoints,
-        riskRoute.waypoints
-      );
-
-      const maxOverlap = Math.max(safeVsMid, safeVsRisk, midVsRisk);
-
-      console.log(`🔍 Route separation analysis:
-        Safe ↔ Mid: ${safeMidSeparation.toFixed(
-          0
-        )}m avg separation (${safeVsMid.toFixed(1)}% overlap)
-        Safe ↔ Risk: ${safeRiskSeparation.toFixed(
-          0
-        )}m avg separation (${safeVsRisk.toFixed(1)}% overlap)
-        Mid ↔ Risk: ${midRiskSeparation.toFixed(
-          0
-        )}m avg separation (${midVsRisk.toFixed(1)}% overlap)`);
-
-      // Routes need BOTH good distance separation AND low overlap
-      // EXTREMELY strict validation - reject routes with >30% overlap or <600m separation
-      const needsForcing = minSeparation < 600 || maxOverlap > 30;
-
-      if (needsForcing) {
-        console.log(
-          `🚨 FORCING ROUTE SEPARATION - Min separation: ${minSeparation.toFixed(
-            0
-          )}m, Max overlap: ${maxOverlap.toFixed(1)}%`
-        );
-
-        // Force EXTREMELY different routes with multiple strategies
-        if (safeMidSeparation < 500 || safeVsMid > 30) {
-          console.log(
-            "  🚨 Creating FORCED alternative for manageable route with extreme diversification..."
-          );
-
-          // Try multiple EXTREME strategies for manageable route
-          const strategies = [
-            // Strategy 1: Far western route
-            [
-              start,
-              {
-                lat: (start.lat + end.lat) / 2,
-                lng: (start.lng + end.lng) / 2 - 0.08,
-              },
-              end,
-            ],
-            // Strategy 2: Northern then western route
-            [
-              start,
-              {
-                lat: (start.lat + end.lat) / 2 + 0.05,
-                lng: (start.lng + end.lng) / 2 - 0.04,
-              },
-              end,
-            ],
-            // Strategy 3: Multiple waypoints for complex route
-            [
-              start,
-              { lat: start.lat + 0.02, lng: start.lng - 0.03 },
-              {
-                lat: (start.lat + end.lat) / 2,
-                lng: (start.lng + end.lng) / 2 - 0.06,
-              },
-              { lat: end.lat - 0.02, lng: end.lng - 0.03 },
-              end,
-            ],
-          ];
-
-          for (let i = 0; i < strategies.length; i++) {
-            const forcedMidRoute = await tryRouteFromAPI(
-              strategies[i],
-              `Forced Western Strategy ${i + 1}`,
-              5000
-            );
-            if (forcedMidRoute && forcedMidRoute.length > 10) {
-              // Verify this route is actually different
-              const testOverlap = calculateRouteOverlap(
-                safeRoute.waypoints,
-                forcedMidRoute
-              );
-              if (testOverlap < 60) {
-                console.log(
-                  `  ✅ Strategy ${
-                    i + 1
-                  } successful - overlap reduced to ${testOverlap.toFixed(1)}%`
-                );
-                midRoute.waypoints = forcedMidRoute;
-                break;
-              } else {
-                console.log(
-                  `  ❌ Strategy ${
-                    i + 1
-                  } still too similar (${testOverlap.toFixed(1)}% overlap)`
-                );
-              }
-            }
-          }
-        }
-
-        if (
-          safeRiskSeparation < 500 ||
-          midRiskSeparation < 500 ||
-          safeVsRisk > 30 ||
-          midVsRisk > 30
-        ) {
-          console.log(
-            "  🚨 Creating FORCED alternative for risk route with extreme diversification..."
-          );
-
-          // Try multiple EXTREME strategies for risk route
-          const strategies = [
-            // Strategy 1: Far southern coastal route
-            [
-              start,
-              {
-                lat: (start.lat + end.lat) / 2 - 0.07,
-                lng: (start.lng + end.lng) / 2 - 0.04,
-              },
-              end,
-            ],
-            // Strategy 2: Eastern then southern route
-            [
-              start,
-              {
-                lat: (start.lat + end.lat) / 2 - 0.03,
-                lng: (start.lng + end.lng) / 2 + 0.05,
-              },
-              end,
-            ],
-            // Strategy 3: Multiple waypoints for complex coastal route
-            [
-              start,
-              { lat: start.lat - 0.015, lng: start.lng + 0.025 },
-              {
-                lat: (start.lat + end.lat) / 2 - 0.05,
-                lng: (start.lng + end.lng) / 2 - 0.02,
-              },
-              { lat: end.lat - 0.025, lng: end.lng - 0.015 },
-              end,
-            ],
-          ];
-
-          for (let i = 0; i < strategies.length; i++) {
-            const forcedRiskRoute = await tryRouteFromAPI(
-              strategies[i],
-              `Forced Coastal Strategy ${i + 1}`,
-              5000
-            );
-            if (forcedRiskRoute && forcedRiskRoute.length > 10) {
-              // Verify this route is actually different from both safe and mid routes
-              const safeOverlap = calculateRouteOverlap(
-                safeRoute.waypoints,
-                forcedRiskRoute
-              );
-              const midOverlap = calculateRouteOverlap(
-                midRoute.waypoints,
-                forcedRiskRoute
-              );
-              if (safeOverlap < 60 && midOverlap < 60) {
-                console.log(
-                  `  ✅ Strategy ${
-                    i + 1
-                  } successful - overlaps: safe=${safeOverlap.toFixed(
-                    1
-                  )}%, mid=${midOverlap.toFixed(1)}%`
-                );
-                riskRoute.waypoints = forcedRiskRoute;
-                break;
-              } else {
-                console.log(
-                  `  ❌ Strategy ${
-                    i + 1
-                  } still too similar (safe=${safeOverlap.toFixed(
-                    1
-                  )}%, mid=${midOverlap.toFixed(1)}%)`
-                );
-              }
-            }
-          }
-        }
-      } else {
-        console.log(
-          `✅ Preserving road-based routes - Min separation: ${minSeparation.toFixed(
-            0
-          )}m, Max overlap: ${maxOverlap.toFixed(1)}%`
-        );
-      }
-
-      // Helper function with FORCED distinct categorization
-      const getSafetyInfo = (routeIndex: number, score: number) => {
-        if (routeIndex === 0) {
-          return { level: "Low Risk", risk: "safe", color: "#27ae60" };
-        } else if (routeIndex === 1) {
-          return { level: "Medium Risk", risk: "manageable", color: "#f39c12" };
-        } else {
-          return { level: "High Risk", risk: "prone", color: "#e74c3c" };
-        }
-      };
-
-      const safeInfo = getSafetyInfo(0, safeRoute.riskScore);
-      const midInfo = getSafetyInfo(1, midRoute.riskScore);
-      const riskInfo = getSafetyInfo(2, riskRoute.riskScore);
-
-      console.log(
-        `Final routes - Safe: ${safeRoute.riskScore.toFixed(
-          1
-        )}, Mid: ${midRoute.riskScore.toFixed(
-          1
-        )}, Risk: ${riskRoute.riskScore.toFixed(1)}`
-      );
-
-      // FINAL VALIDATION: If routes are still too similar, apply NUCLEAR option
-      const finalSafeVsMid = calculateRouteOverlap(
-        safeRoute.waypoints,
-        midRoute.waypoints
-      );
-      const finalSafeVsRisk = calculateRouteOverlap(
-        safeRoute.waypoints,
-        riskRoute.waypoints
-      );
-      const finalMidVsRisk = calculateRouteOverlap(
-        midRoute.waypoints,
-        riskRoute.waypoints
-      );
-
-      if (finalSafeVsMid > 80 || finalSafeVsRisk > 80 || finalMidVsRisk > 80) {
-        console.log(
-          "🚨 NUCLEAR OPTION: Routes still too similar, applying extreme forced diversification..."
-        );
-
-        // Force EXTREMELY different manageable route (far west)
-        const nuclearMidWaypoints = [
-          start,
-          { lat: start.lat + 0.03, lng: start.lng - 0.1 }, // WAY west
-          {
-            lat: (start.lat + end.lat) / 2,
-            lng: (start.lng + end.lng) / 2 - 0.12,
-          }, // VERY far west
-          { lat: end.lat + 0.03, lng: end.lng - 0.1 }, // WAY west of end
-          end,
-        ];
-
-        // Force EXTREMELY different risk route (far south/east)
-        const nuclearRiskWaypoints = [
-          start,
-          { lat: start.lat - 0.04, lng: start.lng + 0.08 }, // WAY southeast
-          {
-            lat: (start.lat + end.lat) / 2 - 0.08,
-            lng: (start.lng + end.lng) / 2 + 0.06,
-          }, // VERY far southeast
-          { lat: end.lat - 0.04, lng: end.lng + 0.08 }, // WAY southeast of end
-          end,
-        ];
-
-        const nuclearMidRoute = await tryRouteFromAPI(
-          nuclearMidWaypoints,
-          "NUCLEAR Mid Route",
-          5000
-        );
-        const nuclearRiskRoute = await tryRouteFromAPI(
-          nuclearRiskWaypoints,
-          "NUCLEAR Risk Route",
-          5000
-        );
-
-        if (nuclearMidRoute && nuclearMidRoute.length > 10) {
-          midRoute.waypoints = nuclearMidRoute;
-          console.log("💥 Applied nuclear mid route");
-        }
-
-        if (nuclearRiskRoute && nuclearRiskRoute.length > 10) {
-          riskRoute.waypoints = nuclearRiskRoute;
-          console.log("💥 Applied nuclear risk route");
-        }
-      }
-
-      // DEBUG: Log route waypoints to ensure they're different
-      console.log(
-        "Safe route waypoints:",
-        safeRoute.waypoints.length,
-        "points"
-      );
-      console.log(
-        "Manageable route waypoints:",
-        midRoute.waypoints.length,
-        "points"
-      );
-      console.log(
-        "Risk route waypoints:",
-        riskRoute.waypoints.length,
-        "points"
-      );
-
-      console.log("Waypoint distinctness check (middle sections):");
-      console.log(
-        "  Safe ≈ Mid:",
-        JSON.stringify(safeMiddle) === JSON.stringify(midMiddle)
-          ? "❌ IDENTICAL"
-          : "✅ Different"
-      );
-      console.log(
-        "  Safe ≈ Risk:",
-        JSON.stringify(safeMiddle) === JSON.stringify(riskMiddle)
-          ? "❌ IDENTICAL"
-          : "✅ Different"
-      );
-      console.log(
-        "  Mid ≈ Risk:",
-        JSON.stringify(midMiddle) === JSON.stringify(riskMiddle)
-          ? "❌ IDENTICAL"
-          : "✅ Different"
-      );
-      const midWaypointsStr = JSON.stringify(midRoute.waypoints);
-      const riskWaypointsStr = JSON.stringify(riskRoute.waypoints);
-      console.log(
-        "  Mid ≈ Risk:",
-        midWaypointsStr === riskWaypointsStr ? "❌ IDENTICAL" : "✅ Different"
-      );
-
-      if (safeRoute.waypoints.length > 1 && midRoute.waypoints.length > 1) {
-        console.log(
-          "Safe route start/end:",
-          safeRoute.waypoints[0],
-          safeRoute.waypoints[safeRoute.waypoints.length - 1]
-        );
-        console.log(
-          "Manageable route start/end:",
-          midRoute.waypoints[0],
-          midRoute.waypoints[midRoute.waypoints.length - 1]
-        );
-        console.log(
-          "Risk route start/end:",
-          riskRoute.waypoints[0],
-          riskRoute.waypoints[riskRoute.waypoints.length - 1]
-        );
-      }
-
-      // Create the route details using enhanced data
-      const routeDetails: RouteDetails = {
-        safeRoute: {
-          waypoints: safeRoute.waypoints,
-          distance: safeRoute.distance + " km",
-          time: safeRoute.duration + " min",
-          floodRisk: safeInfo.risk as any,
-          riskLevel: safeInfo.level,
-          description: `${safeInfo.level} (Score: ${safeRoute.riskScore.toFixed(
-            1
-          )}) - ${
-            safeRoute.warnings.length > 0
-              ? safeRoute.warnings[0]
-              : "Recommended safe route"
-          }`,
-          color: safeInfo.color,
-        },
-        manageableRoute: {
-          waypoints: midRoute.waypoints,
-          distance: midRoute.distance + " km",
-          time: midRoute.duration + " min",
-          floodRisk: midInfo.risk as any,
-          riskLevel: midInfo.level,
-          description: `${midInfo.level} (Score: ${midRoute.riskScore.toFixed(
-            1
-          )}) - ${
-            midRoute.warnings.length > 0
-              ? midRoute.warnings[0]
-              : "Alternative route option"
-          }`,
-          color: midInfo.color,
-        },
-        proneRoute: {
-          waypoints: riskRoute.waypoints,
-          distance: riskRoute.distance + " km",
-          time: riskRoute.duration + " min",
-          floodRisk: riskInfo.risk as any,
-          riskLevel: riskInfo.level,
-          description: `${riskInfo.level} (Score: ${riskRoute.riskScore.toFixed(
-            1
-          )}) - ${
-            riskRoute.warnings.length > 0
-              ? riskRoute.warnings[0]
-              : "Use with caution"
-          }`,
-          color: riskInfo.color,
-        },
-        startName: selectedStartLocation?.display_name || "Start Point",
-        endName: selectedEndLocation?.display_name || "End Point",
-      };
-
-      return routeDetails;
-    } catch (error) {
-      console.error("Error in generateFloodRoutes:", error);
-
-      // Try to get at least one basic route from OSRM directly as fallback
-      try {
-        console.log("Attempting fallback to direct OSRM route...");
-        const basicRoute = await getRouteFromAPI(start, end);
+          manageableRoute: {
+            waypoints: manageableRoute.waypoints,
+            distance: manageableRoute.distance,
+            time: manageableRoute.time,
+            riskLevel: "Manageable Risk",
+            floodRisk: "manageable",
+            color: "#f39c12",
+            description: `${manageableRoute.floodPercentage?.toFixed(1)}% flooded (${(manageableRoute.floodedDistance / 1000).toFixed(2)} km)`,
+          },
+          proneRoute: {
+            waypoints: proneRoute.waypoints,
+            distance: proneRoute.distance,
+            time: proneRoute.time,
+            riskLevel: "High Risk",
+            floodRisk: "prone",
+            color: "#e74c3c",
+            description: `${proneRoute.floodPercentage?.toFixed(1)}% flooded (${(proneRoute.floodedDistance / 1000).toFixed(2)} km)`,
+          },
+          startName: selectedStartLocation?.display_name || "Start Point",
+          endName: selectedEndLocation?.display_name || "End Point",
+        };
+      } catch (error) {
+        console.error("❌ Hybrid routing failed:", error);
+
+        // Try to get at least one basic route from local OSRM directly as fallback
+        try {
+          console.log("Attempting fallback to direct local OSRM route...");
+          const basicRoute = await getLocalOSRMRoute(start, end);
 
         if (basicRoute && basicRoute.length > 2) {
           const distance = calculateRouteDistance(basicRoute);
@@ -7816,12 +5436,12 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         console.error("Fallback OSRM route also failed:", fallbackError);
       }
 
-      // Last resort: Create fallback direct route (straight line)
-      const directRoute = [start, end];
-      const directDistance = calculateRouteDistance(directRoute);
+        // Last resort: Create fallback direct route (straight line)
+        const directRoute = [start, end];
+        const directDistance = calculateRouteDistance(directRoute);
 
-      return {
-        safeRoute: {
+        return {
+          safeRoute: {
           waypoints: directRoute,
           distance: directDistance.toFixed(1) + " km",
           time: Math.round((directDistance / 40) * 60) + " min",
@@ -7846,6 +5466,43 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           floodRisk: "prone",
           riskLevel: "High Risk",
           description: "Direct route - All APIs unavailable",
+          color: "#e74c3c",
+        },
+        startName: selectedStartLocation?.display_name || "Start Point",
+        endName: selectedEndLocation?.display_name || "End Point",
+      };
+    }
+    } catch (outerError) {
+      console.error("Fatal error in generateFloodRoutes:", outerError);
+      // Return a basic fallback if everything fails
+      const directRoute = [start, end];
+      const directDistance = calculateRouteDistance(directRoute);
+      return {
+        safeRoute: {
+          waypoints: directRoute,
+          distance: directDistance.toFixed(1) + " km",
+          time: Math.round((directDistance / 30) * 60) + " min",
+          floodRisk: "safe",
+          riskLevel: "Safe Route",
+          description: "Direct route - routing failed",
+          color: "#27ae60",
+        },
+        manageableRoute: {
+          waypoints: directRoute,
+          distance: directDistance.toFixed(1) + " km",
+          time: Math.round((directDistance / 30) * 60) + " min",
+          floodRisk: "manageable",
+          riskLevel: "Manageable Risk",
+          description: "Direct route - routing failed",
+          color: "#f39c12",
+        },
+        proneRoute: {
+          waypoints: directRoute,
+          distance: directDistance.toFixed(1) + " km",
+          time: Math.round((directDistance / 30) * 60) + " min",
+          floodRisk: "prone",
+          riskLevel: "High Risk",
+          description: "Direct route - routing failed",
           color: "#e74c3c",
         },
         startName: selectedStartLocation?.display_name || "Start Point",

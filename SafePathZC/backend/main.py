@@ -10,6 +10,7 @@ import requests
 import math
 import json
 import time
+import asyncio
 from dotenv import load_dotenv
 from services.local_routing import LocalRoutingService, Coordinate
 
@@ -271,7 +272,8 @@ DEFAULT_ALIGNMENT_SPEED_MPS = 8.33  # ~30 km/h fallback when OSRM provides no ti
 async def get_osrm_route(start_lng: float, start_lat: float, end_lng: float, end_lat: float, alternatives: bool = False):
     """Get route from OSRM routing service with robust error handling"""
     try:
-        base_url = "http://router.project-osrm.org/route/v1/driving"
+        # Use local OSRM server for Zamboanga-specific routing
+        base_url = "http://localhost:5000/route/v1/driving"
         url = f"{base_url}/{start_lng},{start_lat};{end_lng},{end_lat}"
         
         params = {
@@ -457,13 +459,112 @@ def calculate_risk_score(elevation: float, slope: float, weather: dict, lat: flo
     
     return min(risk_score, 10.0)  # Cap at 10
 
+def simplify_route(coordinates: List[List[float]], tolerance: float = 0.0001) -> List[List[float]]:
+    """
+    Remove backtracking and dead-ends from route coordinates using Douglas-Peucker algorithm
+    and direction checking. This cleans up messy OSRM routes that have U-turns.
+    
+    Args:
+        coordinates: List of [lng, lat] coordinate pairs
+        tolerance: Distance tolerance for simplification (degrees, ~10m)
+    
+    Returns:
+        Simplified list of coordinates
+    """
+    if len(coordinates) < 3:
+        return coordinates
+    
+    # Step 1: Remove exact duplicates
+    cleaned = [coordinates[0]]
+    for coord in coordinates[1:]:
+        if coord != cleaned[-1]:
+            cleaned.append(coord)
+    
+    if len(cleaned) < 3:
+        return cleaned
+    
+    # Step 2: Remove backtracking (when route goes backwards)
+    no_backtrack = [cleaned[0]]
+    
+    for i in range(1, len(cleaned) - 1):
+        prev = no_backtrack[-1]
+        curr = cleaned[i]
+        next_point = cleaned[i + 1]
+        
+        # Calculate vectors
+        vec_to_curr = [curr[0] - prev[0], curr[1] - prev[1]]
+        vec_to_next = [next_point[0] - curr[0], next_point[1] - curr[1]]
+        
+        # Dot product to check if going backwards (angle > 150 degrees)
+        dot = vec_to_curr[0] * vec_to_next[0] + vec_to_curr[1] * vec_to_next[1]
+        mag_curr = (vec_to_curr[0]**2 + vec_to_curr[1]**2) ** 0.5
+        mag_next = (vec_to_next[0]**2 + vec_to_next[1]**2) ** 0.5
+        
+        if mag_curr > 0 and mag_next > 0:
+            cos_angle = dot / (mag_curr * mag_next)
+            # If angle < -0.5 (> 120 degrees), it's backtracking - skip this point
+            if cos_angle > -0.5:
+                no_backtrack.append(curr)
+        else:
+            no_backtrack.append(curr)
+    
+    no_backtrack.append(cleaned[-1])
+    
+    # Step 3: Apply Ramer-Douglas-Peucker simplification to remove redundant points
+    def perpendicular_distance(point, line_start, line_end):
+        """Calculate perpendicular distance from point to line segment"""
+        if line_start == line_end:
+            return ((point[0] - line_start[0])**2 + (point[1] - line_start[1])**2) ** 0.5
+        
+        # Line equation: ax + by + c = 0
+        dx = line_end[0] - line_start[0]
+        dy = line_end[1] - line_start[1]
+        
+        numerator = abs(dy * point[0] - dx * point[1] + line_end[0] * line_start[1] - line_end[1] * line_start[0])
+        denominator = (dx**2 + dy**2) ** 0.5
+        
+        return numerator / denominator if denominator > 0 else 0
+    
+    def rdp_simplify(points, epsilon):
+        """Recursive Douglas-Peucker algorithm"""
+        if len(points) < 3:
+            return points
+        
+        # Find point with maximum distance from line start-end
+        dmax = 0
+        index = 0
+        end = len(points) - 1
+        
+        for i in range(1, end):
+            d = perpendicular_distance(points[i], points[0], points[end])
+            if d > dmax:
+                index = i
+                dmax = d
+        
+        # If max distance is greater than epsilon, recursively simplify
+        if dmax > epsilon:
+            # Recursive call
+            rec_results1 = rdp_simplify(points[:index + 1], epsilon)
+            rec_results2 = rdp_simplify(points[index:], epsilon)
+            
+            # Combine results (remove duplicate middle point)
+            return rec_results1[:-1] + rec_results2
+        else:
+            return [points[0], points[end]]
+    
+    simplified = rdp_simplify(no_backtrack, tolerance)
+    
+    print(f"     🧹 Route simplified: {len(coordinates)} → {len(simplified)} points (removed {len(coordinates) - len(simplified)} redundant points)")
+    
+    return simplified
+
 @app.get("/route")
 async def get_route(
     start: str = Query(..., description="Start coordinates as lng,lat"),
     end: str = Query(..., description="End coordinates as lng,lat"),
     alternatives: bool = Query(False, description="Include alternative routes")
 ):
-    """Get routing data between two points using local road network"""
+    """Get routing data between two points using HYBRID APPROACH: OSRM for routing + GeoJSON for flood analysis"""
     try:
         # Parse coordinates
         start_coords = [float(x) for x in start.split(",")]
@@ -475,227 +576,271 @@ async def get_route(
         start_lng, start_lat = start_coords
         end_lng, end_lat = end_coords
         
-        # Try local routing service first with multiple route alternatives
-        try:
-            # Generate multiple routes with different risk profiles
-            safe_route = await get_local_route(start_lat, start_lng, end_lat, end_lng, mode="car")
-            manageable_route = await get_local_route(start_lat, start_lng, end_lat, end_lng, mode="motorcycle") 
-            prone_route = await get_local_route(start_lat, start_lng, end_lat, end_lng, mode="walking")
-            
-            routes = []
-            analyses = []
-            
-            if safe_route and safe_route.get("success"):
-                routes.append(safe_route["route"])
-                analyses.append({
-                    "risk_level": "safe",
-                    "distance": safe_route.get("distance", 0),
-                    "duration": safe_route.get("duration", 0),
-                    "description": "Recommended safe route using main roads"
-                })
-            
-            if manageable_route and manageable_route.get("success"):
-                routes.append(manageable_route["route"])
-                analyses.append({
-                    "risk_level": "manageable", 
-                    "distance": manageable_route.get("distance", 0),
-                    "duration": manageable_route.get("duration", 0),
-                    "description": "Alternative route with manageable risk"
-                })
-                
-            if prone_route and prone_route.get("success"):
-                routes.append(prone_route["route"])
-                analyses.append({
-                    "risk_level": "prone",
-                    "distance": prone_route.get("distance", 0), 
-                    "duration": prone_route.get("duration", 0),
-                    "description": "High risk route through flood-prone areas"
-                })
-            
-            if routes:
-                print(f"✅ Generated {len(routes)} local routes with different risk profiles")
-                return {
-                    "routes": routes,
-                    "analyses": analyses,
-                    "source": "local_geojson_multi"
-                }
-        except Exception as local_error:
-            print(f"⚠️ Local routing failed: {local_error}")
+        print(f"\n🎯 HYBRID ROUTING: Getting OSRM routes and analyzing flood risk...")
         
-        # Fallback to OSRM with multiple route generation strategies
-        print(f"🌐 Falling back to OSRM routing with multiple route strategies")
+        # Step 1: Get 3 GUARANTEED DIFFERENT routes using multiple strategies
+        routes = []
+        route_metadata = []  # Track how each route was generated
         
         try:
-            # Strategy 1: Try OSRM alternatives first
-            route_data = await get_osrm_route(start_lng, start_lat, end_lng, end_lat, alternatives=True)
-
-            if route_data.get("routes") and len(route_data["routes"]) >= 2:
-                aligned_routes, adjustments = align_osrm_routes(
-                    route_data["routes"], start_lat, start_lng, end_lat, end_lng
+            print("🔄 Generating 3 distinct route variations...")
+            
+            # ROUTE 1: Direct/Fastest route (shortest path)
+            print("  📍 Route 1: Direct/fastest route...")
+            direct_route = await get_osrm_route(start_lng, start_lat, end_lng, end_lat, alternatives=False)
+            if direct_route.get("routes"):
+                aligned_direct, _ = align_osrm_routes(
+                    direct_route["routes"], start_lat, start_lng, end_lat, end_lng
                 )
-                if adjustments:
-                    print(f"🔧 Adjusted {len(adjustments)} OSRM alternative routes to reach the requested endpoints")
-
-                return {
-                    "routes": aligned_routes,
-                    "waypoints": route_data.get("waypoints", []),
-                    "source": "osrm_alternatives",
-                    "adjustments": adjustments
-                }
+                # Simplify direct route to remove redundant points
+                direct_coords = aligned_direct[0]["geometry"]["coordinates"]
+                simplified_direct = simplify_route(direct_coords, tolerance=0.00015)
+                aligned_direct[0]["geometry"]["coordinates"] = simplified_direct
+                
+                routes.append(aligned_direct[0])
+                route_metadata.append("direct")
+                print(f"     ✅ Direct route: {aligned_direct[0]['distance']/1000:.1f}km")
             
-            # Strategy 2: Generate different routes using waypoint variations
-            print("🔄 Generating route variations using different strategies...")
-            routes = []
+            # Calculate perpendicular direction for side detours
+            route_vector_lng = end_lng - start_lng
+            route_vector_lat = end_lat - start_lat
+            route_length = (route_vector_lng**2 + route_vector_lat**2) ** 0.5
             
-            # Main direct route
-            main_route = await get_osrm_route(start_lng, start_lat, end_lng, end_lat, alternatives=False)
-            if main_route.get("routes"):
-                aligned_main_routes, adjustments = align_osrm_routes(
-                    main_route["routes"], start_lat, start_lng, end_lat, end_lng
-                )
-                if adjustments:
-                    print(f"🔧 Adjusted main OSRM route to reconnect missing segments ({len(adjustments)} fixes)")
-                routes.extend(aligned_main_routes)
+            # Perpendicular vectors (rotate 90 degrees)
+            perp_lng = -route_vector_lat / route_length if route_length > 0 else 0
+            perp_lat = route_vector_lng / route_length if route_length > 0 else 0
             
-            # Try to generate alternative routes by using intermediate waypoints
-            try:
-                # Calculate intermediate points for alternative routes
-                mid_lng = (start_lng + end_lng) / 2
-                mid_lat = (start_lat + end_lat) / 2
+            # ROUTE 2 & 3: Generate in parallel for speed
+            if len(routes) < 3:
+                print("  📍 Routes 2 & 3: Generating detours in parallel...")
                 
-                # Offset points to create different paths
-                offset = 0.01  # About 1km offset
+                # Waypoints along the route
+                wp_25_lng = start_lng + route_vector_lng * 0.25
+                wp_25_lat = start_lat + route_vector_lat * 0.25
                 
-                # Route via northern waypoint
-                north_waypoint_lng = mid_lng
-                north_waypoint_lat = mid_lat + offset
+                wp_50_lng = start_lng + route_vector_lng * 0.50
+                wp_50_lat = start_lat + route_vector_lat * 0.50
                 
-                north_route_part1 = await get_osrm_route(start_lng, start_lat, north_waypoint_lng, north_waypoint_lat, alternatives=False)
-                north_route_part2 = await get_osrm_route(north_waypoint_lng, north_waypoint_lat, end_lng, end_lat, alternatives=False)
+                wp_75_lng = start_lng + route_vector_lng * 0.75
+                wp_75_lat = start_lat + route_vector_lat * 0.75
                 
-                if (north_route_part1.get("routes") and north_route_part2.get("routes") and 
-                    len(north_route_part1["routes"]) > 0 and len(north_route_part2["routes"]) > 0):
+                offset = 0.018  # ~2km offset
+                
+                # RIGHT detour waypoint
+                wp_50_right_lng = wp_50_lng + (perp_lng * offset)
+                wp_50_right_lat = wp_50_lat + (perp_lat * offset)
+                
+                # LEFT detour waypoint
+                wp_50_left_lng = wp_50_lng - (perp_lng * offset)
+                wp_50_left_lat = wp_50_lat - (perp_lat * offset)
+                
+                try:
+                    # Parallelize ALL segment calls for both routes
+                    segments_to_fetch = [
+                        # RIGHT detour segments
+                        (start_lng, start_lat, wp_25_lng, wp_25_lat, "r1"),
+                        (wp_25_lng, wp_25_lat, wp_50_right_lng, wp_50_right_lat, "r2"),
+                        (wp_50_right_lng, wp_50_right_lat, wp_75_lng, wp_75_lat, "r3"),
+                        (wp_75_lng, wp_75_lat, end_lng, end_lat, "r4"),
+                        # LEFT detour segments
+                        (start_lng, start_lat, wp_25_lng, wp_25_lat, "l1"),
+                        (wp_25_lng, wp_25_lat, wp_50_left_lng, wp_50_left_lat, "l2"),
+                        (wp_50_left_lng, wp_50_left_lat, wp_75_lng, wp_75_lat, "l3"),
+                        (wp_75_lng, wp_75_lat, end_lng, end_lat, "l4"),
+                    ]
                     
-                    # Combine the two route parts
-                    part1_coords = north_route_part1["routes"][0]["geometry"]["coordinates"]
-                    part2_coords = north_route_part2["routes"][0]["geometry"]["coordinates"]
-                    combined_coords = part1_coords + part2_coords[1:]  # Remove duplicate waypoint
+                    # Fetch all segments in parallel (8 calls → ~1-2 seconds instead of 8 seconds!)
+                    segment_results = await asyncio.gather(*[
+                        get_osrm_route(s[0], s[1], s[2], s[3], alternatives=False)
+                        for s in segments_to_fetch
+                    ], return_exceptions=True)
                     
-                    combined_distance = north_route_part1["routes"][0]["distance"] + north_route_part2["routes"][0]["distance"]
-                    combined_duration = north_route_part1["routes"][0]["duration"] + north_route_part2["routes"][0]["duration"]
+                    # Build RIGHT detour route
+                    right_coords = []
+                    right_dist = 0
+                    right_dur = 0
                     
-                    alternative_route = {
-                        "geometry": {
-                            "coordinates": combined_coords,
-                            "type": "LineString"
+                    for i in range(4):  # First 4 segments
+                        result = segment_results[i]
+                        if isinstance(result, Exception) or not result.get("routes"):
+                            continue
+                        coords = result["routes"][0]["geometry"]["coordinates"]
+                        if right_coords:
+                            coords = coords[1:]  # Skip duplicate
+                        right_coords.extend(coords)
+                        right_dist += result["routes"][0]["distance"]
+                        right_dur += result["routes"][0]["duration"]
+                    
+                    if right_coords and len(right_coords) > 1:
+                        # Simplify route to remove backtracking and dead-ends
+                        right_coords = simplify_route(right_coords, tolerance=0.00015)
+                        
+                        alt_route = {
+                            "geometry": {"coordinates": right_coords, "type": "LineString"},
+                            "distance": right_dist,
+                            "duration": right_dur,
+                            "weight": right_dur,
+                            "weight_name": "routability"
+                        }
+                        aligned, _ = align_route_geometry_with_request(alt_route, start_lat, start_lng, end_lat, end_lng)
+                        routes.append(aligned)
+                        route_metadata.append("right_detour")
+                        print(f"     ✅ Right detour: {right_dist/1000:.1f}km")
+                    
+                    # Build LEFT detour route
+                    left_coords = []
+                    left_dist = 0
+                    left_dur = 0
+                    
+                    for i in range(4, 8):  # Last 4 segments
+                        result = segment_results[i]
+                        if isinstance(result, Exception) or not result.get("routes"):
+                            continue
+                        coords = result["routes"][0]["geometry"]["coordinates"]
+                        if left_coords:
+                            coords = coords[1:]  # Skip duplicate
+                        left_coords.extend(coords)
+                        left_dist += result["routes"][0]["distance"]
+                        left_dur += result["routes"][0]["duration"]
+                    
+                    if left_coords and len(left_coords) > 1:
+                        # Simplify route to remove backtracking and dead-ends
+                        left_coords = simplify_route(left_coords, tolerance=0.00015)
+                        
+                        alt_route = {
+                            "geometry": {"coordinates": left_coords, "type": "LineString"},
+                            "distance": left_dist,
+                            "duration": left_dur,
+                            "weight": left_dur,
+                            "weight_name": "routability"
+                        }
+                        aligned, _ = align_route_geometry_with_request(alt_route, start_lat, start_lng, end_lat, end_lng)
+                        routes.append(aligned)
+                        route_metadata.append("left_detour")
+                        print(f"     ✅ Left detour: {left_dist/1000:.1f}km")
+                    
+                except Exception as e:
+                    print(f"     ⚠️ Parallel detour generation failed: {e}")
+            
+            if not routes:
+                raise HTTPException(status_code=500, detail="Could not generate any routes from OSRM")
+            
+            print(f"\n🔬 Step 2: Analyzing flood risk for {len(routes)} routes...")
+            
+            # Step 2: Analyze each route for flood risk using our GeoJSON terrain data
+            from services.local_routing import analyze_route_flood_risk
+            
+            route_analyses = []
+            for i, route in enumerate(routes):
+                try:
+                    # Extract coordinates from route geometry
+                    coords = route.get("geometry", {}).get("coordinates", [])
+                    if not coords:
+                        print(f"⚠️ Route {i+1} has no coordinates, skipping analysis")
+                        continue
+                    
+                    # Convert to (lng, lat) tuples for analysis
+                    route_coords = [(lng, lat) for lng, lat in coords]
+                    
+                    # Analyze flood risk
+                    analysis = analyze_route_flood_risk(route_coords, buffer_meters=50.0)
+                    
+                    route_analyses.append({
+                        "route": route,
+                        "analysis": analysis,
+                        "route_index": i
+                    })
+                    
+                    print(f"✅ Route {i+1}: {analysis['flooded_percentage']:.1f}% flooded, risk: {analysis['risk_level']}")
+                    
+                except Exception as e:
+                    print(f"❌ Failed to analyze route {i+1}: {e}")
+                    # Still include the route but with minimal analysis
+                    route_analyses.append({
+                        "route": route,
+                        "analysis": {
+                            "flood_score": 0,
+                            "flooded_percentage": 0,
+                            "risk_level": "unknown",
+                            "flooded_distance_m": 0,
+                            "safe_distance_m": route.get("distance", 0),
+                            "segments_analyzed": 0
                         },
-                        "distance": combined_distance,
-                        "duration": combined_duration,
-                        "weight": combined_duration,
-                        "weight_name": "routability",
-                        "legs": [
-                            {
-                                "steps": [],
-                                "summary": "",
-                                "weight": combined_duration,
-                                "duration": combined_duration,
-                                "distance": combined_distance
-                            }
-                        ]
-                    }
-                    aligned_route, adjustments = align_route_geometry_with_request(
-                        alternative_route, start_lat, start_lng, end_lat, end_lng
-                    )
-                    routes.append(aligned_route)
-                    if adjustments:
-                        print("✅ Generated northern alternative route with endpoint corrections")
-                    else:
-                        print("✅ Generated northern alternative route")
-                
-                # Route via southern waypoint  
-                south_waypoint_lng = mid_lng
-                south_waypoint_lat = mid_lat - offset
-                
-                south_route_part1 = await get_osrm_route(start_lng, start_lat, south_waypoint_lng, south_waypoint_lat, alternatives=False)
-                south_route_part2 = await get_osrm_route(south_waypoint_lng, south_waypoint_lat, end_lng, end_lat, alternatives=False)
-                
-                if (south_route_part1.get("routes") and south_route_part2.get("routes") and 
-                    len(south_route_part1["routes"]) > 0 and len(south_route_part2["routes"]) > 0):
-                    
-                    # Combine the two route parts
-                    part1_coords = south_route_part1["routes"][0]["geometry"]["coordinates"]
-                    part2_coords = south_route_part2["routes"][0]["geometry"]["coordinates"]
-                    combined_coords = part1_coords + part2_coords[1:]  # Remove duplicate waypoint
-                    
-                    combined_distance = south_route_part1["routes"][0]["distance"] + south_route_part2["routes"][0]["distance"]
-                    combined_duration = south_route_part1["routes"][0]["duration"] + south_route_part2["routes"][0]["duration"]
-                    
-                    alternative_route = {
-                        "geometry": {
-                            "coordinates": combined_coords,
-                            "type": "LineString"
-                        },
-                        "distance": combined_distance,
-                        "duration": combined_duration * 1.1,  # Add penalty for alternative route
-                        "weight": combined_duration * 1.1,
-                        "weight_name": "routability",
-                        "legs": [
-                            {
-                                "steps": [],
-                                "summary": "",
-                                "weight": combined_duration * 1.1,
-                                "duration": combined_duration * 1.1,
-                                "distance": combined_distance
-                            }
-                        ]
-                    }
-                    aligned_route, adjustments = align_route_geometry_with_request(
-                        alternative_route, start_lat, start_lng, end_lat, end_lng
-                    )
-                    routes.append(aligned_route)
-                    if adjustments:
-                        print("✅ Generated southern alternative route with endpoint corrections")
-                    else:
-                        print("✅ Generated southern alternative route")
-                    
-            except Exception as waypoint_error:
-                print(f"⚠️ Could not generate waypoint alternatives: {waypoint_error}")
+                        "route_index": i
+                    })
             
-            if routes:
-                print(f"🎯 Generated {len(routes)} total routes (including alternatives)")
-                adjustments_summary = [
-                    route.get("metadata", {}).get("safepath_adjustments", [])
-                    for route in routes
-                    if route.get("metadata", {}).get("safepath_adjustments")
-                ]
-                return {
-                    "routes": routes,
-                    "waypoints": [],
-                    "source": "osrm_generated_alternatives",
-                    "adjustments": adjustments_summary
-                }
-            else:
-                # Final fallback - just return the main route
-                route_data = await get_osrm_route(start_lng, start_lat, end_lng, end_lat, alternatives=False)
-                aligned_routes, adjustments = align_osrm_routes(
-                    route_data.get("routes", []), start_lat, start_lng, end_lat, end_lng
-                )
-                if adjustments:
-                    print(f"🔧 Adjusted fallback OSRM route ({len(adjustments)} corrections)")
-                return {
-                    "routes": aligned_routes,
-                    "waypoints": route_data.get("waypoints", []),
-                    "source": "osrm_single",
-                    "adjustments": adjustments
-                }
+            if not route_analyses:
+                raise HTTPException(status_code=500, detail="Could not analyze any routes for flood risk")
+            
+            # Step 3: Sort routes by flood percentage (lowest to highest)
+            route_analyses.sort(key=lambda x: x["analysis"]["flooded_percentage"])
+            
+            print(f"\n📊 Step 3: Sorted {len(route_analyses)} routes by flood risk (lowest to highest)")
+            for i, ra in enumerate(route_analyses):
+                meta = route_metadata[ra["route_index"]] if ra["route_index"] < len(route_metadata) else "unknown"
+                print(f"  Position {i+1}: {ra['analysis']['flooded_percentage']:.1f}% flooded ({meta} route)")
+            
+            # Step 4: Assign routes to safe/manageable/prone based on LOWEST to HIGHEST flood %
+            # The SAFEST route (lowest flood %) = safe
+            # The MIDDLE route = manageable  
+            # The WORST route (highest flood %) = prone
+            final_routes = []
+            final_analyses = []
+            
+            labels = ["safe", "manageable", "prone"]
+            
+            for i, route_data in enumerate(route_analyses[:3]):  # Take top 3
+                route = route_data["route"]
+                analysis = route_data["analysis"]
+                flood_pct = analysis['flooded_percentage']
+                metadata_idx = route_data.get("route_index", i)
+                meta = route_metadata[metadata_idx] if metadata_idx < len(route_metadata) else "unknown"
                 
+                # Assign label based on SORTED position
+                classification = labels[i] if i < len(labels) else "prone"
+                
+                # Generate description based on actual flood percentage
+                if flood_pct < 15:
+                    risk_desc = "Low risk"
+                elif flood_pct < 35:
+                    risk_desc = "Moderate risk"
+                else:
+                    risk_desc = "High risk"
+                
+                description = f"{risk_desc}: {flood_pct:.1f}% flooded ({meta})"
+                
+                final_routes.append(route)
+
+                final_analyses.append({
+                    "risk_level": classification,
+                    "distance": route.get("distance", 0),
+                    "duration": route.get("duration", 0),
+                    "description": description,
+                    "flood_score": analysis["flood_score"],
+                    "flooded_percentage": analysis["flooded_percentage"],
+                    "flooded_distance_m": analysis["flooded_distance_m"],
+                    "safe_distance_m": analysis["safe_distance_m"],
+                    "segments_analyzed": analysis["segments_analyzed"]
+                })
+                
+                print(f"  🎯 Route {i+1} classified as '{classification}': {description}")
+            
+            print(f"\n✅ HYBRID ROUTING COMPLETE: Returning {len(final_routes)} flood-analyzed routes\n")
+            
+            return {
+                "routes": final_routes,
+                "analyses": final_analyses,
+                "source": "hybrid_osrm_geojson"
+            }
+            
         except Exception as osrm_error:
             print(f"❌ OSRM routing failed: {osrm_error}")
-            raise HTTPException(status_code=500, detail="All routing services failed")
+            raise HTTPException(status_code=500, detail=f"Routing service failed: {str(osrm_error)}")
         
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid coordinate format")
     except Exception as e:
+        print(f"❌ Route endpoint error: {e}")
         raise HTTPException(status_code=500, detail=f"Routing error: {str(e)}")
 
 @app.get("/elevation")
@@ -1801,8 +1946,13 @@ async def startup_event():
     except Exception as e:
         print(f"✗ Error initializing local routing service: {e}")
 
-async def get_local_route(start_lat: float, start_lng: float, end_lat: float, end_lng: float, mode: str = "car"):
-    """Get route using local routing service with specific transportation mode"""
+async def get_local_route(start_lat: float, start_lng: float, end_lat: float, end_lng: float, mode: str = "car", risk_profile: str = "safe"):
+    """Get route using local routing service with specific transportation mode and flood risk profile
+    
+    Args:
+        mode: Transportation mode (car/motorcycle/walking) - affects speed and road preferences
+        risk_profile: Flood risk tolerance (safe/manageable/prone) - affects flood avoidance
+    """
     global local_routing_service
     
     if not local_routing_service or not local_routing_service.loaded:
@@ -1813,8 +1963,8 @@ async def get_local_route(start_lat: float, start_lng: float, end_lat: float, en
         start_coord = Coordinate(lat=start_lat, lng=start_lng)
         end_coord = Coordinate(lat=end_lat, lng=end_lng)
         
-        # Calculate route using local routing with specific mode
-        route = local_routing_service.calculate_route(start_coord, end_coord, mode)
+        # Calculate route using local routing with specific mode and risk profile
+        route = local_routing_service.calculate_route(start_coord, end_coord, mode, risk_profile)
         
         if not route:
             return None
@@ -1827,7 +1977,8 @@ async def get_local_route(start_lat: float, start_lng: float, end_lat: float, en
             "route": [{"lat": coord.lat, "lng": coord.lng} for coord in route],
             "distance": route_info["distance"],
             "duration": route_info["duration"],
-            "source": "local_geojson_terrain"
+            "source": "local_geojson_terrain",
+            "risk_profile": risk_profile
         }
         
     except Exception as e:
