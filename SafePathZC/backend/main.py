@@ -459,20 +459,81 @@ def calculate_risk_score(elevation: float, slope: float, weather: dict, lat: flo
     
     return min(risk_score, 10.0)  # Cap at 10
 
-def simplify_route(coordinates: List[List[float]], tolerance: float = 0.0001) -> List[List[float]]:
+def remove_dead_ends(coordinates: List[List[float]], dead_end_threshold: float = 0.0003) -> List[List[float]]:
     """
-    Remove backtracking and dead-ends from route coordinates using Douglas-Peucker algorithm
-    and direction checking. This cleans up messy OSRM routes that have U-turns.
+    AGGRESSIVE dead-end removal: Detect and cut out "there and back" patterns.
+    
+    A dead-end is when the route goes somewhere, then returns close to where it diverged.
+    This commonly happens when OSRM explores side streets.
     
     Args:
         coordinates: List of [lng, lat] coordinate pairs
-        tolerance: Distance tolerance for simplification (degrees, ~10m)
+        dead_end_threshold: Distance threshold for considering a point "returned" (degrees, ~30m)
+    
+    Returns:
+        Route with dead-ends removed
+    """
+    if len(coordinates) < 5:
+        return coordinates
+    
+    cleaned = coordinates.copy()
+    changes_made = True
+    iterations = 0
+    max_iterations = 10  # Prevent infinite loops
+    
+    while changes_made and iterations < max_iterations:
+        changes_made = False
+        iterations += 1
+        i = 0
+        
+        while i < len(cleaned) - 4:
+            current = cleaned[i]
+            
+            # Look ahead to find if we return close to current position
+            for j in range(i + 4, len(cleaned)):
+                next_point = cleaned[j]
+                
+                # Calculate distance between current and future point
+                dist = ((next_point[0] - current[0])**2 + (next_point[1] - current[1])**2) ** 0.5
+                
+                # If we return close to where we were, it's likely a dead-end
+                if dist < dead_end_threshold:
+                    # Calculate total detour distance
+                    detour_dist = 0
+                    for k in range(i, j):
+                        p1 = cleaned[k]
+                        p2 = cleaned[k + 1]
+                        detour_dist += ((p2[0] - p1[0])**2 + (p2[1] - p1[1])**2) ** 0.5
+                    
+                    # If detour is significant but returns to same spot, it's a dead-end
+                    if detour_dist > dead_end_threshold * 3:
+                        # Remove the dead-end section
+                        cleaned = cleaned[:i+1] + cleaned[j:]
+                        changes_made = True
+                        break
+            
+            if changes_made:
+                break
+            i += 1
+    
+    return cleaned
+
+def simplify_route(coordinates: List[List[float]], tolerance: float = 0.00015) -> List[List[float]]:
+    """
+    Remove backtracking, dead-ends, and redundant points from route coordinates.
+    This cleans up messy OSRM routes that have U-turns and side explorations.
+    
+    Args:
+        coordinates: List of [lng, lat] coordinate pairs
+        tolerance: Distance tolerance for simplification (degrees, ~15m)
     
     Returns:
         Simplified list of coordinates
     """
     if len(coordinates) < 3:
         return coordinates
+    
+    original_count = len(coordinates)
     
     # Step 1: Remove exact duplicates
     cleaned = [coordinates[0]]
@@ -483,7 +544,13 @@ def simplify_route(coordinates: List[List[float]], tolerance: float = 0.0001) ->
     if len(cleaned) < 3:
         return cleaned
     
-    # Step 2: Remove backtracking (when route goes backwards)
+    # Step 2: AGGRESSIVE dead-end removal (NEW!)
+    cleaned = remove_dead_ends(cleaned, dead_end_threshold=0.0003)
+    
+    if len(cleaned) < 3:
+        return cleaned
+    
+    # Step 3: Remove sharp backtracking (angle-based)
     no_backtrack = [cleaned[0]]
     
     for i in range(1, len(cleaned) - 1):
@@ -495,22 +562,22 @@ def simplify_route(coordinates: List[List[float]], tolerance: float = 0.0001) ->
         vec_to_curr = [curr[0] - prev[0], curr[1] - prev[1]]
         vec_to_next = [next_point[0] - curr[0], next_point[1] - curr[1]]
         
-        # Dot product to check if going backwards (angle > 150 degrees)
+        # Dot product to check if going backwards (angle > 120 degrees)
         dot = vec_to_curr[0] * vec_to_next[0] + vec_to_curr[1] * vec_to_next[1]
         mag_curr = (vec_to_curr[0]**2 + vec_to_curr[1]**2) ** 0.5
         mag_next = (vec_to_next[0]**2 + vec_to_next[1]**2) ** 0.5
         
         if mag_curr > 0 and mag_next > 0:
             cos_angle = dot / (mag_curr * mag_next)
-            # If angle < -0.5 (> 120 degrees), it's backtracking - skip this point
-            if cos_angle > -0.5:
+            # If angle < -0.3 (> 107 degrees), it's sharp backtracking
+            if cos_angle > -0.3:
                 no_backtrack.append(curr)
         else:
             no_backtrack.append(curr)
     
     no_backtrack.append(cleaned[-1])
     
-    # Step 3: Apply Ramer-Douglas-Peucker simplification to remove redundant points
+    # Step 4: Apply Ramer-Douglas-Peucker simplification to remove redundant points
     def perpendicular_distance(point, line_start, line_end):
         """Calculate perpendicular distance from point to line segment"""
         if line_start == line_end:
