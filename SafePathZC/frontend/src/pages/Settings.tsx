@@ -32,13 +32,15 @@ const Settings = () => {
     usePreferences();
   const [user, setUser] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const [profile, setProfile] = useState({
-    name: "Juan Cruz",
-    email: "juan.cruz@wmsu.edu.ph",
-    phone: "+63 917 123 4567",
-    address: "Barangay Tetuan, Zamboanga City",
-    emergencyContact: "+63 917 765 4321",
+    name: "",
+    email: "",
+    phone: "",
+    address: "",
+    emergencyContact: "",
   });
 
   const [security, setSecurity] = useState({
@@ -52,7 +54,6 @@ const Settings = () => {
   useEffect(() => {
     const userData = localStorage.getItem("user_data");
     const adminData = localStorage.getItem("admin_data");
-    const savedProfilePicture = localStorage.getItem("user_profile_picture");
 
     // Check for admin user first
     if (adminData) {
@@ -75,18 +76,22 @@ const Settings = () => {
 
       setUser(parsedUser);
       setProfile({
-        name: parsedUser.name || "Juan Cruz",
-        email: parsedUser.email || "juan.cruz@wmsu.edu.ph",
-        phone: parsedUser.phone || "+63 917 123 4567",
-        address: parsedUser.location || "Barangay Tetuan, Zamboanga City",
-        emergencyContact: "+63 917 765 4321",
+        name: parsedUser.name || "",
+        email: parsedUser.email || "",
+        phone: parsedUser.phone || "",
+        address: parsedUser.location || "",
+        emergencyContact: parsedUser.emergencyContact || "",
       });
 
-      // Load profile picture from user data or localStorage
+      // Load profile picture from user data or user-specific localStorage
       if (parsedUser.profilePicture) {
         setProfilePicture(parsedUser.profilePicture);
-      } else if (savedProfilePicture) {
-        setProfilePicture(savedProfilePicture);
+      } else {
+        // Use user-specific profile picture key
+        const userProfilePicture = localStorage.getItem(`user_profile_picture_${parsedUser.id || parsedUser.email}`);
+        if (userProfilePicture) {
+          setProfilePicture(userProfilePicture);
+        }
       }
 
       // Load 2FA status
@@ -96,8 +101,6 @@ const Settings = () => {
           twoFactorEnabled: parsedUser.twoFactorEnabled,
         }));
       }
-    } else if (savedProfilePicture) {
-      setProfilePicture(savedProfilePicture);
     }
   }, []);
 
@@ -132,11 +135,12 @@ const Settings = () => {
           const imageDataUrl = e.target?.result as string;
           setProfilePicture(imageDataUrl);
 
-          // Save to localStorage
-          localStorage.setItem("user_profile_picture", imageDataUrl);
-
-          // Update user data
+          // Save to user-specific localStorage key
           if (user) {
+            const userKey = user.id || user.email;
+            localStorage.setItem(`user_profile_picture_${userKey}`, imageDataUrl);
+
+            // Update user data
             const updatedUser = { ...user, profilePicture: imageDataUrl };
             localStorage.setItem("user_data", JSON.stringify(updatedUser));
             setUser(updatedUser);
@@ -187,11 +191,12 @@ const Settings = () => {
   const handleRemoveProfilePicture = async () => {
     setProfilePicture(null);
 
-    // Remove from localStorage
-    localStorage.removeItem("user_profile_picture");
-
-    // Update user data
+    // Remove from user-specific localStorage
     if (user) {
+      const userKey = user.id || user.email;
+      localStorage.removeItem(`user_profile_picture_${userKey}`);
+
+      // Update user data
       const updatedUser = { ...user };
       delete updatedUser.profilePicture;
       localStorage.setItem("user_data", JSON.stringify(updatedUser));
@@ -226,19 +231,29 @@ const Settings = () => {
   };
 
   const handleSaveProfile = async () => {
+    setIsSaving(true);
     try {
       // Save profile data to backend if user is logged in
       const token = localStorage.getItem("user_token");
       if (token) {
         const BACKEND_URL =
           import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
+        
+        // Map frontend profile fields to backend expected fields
+        const backendProfile = {
+          name: profile.name,
+          phone: profile.phone,
+          location: profile.address, // address maps to location in backend
+          emergencyContact: profile.emergencyContact,
+        };
+        
         const response = await fetch(`${BACKEND_URL}/auth/profile`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify(profile),
+          body: JSON.stringify(backendProfile),
         });
 
         if (!response.ok) {
@@ -248,40 +263,58 @@ const Settings = () => {
 
       // Update local storage
       if (user) {
-        const updatedUser = { ...user, ...profile };
+        const updatedUser = { 
+          ...user, 
+          name: profile.name,
+          phone: profile.phone,
+          location: profile.address,
+          emergencyContact: profile.emergencyContact
+        };
         localStorage.setItem("user_data", JSON.stringify(updatedUser));
         setUser(updatedUser);
       }
 
       toast({
-        title: "Profile saved",
-        description: "Your profile has been updated successfully.",
+        title: "✅ Profile saved successfully!",
+        description: "Your profile has been updated and saved to the server.",
+        duration: 4000,
       });
+      
+      // Show success state briefly
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2000);
     } catch (error) {
       console.error("Error saving profile:", error);
       toast({
-        title: "Error saving profile",
-        description: "Changes saved locally. Please try again later.",
+        title: "❌ Error saving profile",
+        description: "Changes saved locally. Please check your connection and try again.",
         variant: "destructive",
+        duration: 5000,
       });
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleSaveAllSettings = async () => {
+    setIsSaving(true);
     try {
       await savePreferences();
       await handleSaveProfile();
       toast({
-        title: "All settings saved",
-        description:
-          "Your settings and preferences have been updated successfully.",
+        title: "🎉 All settings saved successfully!",
+        description: "Your profile, preferences, and notifications have been updated.",
+        duration: 4000,
       });
     } catch (error) {
       toast({
-        title: "Error saving settings",
+        title: "⚠️ Error saving some settings",
         description: "Some changes may not have been saved. Please try again.",
         variant: "destructive",
+        duration: 5000,
       });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -589,7 +622,7 @@ Type "DELETE" to confirm:`;
       {/* If user is admin, show AdminSettings component */}
       {isAdmin ? (
         <AdminSettings />
-      ) : (
+      ) : user ? (
         <div className="min-h-screen bg-gray-50">
           <NavigationBar />
 
@@ -709,7 +742,27 @@ Type "DELETE" to confirm:`;
                       >
                         Cancel
                       </Button>
-                      <Button onClick={handleSaveProfile}>Save Changes</Button>
+                      <Button 
+                        onClick={handleSaveProfile}
+                        disabled={isSaving}
+                        className={saveSuccess ? "bg-green-600 hover:bg-green-700" : "bg-blue-600 hover:bg-blue-700"}
+                      >
+                        {isSaving ? (
+                          <>
+                            <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Saving...
+                          </>
+                        ) : saveSuccess ? (
+                          <>
+                            ✅ Saved!
+                          </>
+                        ) : (
+                          "Save Changes"
+                        )}
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -1308,11 +1361,42 @@ Type "DELETE" to confirm:`;
                 </div>
                 <Button
                   onClick={handleSaveAllSettings}
-                  disabled={isLoading}
+                  disabled={isSaving || isLoading}
                   className="bg-blue-600 hover:bg-blue-700"
                 >
-                  {isLoading ? "Saving..." : "Save All Changes"}
+                  {(isSaving || isLoading) ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Saving...
+                    </>
+                  ) : (
+                    "Save All Changes"
+                  )}
                 </Button>
+              </div>
+            </div>
+          </main>
+        </div>
+      ) : (
+        // Show login prompt when no user is logged in
+        <div className="min-h-screen bg-gray-50">
+          <NavigationBar />
+          <main className="pt-20 container mx-auto px-4 py-8 max-w-4xl">
+            <div className="text-center">
+              <div className="bg-white rounded-lg shadow-md p-8 max-w-md mx-auto">
+                <i className="fas fa-user-circle text-gray-400 text-6xl mb-4"></i>
+                <h2 className="text-2xl font-bold text-gray-800 mb-4">
+                  Please Log In
+                </h2>
+                <p className="text-gray-600 mb-6">
+                  You need to be logged in to access your settings.
+                </p>
+                <p className="text-sm text-gray-500">
+                  Click the profile icon in the navigation bar to log in.
+                </p>
               </div>
             </div>
           </main>

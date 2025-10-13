@@ -27,6 +27,41 @@ const CommunityForum = () => {
   useEffect(() => {
     document.body.style.overflow = 'auto';
   }, []);
+  
+  // User authentication state
+  const [user, setUser] = useState<any>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // Check for authenticated user
+  useEffect(() => {
+    const userData = localStorage.getItem("user_data");
+    const adminData = localStorage.getItem("admin_data");
+
+    // Check for admin user first
+    if (adminData) {
+      const parsedAdmin = JSON.parse(adminData);
+      if (parsedAdmin.userType === "admin" || parsedAdmin.role === "admin") {
+        setIsAdmin(true);
+        setUser(parsedAdmin);
+        return;
+      }
+    }
+
+    // Check for regular user
+    if (userData) {
+      const parsedUser = JSON.parse(userData);
+      
+      // Check if this user is actually an admin
+      if (parsedUser.userType === "admin" || parsedUser.role === "admin") {
+        setIsAdmin(true);
+        setUser(parsedUser);
+        return;
+      }
+
+      setUser(parsedUser);
+    }
+  }, []);
+  
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
@@ -184,13 +219,16 @@ const CommunityForum = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
-      {/* Header Section - Starts from top */}
-      <div className="relative bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-700 overflow-hidden">
-        {/* Navbar positioned absolutely on top */}
-        <div className="absolute top-0 left-0 right-0 z-50">
-          <NavigationBar />
-        </div>
+    <>
+      {/* Check if user is logged in */}
+      {user ? (
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+          {/* Header Section - Starts from top */}
+          <div className="relative bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-700 overflow-hidden">
+            {/* Navbar positioned absolutely on top */}
+            <div className="absolute top-0 left-0 right-0 z-50">
+              <NavigationBar />
+            </div>
 
         <div className="absolute inset-0 bg-black/10"></div>
         <div className="absolute inset-0">
@@ -454,6 +492,29 @@ const CommunityForum = () => {
         />
       )}
     </div>
+      ) : (
+        // Show login prompt when no user is logged in
+        <div className="min-h-screen bg-gray-50">
+          <NavigationBar />
+          <main className="pt-20 container mx-auto px-4 py-8 max-w-4xl">
+            <div className="text-center">
+              <div className="bg-white rounded-lg shadow-md p-8 max-w-md mx-auto">
+                <MessageSquare className="text-gray-400 text-6xl mb-4 mx-auto" />
+                <h2 className="text-2xl font-bold text-gray-800 mb-4">
+                  Join the Community
+                </h2>
+                <p className="text-gray-600 mb-6">
+                  You need to be logged in to access the community forum and participate in discussions.
+                </p>
+                <p className="text-sm text-gray-500">
+                  Click the profile icon in the navigation bar to log in and start sharing your experiences with the community.
+                </p>
+              </div>
+            </div>
+          </main>
+        </div>
+      )}
+    </>
   );
 };
 

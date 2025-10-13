@@ -200,9 +200,9 @@ const Profile = () => {
 
                 {/* User Info */}
                 <h2 className="text-xl font-bold text-gray-900 mb-1">
-                  {user?.name || "Maria Santos"}
+                  {user?.name || "User"}
                 </h2>
-                <p className="text-gray-600 mb-4">Zamboanga City</p>
+                <p className="text-gray-600 mb-4">{user?.location || "Location not set"}</p>
 
                 {/* Member Since Badge */}
                 <div className="bg-gray-900 text-white px-4 py-2 rounded-full text-sm mb-6 inline-block">
@@ -218,7 +218,7 @@ const Profile = () => {
                 {/* Community Points */}
                 <div className="mb-6">
                   <div className="text-3xl font-bold text-blue-600 mb-1">
-                    {user?.communityPoints || 340}
+                    {user?.communityPoints || user?.community_points || 0}
                   </div>
                   <div className="text-gray-600 text-sm">Community Points</div>
                 </div>
@@ -227,13 +227,13 @@ const Profile = () => {
                 <div className="grid grid-cols-2 gap-4 text-center">
                   <div>
                     <div className="text-2xl font-bold text-gray-900">
-                      {user?.routesUsed || 127}
+                      {user?.routesUsed || user?.routes_used || 0}
                     </div>
                     <div className="text-gray-600 text-sm">Routes Used</div>
                   </div>
                   <div>
                     <div className="text-2xl font-bold text-gray-900">
-                      {user?.reportsSubmitted || 8}
+                      {user?.reportsSubmitted || user?.reports_submitted || 0}
                     </div>
                     <div className="text-gray-600 text-sm">Reports</div>
                   </div>
@@ -307,7 +307,8 @@ const Profile = () => {
                       </label>
                       <input
                         type="text"
-                        value={user?.location || "Zamboanga City"}
+                        value={user?.location || ""}
+                        placeholder="Location not set"
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         readOnly
                       />
@@ -326,46 +327,35 @@ const Profile = () => {
                   </p>
 
                   <div className="space-y-4">
-                    {/* Recent Routes */}
-                    <div className="border-l-4 border-blue-500 pl-4">
-                      <h4 className="font-semibold text-gray-900">
-                        Route to WMSU
-                      </h4>
-                      <p className="text-gray-600 text-sm">
-                        Used safe route via Governor Camins Ave
-                      </p>
-                      <p className="text-gray-500 text-xs">2 hours ago</p>
-                    </div>
-
-                    <div className="border-l-4 border-green-500 pl-4">
-                      <h4 className="font-semibold text-gray-900">
-                        Report Submitted
-                      </h4>
-                      <p className="text-gray-600 text-sm">
-                        Reported road closure on Veteran Ave
-                      </p>
-                      <p className="text-gray-500 text-xs">1 day ago</p>
-                    </div>
-
-                    <div className="border-l-4 border-blue-500 pl-4">
-                      <h4 className="font-semibold text-gray-900">
-                        Route to City Mall
-                      </h4>
-                      <p className="text-gray-600 text-sm">
-                        Avoided high-risk area near port
-                      </p>
-                      <p className="text-gray-500 text-xs">3 days ago</p>
-                    </div>
-
-                    <div className="border-l-4 border-orange-500 pl-4">
-                      <h4 className="font-semibold text-gray-900">
-                        Community Points Earned
-                      </h4>
-                      <p className="text-gray-600 text-sm">
-                        +20 points for route feedback
-                      </p>
-                      <p className="text-gray-500 text-xs">1 week ago</p>
-                    </div>
+                    {/* Check if user has any activity */}
+                    {(!user?.recentActivity || user.recentActivity.length === 0) ? (
+                      <div className="text-center py-8">
+                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                          <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                          </svg>
+                        </div>
+                        <h4 className="text-lg font-medium text-gray-900 mb-2">No Activity Yet</h4>
+                        <p className="text-gray-600 mb-4">
+                          Start using SafePath to see your recent routes and activities here.
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          Use the map to plan routes, submit reports, or engage with the community.
+                        </p>
+                      </div>
+                    ) : (
+                      user.recentActivity.map((activity: any, index: number) => (
+                        <div key={index} className={`border-l-4 ${activity.color || 'border-blue-500'} pl-4`}>
+                          <h4 className="font-semibold text-gray-900">
+                            {activity.title}
+                          </h4>
+                          <p className="text-gray-600 text-sm">
+                            {activity.description}
+                          </p>
+                          <p className="text-gray-500 text-xs">{activity.timestamp}</p>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               )}

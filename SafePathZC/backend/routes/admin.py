@@ -273,7 +273,7 @@ async def get_users(
             "email": user.email,
             "role": user.role,
             "isActive": user.is_active,
-            "reportCount": user.report_count,
+            "reportCount": user.reports_submitted,
             "joinedAt": user.joined_at.isoformat(),
             "lastActivity": user.last_activity.isoformat()
         })

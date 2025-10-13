@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { PreferencesProvider } from "./contexts/PreferencesContext";
+import { Toaster } from "./components/ui/toaster";
 import Index from "./pages/Index";
 import MyRoutes from "./pages/MyRoutes";
 import Alerts from "./pages/Alerts";
@@ -22,6 +23,7 @@ function App() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/profile" element={<Profile />} />
         </Routes>
+        <Toaster />
       </Router>
     </PreferencesProvider>
   );

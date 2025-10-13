@@ -110,6 +110,7 @@ class User(Base):
     name = Column(String, nullable=False)
     phone = Column(String, nullable=True)
     location = Column(String, nullable=True)
+    emergency_contact = Column(String, nullable=True)
     role = Column(String, default="user")  # user, admin, moderator
     is_active = Column(Boolean, default=True)
     community_points = Column(Integer, default=0)
