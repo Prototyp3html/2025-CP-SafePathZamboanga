@@ -88,7 +88,9 @@ const Settings = () => {
         setProfilePicture(parsedUser.profilePicture);
       } else {
         // Use user-specific profile picture key
-        const userProfilePicture = localStorage.getItem(`user_profile_picture_${parsedUser.id || parsedUser.email}`);
+        const userProfilePicture = localStorage.getItem(
+          `user_profile_picture_${parsedUser.id || parsedUser.email}`
+        );
         if (userProfilePicture) {
           setProfilePicture(userProfilePicture);
         }
@@ -138,7 +140,10 @@ const Settings = () => {
           // Save to user-specific localStorage key
           if (user) {
             const userKey = user.id || user.email;
-            localStorage.setItem(`user_profile_picture_${userKey}`, imageDataUrl);
+            localStorage.setItem(
+              `user_profile_picture_${userKey}`,
+              imageDataUrl
+            );
 
             // Update user data
             const updatedUser = { ...user, profilePicture: imageDataUrl };
@@ -238,7 +243,7 @@ const Settings = () => {
       if (token) {
         const BACKEND_URL =
           import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
-        
+
         // Map frontend profile fields to backend expected fields
         const backendProfile = {
           name: profile.name,
@@ -246,7 +251,7 @@ const Settings = () => {
           location: profile.address, // address maps to location in backend
           emergencyContact: profile.emergencyContact,
         };
-        
+
         const response = await fetch(`${BACKEND_URL}/auth/profile`, {
           method: "PUT",
           headers: {
@@ -263,12 +268,12 @@ const Settings = () => {
 
       // Update local storage
       if (user) {
-        const updatedUser = { 
-          ...user, 
+        const updatedUser = {
+          ...user,
           name: profile.name,
           phone: profile.phone,
           location: profile.address,
-          emergencyContact: profile.emergencyContact
+          emergencyContact: profile.emergencyContact,
         };
         localStorage.setItem("user_data", JSON.stringify(updatedUser));
         setUser(updatedUser);
@@ -279,7 +284,7 @@ const Settings = () => {
         description: "Your profile has been updated and saved to the server.",
         duration: 4000,
       });
-      
+
       // Show success state briefly
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2000);
@@ -287,7 +292,8 @@ const Settings = () => {
       console.error("Error saving profile:", error);
       toast({
         title: "❌ Error saving profile",
-        description: "Changes saved locally. Please check your connection and try again.",
+        description:
+          "Changes saved locally. Please check your connection and try again.",
         variant: "destructive",
         duration: 5000,
       });
@@ -303,7 +309,8 @@ const Settings = () => {
       await handleSaveProfile();
       toast({
         title: "🎉 All settings saved successfully!",
-        description: "Your profile, preferences, and notifications have been updated.",
+        description:
+          "Your profile, preferences, and notifications have been updated.",
         duration: 4000,
       });
     } catch (error) {
@@ -742,23 +749,41 @@ Type "DELETE" to confirm:`;
                       >
                         Cancel
                       </Button>
-                      <Button 
+                      <Button
                         onClick={handleSaveProfile}
                         disabled={isSaving}
-                        className={saveSuccess ? "bg-green-600 hover:bg-green-700" : "bg-blue-600 hover:bg-blue-700"}
+                        className={
+                          saveSuccess
+                            ? "bg-green-600 hover:bg-green-700"
+                            : "bg-blue-600 hover:bg-blue-700"
+                        }
                       >
                         {isSaving ? (
                           <>
-                            <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            <svg
+                              className="animate-spin -ml-1 mr-3 h-4 w-4 text-white"
+                              xmlns="http://www.w3.org/2000/svg"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                            >
+                              <circle
+                                className="opacity-25"
+                                cx="12"
+                                cy="12"
+                                r="10"
+                                stroke="currentColor"
+                                strokeWidth="4"
+                              ></circle>
+                              <path
+                                className="opacity-75"
+                                fill="currentColor"
+                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                              ></path>
                             </svg>
                             Saving...
                           </>
                         ) : saveSuccess ? (
-                          <>
-                            ✅ Saved!
-                          </>
+                          <>✅ Saved!</>
                         ) : (
                           "Save Changes"
                         )}
@@ -1364,11 +1389,27 @@ Type "DELETE" to confirm:`;
                   disabled={isSaving || isLoading}
                   className="bg-blue-600 hover:bg-blue-700"
                 >
-                  {(isSaving || isLoading) ? (
+                  {isSaving || isLoading ? (
                     <>
-                      <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      <svg
+                        className="animate-spin -ml-1 mr-3 h-4 w-4 text-white"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        ></circle>
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        ></path>
                       </svg>
                       Saving...
                     </>

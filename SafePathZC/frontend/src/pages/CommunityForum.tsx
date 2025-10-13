@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useEffect } from 'react';
+import { useEffect } from "react";
 import { NavigationBar } from "../components/NavigationBar";
 import { CreatePostModal } from "../components/CreatePostModal";
 import { PostRepliesModal } from "../components/PostRepliesModal";
@@ -25,9 +25,9 @@ import { Badge } from "../components/ui/badge";
 
 const CommunityForum = () => {
   useEffect(() => {
-    document.body.style.overflow = 'auto';
+    document.body.style.overflow = "auto";
   }, []);
-  
+
   // User authentication state
   const [user, setUser] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -50,7 +50,7 @@ const CommunityForum = () => {
     // Check for regular user
     if (userData) {
       const parsedUser = JSON.parse(userData);
-      
+
       // Check if this user is actually an admin
       if (parsedUser.userType === "admin" || parsedUser.role === "admin") {
         setIsAdmin(true);
@@ -61,7 +61,7 @@ const CommunityForum = () => {
       setUser(parsedUser);
     }
   }, []);
-  
+
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
@@ -230,268 +230,268 @@ const CommunityForum = () => {
               <NavigationBar />
             </div>
 
-        <div className="absolute inset-0 bg-black/10"></div>
-        <div className="absolute inset-0">
-          <div className="absolute top-10 left-10 w-72 h-72 bg-white/10 rounded-full blur-3xl"></div>
-          <div className="absolute bottom-10 right-10 w-96 h-96 bg-purple-300/20 rounded-full blur-3xl"></div>
-        </div>
+            <div className="absolute inset-0 bg-black/10"></div>
+            <div className="absolute inset-0">
+              <div className="absolute top-10 left-10 w-72 h-72 bg-white/10 rounded-full blur-3xl"></div>
+              <div className="absolute bottom-10 right-10 w-96 h-96 bg-purple-300/20 rounded-full blur-3xl"></div>
+            </div>
 
-        <div className="relative z-10 max-w-7xl mx-auto px-6 pt-32 pb-20 text-center">
-          <div className="mb-6">
-            <div className="inline-flex items-center px-4 py-2 bg-white/20 rounded-full text-white/90 text-sm font-medium mb-4">
-              <TrendingUp className="w-4 h-4 mr-2" />
-              1,247 Active Members
+            <div className="relative z-10 max-w-7xl mx-auto px-6 pt-32 pb-20 text-center">
+              <div className="mb-6">
+                <div className="inline-flex items-center px-4 py-2 bg-white/20 rounded-full text-white/90 text-sm font-medium mb-4">
+                  <TrendingUp className="w-4 h-4 mr-2" />
+                  1,247 Active Members
+                </div>
+              </div>
+
+              <h1 className="text-5xl md:text-6xl font-bold text-white mb-6 leading-tight">
+                Community
+                <span className="bg-gradient-to-r from-yellow-400 to-orange-400 bg-clip-text text-transparent">
+                  {" "}
+                  Forum
+                </span>
+              </h1>
+
+              <p className="text-xl text-blue-100 mb-10 max-w-3xl mx-auto leading-relaxed">
+                Connect with fellow travelers, share real-time road conditions,
+                and help keep our community safe through collaborative reporting
+              </p>
+
+              <button
+                onClick={() => setIsCreatePostOpen(true)}
+                className="group inline-flex items-center px-8 py-4 bg-white text-blue-600 font-semibold rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
+              >
+                <Plus className="w-5 h-5 mr-3 group-hover:rotate-90 transition-transform duration-300" />
+                Create New Post
+              </button>
             </div>
           </div>
 
-          <h1 className="text-5xl md:text-6xl font-bold text-white mb-6 leading-tight">
-            Community
-            <span className="bg-gradient-to-r from-yellow-400 to-orange-400 bg-clip-text text-transparent">
-              {" "}
-              Forum
-            </span>
-          </h1>
-
-          <p className="text-xl text-blue-100 mb-10 max-w-3xl mx-auto leading-relaxed">
-            Connect with fellow travelers, share real-time road conditions, and
-            help keep our community safe through collaborative reporting
-          </p>
-
-          <button
-            onClick={() => setIsCreatePostOpen(true)}
-            className="group inline-flex items-center px-8 py-4 bg-white text-blue-600 font-semibold rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
-          >
-            <Plus className="w-5 h-5 mr-3 group-hover:rotate-90 transition-transform duration-300" />
-            Create New Post
-          </button>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-6 py-10">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          {/* Enhanced Left Sidebar */}
-          <div className="lg:col-span-1 space-y-6">
-            {/* Categories with better styling */}
-            <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
-              <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-5">
-                <h3 className="font-bold text-white text-lg">Categories</h3>
-              </div>
-              <div className="p-4 space-y-2">
-                {categories.map((category) => (
-                  <button
-                    key={category.name}
-                    onClick={() =>
-                      setSelectedCategory(
-                        category.name.toLowerCase().replace(" ", "-")
-                      )
-                    }
-                    className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 flex items-center justify-between group ${
-                      selectedCategory ===
-                      category.name.toLowerCase().replace(" ", "-")
-                        ? "bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg"
-                        : "hover:bg-gray-50 text-gray-700 hover:text-blue-600"
-                    }`}
-                  >
-                    <span className="font-medium">{category.name}</span>
-                    <span
-                      className={`text-xs px-3 py-1 rounded-full font-semibold ${
-                        selectedCategory ===
-                        category.name.toLowerCase().replace(" ", "-")
-                          ? "bg-white/20 text-white"
-                          : "bg-blue-100 text-blue-600 group-hover:bg-blue-500 group-hover:text-white"
-                      }`}
-                    >
-                      {category.count}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Enhanced Community Stats */}
-            <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
-              <div className="bg-gradient-to-r from-green-500 to-teal-600 p-5">
-                <h3 className="font-bold text-white text-lg">
-                  Community Stats
-                </h3>
-              </div>
-              <div className="p-4 space-y-4">
-                {stats.map((stat) => (
-                  <div
-                    key={stat.label}
-                    className="flex justify-between items-center p-3 rounded-xl bg-gray-50"
-                  >
-                    <span className="text-gray-600 font-medium">
-                      {stat.label}
-                    </span>
-                    <span className="font-bold text-2xl bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                      {stat.value.toLocaleString()}
-                    </span>
+          <div className="max-w-7xl mx-auto px-6 py-10">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+              {/* Enhanced Left Sidebar */}
+              <div className="lg:col-span-1 space-y-6">
+                {/* Categories with better styling */}
+                <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+                  <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-5">
+                    <h3 className="font-bold text-white text-lg">Categories</h3>
                   </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Enhanced Main Content */}
-          <div className="lg:col-span-3">
-            {/* Enhanced Search and Filter Bar */}
-            <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 mb-8">
-              <div className="flex flex-col md:flex-row gap-4">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                  <input
-                    type="text"
-                    placeholder="Search discussions, topics, or users..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-12 pr-4 py-4 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                  />
-                </div>
-                <div className="flex gap-3">
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
-                    className="px-4 py-4 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="recent">Most Recent</option>
-                    <option value="popular">Most Popular</option>
-                    <option value="replied">Most Replied</option>
-                  </select>
-                  <button className="px-4 py-4 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors duration-200">
-                    <Filter className="w-5 h-5 text-gray-600" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Enhanced Forum Posts */}
-            <div className="space-y-6">
-              {filteredPosts.map((post) => (
-                <div
-                  key={post.id}
-                  className={`bg-white rounded-2xl shadow-xl border transition-all duration-300 hover:shadow-2xl hover:scale-[1.02] ${
-                    post.urgent
-                      ? "border-l-4 border-l-red-500 bg-gradient-to-r from-red-50 to-white"
-                      : "border-gray-100 hover:border-blue-200"
-                  }`}
-                >
-                  {/* Enhanced Post Header */}
-                  <div className="p-6 border-b border-gray-100">
-                    <div className="flex items-start space-x-4">
-                      <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                        <User className="w-6 h-6 text-white" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3 mb-2">
-                          <h3 className="font-bold text-xl text-gray-900 hover:text-blue-600 transition-colors cursor-pointer">
-                            {post.title}
-                          </h3>
-                          {post.urgent && (
-                            <span className="bg-red-500 text-white text-xs px-3 py-1 rounded-full font-bold animate-pulse">
-                              URGENT
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center text-sm text-gray-500 space-x-4">
-                          <span className="font-medium text-blue-600">
-                            {post.author}
-                          </span>
-                          <div className="flex items-center">
-                            <Clock className="w-3 h-3 mr-1" />
-                            {post.timestamp}
-                          </div>
-                          <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-full text-xs">
-                            {post.category}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Enhanced Post Content */}
-                  <div className="p-6">
-                    <p className="text-gray-700 text-lg leading-relaxed mb-4">
-                      {post.content}
-                    </p>
-
-                    {/* Enhanced Tags */}
-                    <div className="flex flex-wrap gap-2 mb-6">
-                      {post.tags.map((tag) => (
+                  <div className="p-4 space-y-2">
+                    {categories.map((category) => (
+                      <button
+                        key={category.name}
+                        onClick={() =>
+                          setSelectedCategory(
+                            category.name.toLowerCase().replace(" ", "-")
+                          )
+                        }
+                        className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 flex items-center justify-between group ${
+                          selectedCategory ===
+                          category.name.toLowerCase().replace(" ", "-")
+                            ? "bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg"
+                            : "hover:bg-gray-50 text-gray-700 hover:text-blue-600"
+                        }`}
+                      >
+                        <span className="font-medium">{category.name}</span>
                         <span
-                          key={tag}
-                          className="bg-blue-100 hover:bg-blue-200 text-blue-700 text-sm px-3 py-1 rounded-full cursor-pointer transition-colors duration-200"
-                        >
-                          #{tag}
-                        </span>
-                      ))}
-                    </div>
-
-                    {/* Enhanced Post Actions */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-6">
-                        <button
-                          onClick={() => setSelectedPostId(post.id)}
-                          className="flex items-center text-gray-600 hover:text-blue-600 transition-colors duration-200 group"
-                        >
-                          <MessageSquare className="w-5 h-5 mr-2 group-hover:scale-110 transition-transform duration-200" />
-                          <span className="font-medium">
-                            {post.replies} replies
-                          </span>
-                        </button>
-                        <button
-                          onClick={() => handleLike(post.id)}
-                          className={`flex items-center transition-all duration-200 group ${
-                            likedPosts.has(post.id)
-                              ? "text-red-500"
-                              : "text-gray-600 hover:text-red-500"
+                          className={`text-xs px-3 py-1 rounded-full font-semibold ${
+                            selectedCategory ===
+                            category.name.toLowerCase().replace(" ", "-")
+                              ? "bg-white/20 text-white"
+                              : "bg-blue-100 text-blue-600 group-hover:bg-blue-500 group-hover:text-white"
                           }`}
                         >
-                          <ThumbsUp
-                            className={`w-5 h-5 mr-2 group-hover:scale-110 transition-transform duration-200 ${
-                              likedPosts.has(post.id) ? "fill-current" : ""
-                            }`}
-                          />
-                          <span className="font-medium">
-                            {post.likes} likes
-                          </span>
-                        </button>
+                          {category.count}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Enhanced Community Stats */}
+                <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+                  <div className="bg-gradient-to-r from-green-500 to-teal-600 p-5">
+                    <h3 className="font-bold text-white text-lg">
+                      Community Stats
+                    </h3>
+                  </div>
+                  <div className="p-4 space-y-4">
+                    {stats.map((stat) => (
+                      <div
+                        key={stat.label}
+                        className="flex justify-between items-center p-3 rounded-xl bg-gray-50"
+                      >
+                        <span className="text-gray-600 font-medium">
+                          {stat.label}
+                        </span>
+                        <span className="font-bold text-2xl bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                          {stat.value.toLocaleString()}
+                        </span>
                       </div>
-                      <button className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-3 rounded-xl font-medium hover:shadow-lg transform hover:scale-105 transition-all duration-200">
-                        Read More
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Enhanced Main Content */}
+              <div className="lg:col-span-3">
+                {/* Enhanced Search and Filter Bar */}
+                <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 mb-8">
+                  <div className="flex flex-col md:flex-row gap-4">
+                    <div className="flex-1 relative">
+                      <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                      <input
+                        type="text"
+                        placeholder="Search discussions, topics, or users..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-12 pr-4 py-4 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                      />
+                    </div>
+                    <div className="flex gap-3">
+                      <select
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value)}
+                        className="px-4 py-4 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="recent">Most Recent</option>
+                        <option value="popular">Most Popular</option>
+                        <option value="replied">Most Replied</option>
+                      </select>
+                      <button className="px-4 py-4 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors duration-200">
+                        <Filter className="w-5 h-5 text-gray-600" />
                       </button>
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
 
-            {/* Load More Button */}
-            <div className="text-center mt-8">
-              <button className="bg-white border-2 border-gray-200 text-gray-700 px-8 py-4 rounded-2xl font-medium hover:bg-gray-50 hover:border-blue-300 transition-all duration-200">
-                Load More Posts
-              </button>
+                {/* Enhanced Forum Posts */}
+                <div className="space-y-6">
+                  {filteredPosts.map((post) => (
+                    <div
+                      key={post.id}
+                      className={`bg-white rounded-2xl shadow-xl border transition-all duration-300 hover:shadow-2xl hover:scale-[1.02] ${
+                        post.urgent
+                          ? "border-l-4 border-l-red-500 bg-gradient-to-r from-red-50 to-white"
+                          : "border-gray-100 hover:border-blue-200"
+                      }`}
+                    >
+                      {/* Enhanced Post Header */}
+                      <div className="p-6 border-b border-gray-100">
+                        <div className="flex items-start space-x-4">
+                          <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+                            <User className="w-6 h-6 text-white" />
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-3 mb-2">
+                              <h3 className="font-bold text-xl text-gray-900 hover:text-blue-600 transition-colors cursor-pointer">
+                                {post.title}
+                              </h3>
+                              {post.urgent && (
+                                <span className="bg-red-500 text-white text-xs px-3 py-1 rounded-full font-bold animate-pulse">
+                                  URGENT
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center text-sm text-gray-500 space-x-4">
+                              <span className="font-medium text-blue-600">
+                                {post.author}
+                              </span>
+                              <div className="flex items-center">
+                                <Clock className="w-3 h-3 mr-1" />
+                                {post.timestamp}
+                              </div>
+                              <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-full text-xs">
+                                {post.category}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Enhanced Post Content */}
+                      <div className="p-6">
+                        <p className="text-gray-700 text-lg leading-relaxed mb-4">
+                          {post.content}
+                        </p>
+
+                        {/* Enhanced Tags */}
+                        <div className="flex flex-wrap gap-2 mb-6">
+                          {post.tags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="bg-blue-100 hover:bg-blue-200 text-blue-700 text-sm px-3 py-1 rounded-full cursor-pointer transition-colors duration-200"
+                            >
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+
+                        {/* Enhanced Post Actions */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-6">
+                            <button
+                              onClick={() => setSelectedPostId(post.id)}
+                              className="flex items-center text-gray-600 hover:text-blue-600 transition-colors duration-200 group"
+                            >
+                              <MessageSquare className="w-5 h-5 mr-2 group-hover:scale-110 transition-transform duration-200" />
+                              <span className="font-medium">
+                                {post.replies} replies
+                              </span>
+                            </button>
+                            <button
+                              onClick={() => handleLike(post.id)}
+                              className={`flex items-center transition-all duration-200 group ${
+                                likedPosts.has(post.id)
+                                  ? "text-red-500"
+                                  : "text-gray-600 hover:text-red-500"
+                              }`}
+                            >
+                              <ThumbsUp
+                                className={`w-5 h-5 mr-2 group-hover:scale-110 transition-transform duration-200 ${
+                                  likedPosts.has(post.id) ? "fill-current" : ""
+                                }`}
+                              />
+                              <span className="font-medium">
+                                {post.likes} likes
+                              </span>
+                            </button>
+                          </div>
+                          <button className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-3 rounded-xl font-medium hover:shadow-lg transform hover:scale-105 transition-all duration-200">
+                            Read More
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Load More Button */}
+                <div className="text-center mt-8">
+                  <button className="bg-white border-2 border-gray-200 text-gray-700 px-8 py-4 rounded-2xl font-medium hover:bg-gray-50 hover:border-blue-300 transition-all duration-200">
+                    Load More Posts
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
+
+          {/* Modals */}
+          <CreatePostModal
+            isOpen={isCreatePostOpen}
+            onClose={() => setIsCreatePostOpen(false)}
+            onPostCreated={handlePostCreated}
+          />
+
+          {selectedPostId && (
+            <PostRepliesModal
+              isOpen={selectedPostId !== null}
+              onClose={() => setSelectedPostId(null)}
+              post={forumPosts.find((p) => p.id === selectedPostId)!}
+              onReplyAdded={() => handleReplyAdded(selectedPostId)}
+            />
+          )}
         </div>
-      </div>
-
-      {/* Modals */}
-      <CreatePostModal
-        isOpen={isCreatePostOpen}
-        onClose={() => setIsCreatePostOpen(false)}
-        onPostCreated={handlePostCreated}
-      />
-
-      {selectedPostId && (
-        <PostRepliesModal
-          isOpen={selectedPostId !== null}
-          onClose={() => setSelectedPostId(null)}
-          post={forumPosts.find((p) => p.id === selectedPostId)!}
-          onReplyAdded={() => handleReplyAdded(selectedPostId)}
-        />
-      )}
-    </div>
       ) : (
         // Show login prompt when no user is logged in
         <div className="min-h-screen bg-gray-50">
@@ -504,10 +504,12 @@ const CommunityForum = () => {
                   Join the Community
                 </h2>
                 <p className="text-gray-600 mb-6">
-                  You need to be logged in to access the community forum and participate in discussions.
+                  You need to be logged in to access the community forum and
+                  participate in discussions.
                 </p>
                 <p className="text-sm text-gray-500">
-                  Click the profile icon in the navigation bar to log in and start sharing your experiences with the community.
+                  Click the profile icon in the navigation bar to log in and
+                  start sharing your experiences with the community.
                 </p>
               </div>
             </div>
