@@ -15,32 +15,48 @@ import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 
 interface WeatherData {
+  location: {
+    name: string;
+    region: string;
+    country: string;
+    localtime: string;
+  };
   current: {
-    temperature_2m: number;
-    relative_humidity_2m: number;
-    precipitation: number;
-    rain: number;
+    temp_c: number;
+    condition: {
+      text: string;
+      icon: string;
+      code: number;
+    };
+    wind_kph: number;
+    wind_dir: string;
+    precip_mm: number;
+    humidity: number;
+    cloud: number;
+    feelslike_c: number;
     is_day: number;
-    wind_speed_10m: number;
-    cloud_cover: number;
   };
-  hourly: {
-    time: string[];
-    temperature_2m: number[];
-    relative_humidity_2m: number[];
-    rain: number[];
-    precipitation: number[];
-    precipitation_probability: number[];
-    wind_speed_10m: number[];
-    wind_direction_10m: number[];
-    cloud_cover_high: number[];
-    cloud_cover_mid: number[];
-    cloud_cover_low: number[];
-  };
-  daily: {
-    time: string[];
-    sunrise: string[];
-    sunset: string[];
+  forecast: {
+    forecastday: Array<{
+      date: string;
+      hour: Array<{
+        time: string;
+        temp_c: number;
+        condition: {
+          text: string;
+          icon: string;
+        };
+        wind_kph: number;
+        precip_mm: number;
+        humidity: number;
+        cloud: number;
+        chance_of_rain: number;
+      }>;
+      astro: {
+        sunrise: string;
+        sunset: string;
+      };
+    }>;
   };
 }
 
@@ -58,9 +74,9 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>("");
 
-  // Zamboanga City coordinates
-  const LATITUDE = 6.9103;
-  const LONGITUDE = 122.0739;
+  // WeatherAPI.com API Key - Get yours free at https://www.weatherapi.com/signup.aspx
+  const WEATHER_API_KEY = import.meta.env.VITE_WEATHER_API_KEY || "11b60f9fe8df4418a12152441251310";
+  const LOCATION = "Zamboanga City, Philippines";
 
   const fetchWeatherData = async () => {
     setLoading(true);
@@ -68,10 +84,13 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
 
     try {
       const response = await fetch(
-        `https://api.open-meteo.com/v1/forecast?latitude=${LATITUDE}&longitude=${LONGITUDE}&daily=sunrise,sunset&hourly=temperature_2m,relative_humidity_2m,rain,precipitation,precipitation_probability,wind_speed_10m,wind_direction_10m,cloud_cover_high,cloud_cover_mid,cloud_cover_low&current=temperature_2m,relative_humidity_2m,precipitation,rain,is_day,wind_speed_10m,cloud_cover&timezone=auto`
+        `https://api.weatherapi.com/v1/forecast.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(LOCATION)}&days=1&aqi=no&alerts=no`
       );
 
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          throw new Error("Invalid API key. Please configure VITE_WEATHER_API_KEY in .env file");
+        }
         throw new Error("Failed to fetch weather data");
       }
 
@@ -156,16 +175,18 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
   };
 
   const getNext3HourForecast = () => {
-    if (!weatherData) return null;
+    if (!weatherData || !weatherData.forecast?.forecastday?.[0]?.hour) return null;
 
     const currentHour = new Date().getHours();
-    const next3Hours = weatherData.hourly.time
-      .map((time, index) => {
-        const hour = new Date(time).getHours();
+    const hourlyData = weatherData.forecast.forecastday[0].hour;
+    
+    const next3Hours = hourlyData
+      .map((hour, index) => {
+        const hourTime = new Date(hour.time).getHours();
         return {
-          time,
-          hour,
-          rain: weatherData.hourly.rain[index],
+          time: hour.time,
+          hour: hourTime,
+          rain: hour.precip_mm,
           index,
         };
       })
@@ -194,8 +215,16 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
               <div>
                 <h2 className="text-xl font-bold">Weather Dashboard</h2>
                 <p className="text-blue-100 text-sm">
-                  Zamboanga City, Philippines
+                  {weatherData ? `${weatherData.location.name}, ${weatherData.location.region}, ${weatherData.location.country}` : "Zamboanga City, Philippines"}
                 </p>
+                {weatherData && (
+                  <p className="text-blue-200 text-xs mt-1">
+                    Local Time: {new Date(weatherData.location.localtime).toLocaleString('en-US', { 
+                      dateStyle: 'medium', 
+                      timeStyle: 'short' 
+                    })}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -253,27 +282,24 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-4">
                       {getWeatherIcon(
-                        weatherData.current.rain,
-                        weatherData.current.cloud_cover,
+                        weatherData.current.precip_mm,
+                        weatherData.current.cloud,
                         weatherData.current.is_day === 1
                       )}
                       <div>
                         <h3 className="font-semibold text-xl text-gray-800">
-                          {getWeatherDescription(
-                            weatherData.current.rain,
-                            weatherData.current.cloud_cover
-                          )}
+                          {weatherData.current.condition.text}
                         </h3>
                         <p className="text-sm text-gray-600">
-                          {weatherData.current.rain > 0.1
-                            ? `${weatherData.current.rain.toFixed(1)} mm/hr`
+                          {weatherData.current.precip_mm > 0.1
+                            ? `${weatherData.current.precip_mm.toFixed(1)} mm/hr`
                             : "No precipitation"}
                         </p>
                       </div>
                     </div>
                     <div className="text-right">
                       <div className="text-4xl font-bold text-gray-800">
-                        {Math.round(weatherData.current.temperature_2m)}°C
+                        {Math.round(weatherData.current.temp_c)}°C
                       </div>
                       <div className="text-sm text-gray-600">Temperature</div>
                     </div>
@@ -289,7 +315,7 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
                     <span className="text-sm font-medium">Humidity</span>
                   </div>
                   <div className="text-lg font-semibold">
-                    {weatherData.current.relative_humidity_2m}%
+                    {weatherData.current.humidity}%
                   </div>
                 </div>
 
@@ -299,7 +325,7 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
                     <span className="text-sm font-medium">Wind Speed</span>
                   </div>
                   <div className="text-lg font-semibold">
-                    {Math.round(weatherData.current.wind_speed_10m)} km/h
+                    {Math.round(weatherData.current.wind_kph)} km/h
                   </div>
                 </div>
               </div>
@@ -310,7 +336,7 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
                 if (forecast) {
                   const risk = getRiskLevel(
                     forecast.maxRain,
-                    weatherData.current.wind_speed_10m
+                    weatherData.current.wind_kph
                   );
                   const endTime = forecast.endTime
                     ? new Date(forecast.endTime).toLocaleTimeString("en-US", {
@@ -359,8 +385,8 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
                     </h4>
                     <p className="text-sm text-yellow-700">
                       {getWeatherAdvisory(
-                        weatherData.current.rain,
-                        weatherData.current.wind_speed_10m
+                        weatherData.current.precip_mm,
+                        weatherData.current.wind_kph
                       )}
                     </p>
                   </div>
