@@ -1600,32 +1600,100 @@ async def fetch_zamboanga_weather() -> dict:
         }
 
 async def fetch_pagasa_bulletin() -> dict:
-    """Fetch PAGASA bulletin data - simplified implementation"""
-    # Note: This is a simplified implementation. In production, you would:
-    # 1. Use the pagasa-parser library or scrape PAGASA website
-    # 2. Parse actual bulletin data
-    # 3. Handle various bulletin formats
-    
+    """Fetch PAGASA bulletin data using web scraping - ZAMBOANGA/MINDANAO FOCUSED"""
     try:
-        # For now, we'll simulate checking PAGASA's public API or RSS feed
-        # In a real implementation, you'd use pagasa-parser or scrape their website
+        # PAGASA weather bulletins URL
         pagasa_url = "https://www.pagasa.dost.gov.ph/"
         
-        # This is a placeholder - in real implementation you'd parse actual bulletin data
-        return {
-            "title": None,
-            "issued_at": None,
-            "signal_levels": None,
-            "summary": None,
-            "message": "No current typhoon bulletins"
-        }
+        # Fetch the page
+        response = requests.get(pagasa_url, timeout=15)
+        response.raise_for_status()
+        
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        bulletins = []
+        
+        # Try to find weather advisories/bulletins
+        # PAGASA typically has these in specific sections
+        advisory_sections = soup.find_all('div', class_=['advisory', 'bulletin', 'weather-update'])
+        
+        if not advisory_sections:
+            # Fallback: Look for any content with weather keywords
+            advisory_sections = soup.find_all(['article', 'div'], string=lambda text: text and any(
+                keyword in text.lower() for keyword in ['advisory', 'bulletin', 'warning', 'rainfall', 'typhoon']
+            ))
+        
+        # Geographic keywords for Zamboanga/Mindanao region
+        zamboanga_keywords = [
+            'zamboanga', 'mindanao', 'region ix', 'region 9', 'peninsula',
+            'basilan', 'sulu', 'tawi-tawi', 'zamboanga del sur', 'zamboanga sibugay',
+            'zamboanga del norte', 'southern philippines', 'barmm', 'bangsamoro'
+        ]
+        
+        for section in advisory_sections[:10]:  # Check more sections for regional content
+            title_elem = section.find(['h1', 'h2', 'h3', 'h4', 'strong'])
+            title = title_elem.get_text(strip=True) if title_elem else "Weather Advisory"
+            
+            # Get the text content
+            text_content = section.get_text(strip=True)
+            
+            # FILTER: Only include bulletins mentioning Zamboanga/Mindanao
+            is_relevant = any(keyword in text_content.lower() for keyword in zamboanga_keywords)
+            
+            # Also include general Philippines-wide warnings (typhoons, etc.)
+            is_general_warning = any(word in text_content.lower() for word in ['typhoon', 'tropical cyclone', 'nationwide'])
+            
+            if not is_relevant and not is_general_warning:
+                continue  # Skip this bulletin - not relevant to Zamboanga
+            
+            # Try to find timestamp
+            time_elem = section.find(['time', 'span'], class_=['date', 'time', 'timestamp'])
+            timestamp = time_elem.get_text(strip=True) if time_elem else "Recently updated"
+            
+            if len(text_content) > 50:  # Only include substantial content
+                bulletins.append({
+                    "title": title,
+                    "content": text_content[:500],  # Limit to 500 chars
+                    "timestamp": timestamp,
+                    "type": "advisory" if "advisory" in title.lower() else 
+                            "typhoon" if "typhoon" in title.lower() else
+                            "rainfall" if "rainfall" in title.lower() or "rain" in title.lower() else
+                            "general",
+                    "region_specific": is_relevant  # Flag if specifically mentions Zamboanga/Mindanao
+                })
+        
+        if bulletins:
+            # Sort: Region-specific bulletins first
+            bulletins.sort(key=lambda x: (not x.get("region_specific", False), x.get("timestamp", "")))
+            
+            return {
+                "success": True,
+                "bulletins": bulletins[:5],  # Limit to 5 most relevant
+                "source": "PAGASA",
+                "region_filter": "Zamboanga/Mindanao",
+                "fetched_at": datetime.now().isoformat()
+            }
+        else:
+            # No bulletins found, return safe status
+            return {
+                "success": True,
+                "bulletins": [],
+                "message": "No active weather bulletins for Zamboanga/Mindanao region",
+                "source": "PAGASA",
+                "region_filter": "Zamboanga/Mindanao",
+                "fetched_at": datetime.now().isoformat()
+            }
+            
     except Exception as e:
+        logger.warning(f"Failed to fetch PAGASA bulletin: {e}")
         return {
-            "title": None,
-            "issued_at": None, 
-            "signal_levels": None,
-            "summary": None,
-            "message": "No current typhoon bulletins"
+            "success": False,
+            "bulletins": [],
+            "message": "Unable to fetch PAGASA data at this time",
+            "error": str(e),
+            "source": "PAGASA",
+            "fetched_at": datetime.now().isoformat()
         }
 
 # Weather endpoints
@@ -1665,9 +1733,28 @@ async def get_weather(request: WeatherRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Weather service error: {str(e)}")
 
+@app.get("/api/pagasa/bulletins")
+async def get_pagasa_bulletins():
+    """Get latest PAGASA weather bulletins and advisories"""
+    try:
+        bulletin_data = await fetch_pagasa_bulletin()
+        
+        return {
+            "success": bulletin_data.get("success", True),
+            "bulletins": bulletin_data.get("bulletins", []),
+            "message": bulletin_data.get("message", ""),
+            "source": "PAGASA (https://www.pagasa.dost.gov.ph/)",
+            "fetched_at": bulletin_data.get("fetched_at"),
+            "count": len(bulletin_data.get("bulletins", []))
+        }
+        
+    except Exception as e:
+        logger.error(f"PAGASA bulletin endpoint error: {e}")
+        raise HTTPException(status_code=503, detail=f"Unable to fetch PAGASA bulletins: {str(e)}")
+
 @app.get("/api/bulletin", response_model=BulletinResponse)
 async def get_typhoon_bulletin():
-    """Get latest PAGASA typhoon bulletin"""
+    """Get latest PAGASA typhoon bulletin (legacy endpoint)"""
     try:
         bulletin_data = await fetch_pagasa_bulletin()
         

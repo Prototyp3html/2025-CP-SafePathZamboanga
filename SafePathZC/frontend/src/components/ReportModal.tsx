@@ -1,23 +1,152 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface ReportModalProps {
   onClose: () => void;
+  isLoggedIn?: boolean;
+  onLoginRequired?: () => void;
 }
 
-export const ReportModal = ({ onClose }: ReportModalProps) => {
+export const ReportModal = ({ onClose, isLoggedIn = false, onLoginRequired }: ReportModalProps) => {
   const [reportType, setReportType] = useState('');
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
   const [severity, setSeverity] = useState('moderate');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeWarnings, setActiveWarnings] = useState<string[]>([]);
+  const [weatherData, setWeatherData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  // WeatherAPI.com configuration
+  const WEATHER_API_KEY = import.meta.env.VITE_WEATHER_API_KEY || "11b60f9fe8df4418a12152441251310";
+  const LOCATION = "Zamboanga City, Philippines";
+
+  // Fetch weather data and determine active warnings
+  const fetchActiveWarnings = async () => {
+    try {
+      const response = await fetch(
+        `https://api.weatherapi.com/v1/forecast.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(LOCATION)}&days=1&aqi=no&alerts=yes`
+      );
+
+      if (!response.ok) {
+        console.error('Weather API failed:', response.status);
+        setLoading(false);
+        return;
+      }
+
+      const data = await response.json();
+      setWeatherData(data);
+      const warnings: string[] = [];
+
+      const current = data.current;
+
+      // Check for flooding conditions (heavy rain)
+      if (current.precip_mm > 5) {
+        warnings.push('flood');
+      }
+
+      // Check for weather hazards (storms, heavy rain, strong winds)
+      if (current.condition.code >= 1087 && current.condition.code <= 1282) {
+        warnings.push('weather');
+      } else if (current.precip_mm > 10 || current.wind_kph > 40) {
+        warnings.push('weather');
+      }
+
+      // Check for road damage risk (extreme conditions)
+      if (current.precip_mm > 25 || current.wind_kph > 60) {
+        warnings.push('damage');
+      }
+
+      // Road blockage is always available (can happen anytime)
+      warnings.push('roadblock');
+
+      // Other issue is always available
+      warnings.push('other');
+
+      setActiveWarnings(warnings);
+      setLoading(false);
+
+      console.log(`🚨 Active warnings detected: ${warnings.join(', ')}`);
+      
+    } catch (error) {
+      console.error('Failed to fetch weather warnings:', error);
+      // Fallback: enable all options if API fails
+      setActiveWarnings(['flood', 'roadblock', 'damage', 'weather', 'other']);
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchActiveWarnings();
+  }, []);
 
   const reportTypes = [
-    { id: 'flood', label: 'Flooding', icon: 'fas fa-water' },
-    { id: 'roadblock', label: 'Road Blockage', icon: 'fas fa-road' },
-    { id: 'damage', label: 'Road Damage', icon: 'fas fa-tools' },
-    { id: 'weather', label: 'Weather Hazard', icon: 'fas fa-cloud-rain' },
-    { id: 'other', label: 'Other Issue', icon: 'fas fa-exclamation-triangle' }
+    { 
+      id: 'flood', 
+      label: 'Flooding', 
+      icon: 'fas fa-water',
+      getStatus: () => {
+        if (!weatherData) return { enabled: true, reason: 'Checking...' };
+        const isActive = activeWarnings.includes('flood');
+        return {
+          enabled: isActive,
+          reason: isActive 
+            ? `Active: ${weatherData.current.precip_mm.toFixed(1)}mm rainfall detected`
+            : 'No flooding risk detected currently'
+        };
+      }
+    },
+    { 
+      id: 'roadblock', 
+      label: 'Road Blockage', 
+      icon: 'fas fa-road-barrier',
+      getStatus: () => ({
+        enabled: true,
+        reason: 'Always available for reporting'
+      })
+    },
+    { 
+      id: 'damage', 
+      label: 'Road Damage', 
+      icon: 'fas fa-road-spikes',
+      getStatus: () => {
+        if (!weatherData) return { enabled: true, reason: 'Checking...' };
+        const isActive = activeWarnings.includes('damage');
+        return {
+          enabled: isActive,
+          reason: isActive
+            ? 'Active: Extreme weather conditions detected'
+            : 'No severe conditions detected'
+        };
+      }
+    },
+    { 
+      id: 'weather', 
+      label: 'Weather Hazard', 
+      icon: 'fas fa-cloud-bolt',
+      getStatus: () => {
+        if (!weatherData) return { enabled: true, reason: 'Checking...' };
+        const isActive = activeWarnings.includes('weather');
+        const current = weatherData.current;
+        return {
+          enabled: isActive,
+          reason: isActive
+            ? (current.precip_mm > 10 
+                ? `Active: Heavy rain ${current.precip_mm.toFixed(1)}mm` 
+                : `Active: Strong winds ${current.wind_kph.toFixed(0)}kph`)
+            : 'No weather hazards detected'
+        };
+      }
+    },
+    { 
+      id: 'other', 
+      label: 'Other Issue', 
+      icon: 'fas fa-exclamation-circle',
+      getStatus: () => ({
+        enabled: true,
+        reason: 'Always available for reporting'
+      })
+    }
   ];
 
   const handleSubmit = async () => {
@@ -32,11 +161,18 @@ export const ReportModal = ({ onClose }: ReportModalProps) => {
         location,
         description,
         severity,
-        timestamp: new Date()
+        timestamp: new Date(),
+        weather_conditions: weatherData ? {
+          temp_c: weatherData.current.temp_c,
+          condition: weatherData.current.condition.text,
+          precip_mm: weatherData.current.precip_mm,
+          wind_kph: weatherData.current.wind_kph
+        } : null
       });
       setIsSubmitting(false);
       onClose();
       // Show success message
+      alert('Thank you for your report! It has been submitted to the community.');
     }, 1000);
   };
 
@@ -61,29 +197,100 @@ export const ReportModal = ({ onClose }: ReportModalProps) => {
 
         {/* Modal Content */}
         <div className="p-6">
+          {/* Login Required Warning */}
+          {!isLoggedIn && (
+            <div className="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-lg animate-slide-in">
+              <div className="flex items-start">
+                <i className="fas fa-exclamation-triangle text-yellow-600 text-xl mr-3 mt-1"></i>
+                <div className="flex-1">
+                  <h4 className="text-sm font-bold text-yellow-800 mb-1">Login Required</h4>
+                  <p className="text-sm text-yellow-700 mb-3">
+                    You must be logged in to report issues to the community. This helps us maintain accountability and prevent spam.
+                  </p>
+                  <button
+                    onClick={() => {
+                      onClose();
+                      onLoginRequired?.();
+                    }}
+                    className="bg-yellow-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-yellow-700 transition-colors duration-200"
+                  >
+                    <i className="fas fa-sign-in-alt mr-2"></i>
+                    Login Now
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Loading State */}
+          {loading && (
+            <div className="mb-4 p-3 bg-blue-50 rounded-lg flex items-center">
+              <i className="fas fa-spinner fa-spin text-blue-500 mr-2"></i>
+              <span className="text-sm text-blue-700">Checking current weather conditions...</span>
+            </div>
+          )}
+
           {/* Report Type Selection */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-3">
               What type of issue are you reporting?
             </label>
             <div className="grid grid-cols-2 gap-3">
-              {reportTypes.map((type) => (
-                <button
-                  key={type.id}
-                  onClick={() => setReportType(type.id)}
-                  className={`p-3 border-2 rounded-lg text-left transition-all duration-200 ${
-                    reportType === type.id
-                      ? 'border-wmsu-blue bg-blue-50 text-wmsu-blue'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <div className="flex items-center space-x-2">
-                    <i className={type.icon}></i>
-                    <span className="text-sm font-medium">{type.label}</span>
-                  </div>
-                </button>
-              ))}
+              {reportTypes.map((type) => {
+                const status = type.getStatus();
+                const isSelected = reportType === type.id;
+                const isDisabled = !isLoggedIn || !status.enabled;
+
+                return (
+                  <button
+                    key={type.id}
+                    onClick={() => !isDisabled && setReportType(type.id)}
+                    disabled={isDisabled}
+                    title={status.reason}
+                    className={`
+                      relative p-4 rounded-lg border-2 transition-all duration-200
+                      ${isSelected 
+                        ? 'border-wmsu-blue bg-blue-50' 
+                        : isDisabled
+                        ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-50'
+                        : 'border-gray-300 hover:border-wmsu-blue hover:bg-blue-50'
+                      }
+                    `}
+                  >
+                    <div className="flex flex-col items-center">
+                      <i className={`${type.icon} text-2xl mb-2 ${
+                        isSelected ? 'text-wmsu-blue' : 
+                        isDisabled ? 'text-gray-400' : 'text-gray-600'
+                      }`}></i>
+                      <span className={`text-sm font-medium ${
+                        isSelected ? 'text-wmsu-blue' : 
+                        isDisabled ? 'text-gray-400' : 'text-gray-700'
+                      }`}>
+                        {type.label}
+                      </span>
+                      
+                      {/* Active indicator */}
+                      {status.enabled && type.id !== 'other' && type.id !== 'roadblock' && (
+                        <span className="absolute top-2 right-2 w-2 h-2 bg-orange-500 rounded-full animate-pulse"></span>
+                      )}
+                      
+                      {/* Disabled indicator */}
+                      {!status.enabled && isLoggedIn && (
+                        <span className="absolute top-2 right-2">
+                          <i className="fas fa-lock text-gray-400 text-xs"></i>
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
+            {reportType && !loading && (
+              <p className="text-xs text-gray-500 mt-2 flex items-center">
+                <i className="fas fa-info-circle mr-1"></i>
+                {reportTypes.find(t => t.id === reportType)?.getStatus().reason}
+              </p>
+            )}
           </div>
 
           {/* Location Input */}
@@ -98,6 +305,7 @@ export const ReportModal = ({ onClose }: ReportModalProps) => {
               onChange={(e) => setLocation(e.target.value)}
               placeholder="e.g., Veterans Avenue near City Hall"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wmsu-blue focus:border-transparent outline-none"
+              disabled={!isLoggedIn}
               required
             />
           </div>
@@ -111,6 +319,7 @@ export const ReportModal = ({ onClose }: ReportModalProps) => {
               value={severity}
               onChange={(e) => setSeverity(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wmsu-blue focus:border-transparent outline-none"
+              disabled={!isLoggedIn}
             >
               <option value="low">Low - Minor inconvenience</option>
               <option value="moderate">Moderate - Significant delay</option>
@@ -129,19 +338,22 @@ export const ReportModal = ({ onClose }: ReportModalProps) => {
               placeholder="Please provide details about the issue..."
               rows={4}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wmsu-blue focus:border-transparent outline-none resize-none"
+              disabled={!isLoggedIn}
               required
             />
           </div>
 
           {/* Community Guidelines */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
-            <h4 className="text-sm font-semibold text-blue-800 mb-1">Community Guidelines</h4>
-            <ul className="text-xs text-blue-700 space-y-1">
-              <li>• Provide accurate and specific location information</li>
-              <li>• Include time-sensitive details if applicable</li>
-              <li>• Be respectful and constructive in your reports</li>
-            </ul>
-          </div>
+          {isLoggedIn && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
+              <h4 className="text-sm font-semibold text-blue-800 mb-1">Community Guidelines</h4>
+              <ul className="text-xs text-blue-700 space-y-1">
+                <li>• Provide accurate and specific location information</li>
+                <li>• Include time-sensitive details if applicable</li>
+                <li>• Be respectful and constructive in your reports</li>
+              </ul>
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div className="flex space-x-3">
@@ -153,12 +365,12 @@ export const ReportModal = ({ onClose }: ReportModalProps) => {
             </button>
             <button
               onClick={handleSubmit}
-              disabled={!reportType || !location || !description || isSubmitting}
+              disabled={!isLoggedIn || !reportType || !location || !description || isSubmitting}
               className="flex-1 bg-wmsu-blue text-white py-2 px-4 rounded-lg font-medium hover:bg-wmsu-blue-light transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (
                 <>
-                  <i className="fas fa-spinner animate-spin mr-2"></i>
+                  <i className="fas fa-spinner fa-spin mr-2"></i>
                   Submitting...
                 </>
               ) : (

@@ -3,15 +3,22 @@ import { MapView } from "../components/MapView"; // Your new MapView component
 import { NavigationBar } from "../components/NavigationBar";
 import { ReportModal } from "../components/ReportModal";
 import { EmergencyModal } from "../components/EmergencyModal";
+import { useNavigate } from "react-router-dom";
 
 const Index = () => {
   const [activeModal, setActiveModal] = useState<
     "route" | "report" | "emergency" | null
   >(null);
   const [selectedRoute, setSelectedRoute] = useState<string>("");
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
+
+    // Check login status
+    const token = localStorage.getItem("user_token");
+    setIsLoggedIn(!!token);
 
     // Check for search parameters
     const urlParams = new URLSearchParams(window.location.search);
@@ -36,6 +43,11 @@ const Index = () => {
       document.body.style.overflow = "auto";
     };
   }, []);
+
+  const handleLoginRequired = () => {
+    // Navigate to login page or show login modal
+    navigate("/login");
+  };
 
   const handleRouteSelect = (route: string) => {
     setSelectedRoute(route);
@@ -65,7 +77,11 @@ const Index = () => {
 
       {/* Modals */}
       {activeModal === "report" && (
-        <ReportModal onClose={() => setActiveModal(null)} />
+        <ReportModal 
+          onClose={() => setActiveModal(null)} 
+          isLoggedIn={isLoggedIn}
+          onLoginRequired={handleLoginRequired}
+        />
       )}
       {activeModal === "emergency" && (
         <EmergencyModal onClose={() => setActiveModal(null)} />
