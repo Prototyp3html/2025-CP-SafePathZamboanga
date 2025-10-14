@@ -668,13 +668,18 @@ def calculate_local_route(start_lat: float, start_lng: float,
     return None
 
 
-def analyze_route_flood_risk(route_coordinates: List[Tuple[float, float]], buffer_meters: float = 50.0) -> Dict[str, Any]:
+def analyze_route_flood_risk(
+    route_coordinates: List[Tuple[float, float]], 
+    buffer_meters: float = 50.0,
+    weather_data: dict = None
+) -> Dict[str, Any]:
     """
-    Analyze a route (from OSRM) against GeoJSON flood data.
+    Analyze a route (from OSRM) against GeoJSON flood data with real-time weather impact.
     
     Args:
         route_coordinates: List of (lng, lat) tuples
         buffer_meters: Distance to search for nearby road segments
+        weather_data: Current weather conditions (precipitation, wind, etc.)
         
     Returns:
         Dict with flood analysis: flood_score, flooded_percentage, risk_level, etc.
@@ -689,8 +694,41 @@ def analyze_route_flood_risk(route_coordinates: List[Tuple[float, float]], buffe
             "total_distance_m": 0,
             "flooded_percentage": 0,
             "risk_level": "unknown",
-            "segments_analyzed": 0
+            "segments_analyzed": 0,
+            "weather_impact": "none"
         }
+    
+    # Extract weather conditions with safe defaults
+    precipitation_mm = weather_data.get("precipitation_mm", 0.0) if weather_data else 0.0
+    wind_kph = weather_data.get("wind_kph", 0.0) if weather_data else 0.0
+    
+    # Calculate weather impact multiplier
+    weather_multiplier = 1.0
+    weather_impact = "none"
+    
+    # Heavy rain increases flood risk significantly
+    if precipitation_mm > 50:
+        weather_multiplier = 2.5  # Extreme rain: 2.5x flood risk
+        weather_impact = "severe"
+    elif precipitation_mm > 25:
+        weather_multiplier = 2.0  # Heavy rain: 2x flood risk
+        weather_impact = "high"
+    elif precipitation_mm > 10:
+        weather_multiplier = 1.5  # Moderate rain: 1.5x flood risk
+        weather_impact = "moderate"
+    elif precipitation_mm > 5:
+        weather_multiplier = 1.2  # Light rain: 1.2x flood risk
+        weather_impact = "low"
+    
+    # Strong winds add additional safety concerns
+    if wind_kph > 60:
+        weather_multiplier *= 1.3  # Very strong winds
+        if weather_impact == "none":
+            weather_impact = "moderate"
+    elif wind_kph > 40:
+        weather_multiplier *= 1.15  # Strong winds
+        if weather_impact == "none":
+            weather_impact = "low"
     
     flooded_distance = 0.0
     safe_distance = 0.0
@@ -716,7 +754,8 @@ def analyze_route_flood_risk(route_coordinates: List[Tuple[float, float]], buffe
             is_flooded = flooded_count > len(nearby_segments) / 2
             
             if is_flooded:
-                flooded_distance += segment_distance
+                # Apply weather multiplier to flooded segments
+                flooded_distance += segment_distance * weather_multiplier
             else:
                 safe_distance += segment_distance
         else:
@@ -728,15 +767,26 @@ def analyze_route_flood_risk(route_coordinates: List[Tuple[float, float]], buffe
     flooded_percentage = (flooded_distance / total_distance * 100) if total_distance > 0 else 0
     flood_score = min(100, flooded_percentage)
     
-    # Determine risk level
-    if flooded_percentage < 20:
-        risk_level = "safe"
-    elif flooded_percentage < 50:
-        risk_level = "manageable"
+    # Weather-adjusted risk level (more conservative thresholds during bad weather)
+    if weather_impact in ["severe", "high"]:
+        # Stricter thresholds during heavy rain
+        if flooded_percentage < 10:
+            risk_level = "safe"
+        elif flooded_percentage < 30:
+            risk_level = "manageable"
+        else:
+            risk_level = "prone"
     else:
-        risk_level = "prone"
+        # Normal thresholds
+        if flooded_percentage < 20:
+            risk_level = "safe"
+        elif flooded_percentage < 50:
+            risk_level = "manageable"
+        else:
+            risk_level = "prone"
     
-    logger.info(f"Route analysis: {flooded_percentage:.1f}% flooded ({flooded_distance:.0f}m/{total_distance:.0f}m) - {risk_level}")
+    weather_info = f" (weather: {weather_impact}, {precipitation_mm:.1f}mm rain, {wind_kph:.0f}kph wind)" if weather_data else ""
+    logger.info(f"Route analysis: {flooded_percentage:.1f}% flooded ({flooded_distance:.0f}m/{total_distance:.0f}m) - {risk_level}{weather_info}")
     
     return {
         "flood_score": round(flood_score, 2),
@@ -745,5 +795,7 @@ def analyze_route_flood_risk(route_coordinates: List[Tuple[float, float]], buffe
         "total_distance_m": round(total_distance, 2),
         "flooded_percentage": round(flooded_percentage, 2),
         "risk_level": risk_level,
-        "segments_analyzed": segments_checked
+        "segments_analyzed": segments_checked,
+        "weather_impact": weather_impact,
+        "weather_multiplier": round(weather_multiplier, 2)
     }

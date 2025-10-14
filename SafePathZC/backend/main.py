@@ -11,8 +11,13 @@ import math
 import json
 import time
 import asyncio
+import logging
 from dotenv import load_dotenv
 from services.local_routing import LocalRoutingService, Coordinate
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Import models
 from models import Base, RouteHistory, FavoriteRoute, SearchHistory, AdminUser, Report, User
@@ -792,7 +797,11 @@ async def get_route(
             if not routes:
                 raise HTTPException(status_code=500, detail="Could not generate any routes from OSRM")
             
-            print(f"\n🔬 Step 2: Analyzing flood risk for {len(routes)} routes...")
+            print(f"\n☁️ Fetching current weather conditions for Zamboanga City...")
+            weather_data = await fetch_zamboanga_weather()
+            print(f"   Weather: {weather_data['condition']}, {weather_data['precipitation_mm']}mm rain, {weather_data['wind_kph']}kph wind")
+            
+            print(f"\n🔬 Step 2: Analyzing flood risk for {len(routes)} routes (with weather impact)...")
             
             # Step 2: Analyze each route for flood risk using our GeoJSON terrain data
             from services.local_routing import analyze_route_flood_risk
@@ -809,8 +818,8 @@ async def get_route(
                     # Convert to (lng, lat) tuples for analysis
                     route_coords = [(lng, lat) for lng, lat in coords]
                     
-                    # Analyze flood risk
-                    analysis = analyze_route_flood_risk(route_coords, buffer_meters=50.0)
+                    # Analyze flood risk WITH WEATHER DATA
+                    analysis = analyze_route_flood_risk(route_coords, buffer_meters=50.0, weather_data=weather_data)
                     
                     route_analyses.append({
                         "route": route,
@@ -897,7 +906,14 @@ async def get_route(
             return {
                 "routes": final_routes,
                 "analyses": final_analyses,
-                "source": "hybrid_osrm_geojson"
+                "source": "hybrid_osrm_geojson",
+                "weather": {
+                    "condition": weather_data["condition"],
+                    "temperature_c": weather_data["temperature_c"],
+                    "precipitation_mm": weather_data["precipitation_mm"],
+                    "wind_kph": weather_data["wind_kph"],
+                    "humidity": weather_data["humidity"]
+                }
             }
             
         except Exception as osrm_error:
@@ -1544,6 +1560,44 @@ async def fetch_weather_data(lat: float, lon: float) -> dict:
         return response.json()
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=503, detail=f"Weather API error: {str(e)}")
+
+async def fetch_zamboanga_weather() -> dict:
+    """Fetch current weather conditions for Zamboanga City from WeatherAPI.com"""
+    WEATHER_API_KEY = "11b60f9fe8df4418a12152441251310"
+    LOCATION = "Zamboanga City, Philippines"
+    
+    try:
+        response = requests.get(
+            f"https://api.weatherapi.com/v1/current.json",
+            params={
+                "key": WEATHER_API_KEY,
+                "q": LOCATION,
+                "aqi": "no"
+            },
+            timeout=10
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        return {
+            "temperature_c": data["current"]["temp_c"],
+            "condition": data["current"]["condition"]["text"],
+            "precipitation_mm": data["current"]["precip_mm"],
+            "wind_kph": data["current"]["wind_kph"],
+            "humidity": data["current"]["humidity"],
+            "condition_code": data["current"]["condition"]["code"]
+        }
+    except Exception as e:
+        logger.warning(f"Weather fetch failed: {e}, using safe defaults")
+        # Return safe defaults if API fails
+        return {
+            "temperature_c": 28.0,
+            "condition": "Clear",
+            "precipitation_mm": 0.0,
+            "wind_kph": 10.0,
+            "humidity": 70,
+            "condition_code": 1000
+        }
 
 async def fetch_pagasa_bulletin() -> dict:
     """Fetch PAGASA bulletin data - simplified implementation"""
