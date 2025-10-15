@@ -25,6 +25,7 @@ from models import Base, RouteHistory, FavoriteRoute, SearchHistory, AdminUser, 
 # Import admin routes
 from routes.admin import router as admin_router, init_admin_user
 from routes.user_auth import router as user_auth_router, init_demo_user
+from routes.forum import router as forum_router
 
 # Load environment variables
 load_dotenv()
@@ -254,6 +255,7 @@ app.add_middleware(
 # Include admin routes
 app.include_router(admin_router)
 app.include_router(user_auth_router)
+app.include_router(forum_router)
 
 # Dependency to get DB session
 def get_db():

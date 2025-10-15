@@ -118,3 +118,40 @@ class User(Base):
     reports_submitted = Column(Integer, default=0)
     joined_at = Column(DateTime, default=datetime.utcnow)
     last_activity = Column(DateTime, default=datetime.utcnow)
+
+# Community Forum Models
+class Post(Base):
+    __tablename__ = "posts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    content = Column(Text, nullable=False)
+    author_id = Column(Integer, nullable=False)  # Foreign key to users.id
+    author_name = Column(String, nullable=False)  # Store author name for display
+    category = Column(String, nullable=False)  # alerts, reports, suggestions, general
+    tags = Column(Text, nullable=True)  # JSON string of tags array
+    likes_count = Column(Integer, default=0)
+    replies_count = Column(Integer, default=0)
+    is_urgent = Column(Boolean, default=False)
+    is_approved = Column(Boolean, default=False)  # Admin approval required
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class Comment(Base):
+    __tablename__ = "comments"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, nullable=False)  # Foreign key to posts.id
+    author_id = Column(Integer, nullable=False)  # Foreign key to users.id
+    author_name = Column(String, nullable=False)  # Store author name for display
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class PostLike(Base):
+    __tablename__ = "post_likes"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, nullable=False)  # Foreign key to posts.id
+    user_id = Column(Integer, nullable=False)  # Foreign key to users.id
+    created_at = Column(DateTime, default=datetime.utcnow)

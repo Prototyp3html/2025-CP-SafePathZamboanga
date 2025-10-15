@@ -80,7 +80,16 @@ export const AdminDashboard: React.FC = () => {
     try {
       setIsLoading(true);
       const token = localStorage.getItem("admin_token");
-      if (!token) return;
+      if (!token) {
+        console.error("No admin token found");
+        setReports([]);
+        return;
+      }
+
+      console.log(
+        "Loading reports with token:",
+        token.substring(0, 20) + "..."
+      );
 
       const response = await fetch(`${BACKEND_URL}/admin/reports`, {
         headers: {
@@ -88,22 +97,33 @@ export const AdminDashboard: React.FC = () => {
         },
       });
 
+      console.log("Reports response status:", response.status);
+
       if (response.ok) {
         const data = await response.json();
+        console.log("Reports data received:", data);
+
         // Backend returns {reports: [...]} so we need to extract the reports array
         const reportsArray = data.reports || data;
         if (Array.isArray(reportsArray)) {
           setReports(reportsArray);
+          console.log(
+            "Reports loaded successfully:",
+            reportsArray.length,
+            "reports"
+          );
         } else {
           console.warn("Reports data is not an array:", data);
           setReports([]);
         }
       } else {
-        console.error("Failed to load reports:", response.status);
+        const errorData = await response.json();
+        console.error("Failed to load reports:", response.status, errorData);
         setReports([]);
       }
     } catch (error) {
       console.error("Error loading reports:", error);
+      setReports([]);
     } finally {
       setIsLoading(false);
     }
@@ -112,7 +132,13 @@ export const AdminDashboard: React.FC = () => {
   const loadUsers = async () => {
     try {
       const token = localStorage.getItem("admin_token");
-      if (!token) return;
+      if (!token) {
+        console.error("No admin token found");
+        setUsers([]);
+        return;
+      }
+
+      console.log("Loading users with token:", token.substring(0, 20) + "...");
 
       const response = await fetch(`${BACKEND_URL}/admin/users`, {
         headers: {
@@ -120,22 +146,29 @@ export const AdminDashboard: React.FC = () => {
         },
       });
 
+      console.log("Users response status:", response.status);
+
       if (response.ok) {
         const data = await response.json();
+        console.log("Users data received:", data);
+
         // Backend returns {users: [...]} so we need to extract the users array
         const usersArray = data.users || data;
         if (Array.isArray(usersArray)) {
           setUsers(usersArray);
+          console.log("Users loaded successfully:", usersArray.length, "users");
         } else {
           console.warn("Users data is not an array:", data);
           setUsers([]);
         }
       } else {
-        console.error("Failed to load users:", response.status);
+        const errorData = await response.json();
+        console.error("Failed to load users:", response.status, errorData);
         setUsers([]);
       }
     } catch (error) {
       console.error("Error loading users:", error);
+      setUsers([]);
     }
   };
 
@@ -146,23 +179,33 @@ export const AdminDashboard: React.FC = () => {
   ) => {
     try {
       const token = localStorage.getItem("admin_token");
-      if (!token) return;
+      if (!token) {
+        console.error("No admin token found");
+        return;
+      }
 
       const response = await fetch(
         `${BACKEND_URL}/admin/reports/${reportId}/status`,
         {
-          method: "PUT",
+          method: "PATCH",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ status, notes }),
+          body: JSON.stringify({ status, admin_notes: notes }),
         }
       );
 
       if (response.ok) {
         await loadReports();
         setSelectedReport(null);
+      } else {
+        const errorData = await response.json();
+        console.error(
+          "Failed to update report status:",
+          response.status,
+          errorData
+        );
       }
     } catch (error) {
       console.error("Error updating report status:", error);
@@ -175,12 +218,15 @@ export const AdminDashboard: React.FC = () => {
   ) => {
     try {
       const token = localStorage.getItem("admin_token");
-      if (!token) return;
+      if (!token) {
+        console.error("No admin token found");
+        return;
+      }
 
       const response = await fetch(
         `${BACKEND_URL}/admin/reports/${reportId}/visibility`,
         {
-          method: "PUT",
+          method: "PATCH",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
@@ -191,6 +237,13 @@ export const AdminDashboard: React.FC = () => {
 
       if (response.ok) {
         await loadReports();
+      } else {
+        const errorData = await response.json();
+        console.error(
+          "Failed to update report visibility:",
+          response.status,
+          errorData
+        );
       }
     } catch (error) {
       console.error("Error updating report visibility:", error);

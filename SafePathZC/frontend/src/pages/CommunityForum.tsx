@@ -23,6 +23,31 @@ import {
 } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 
+// Define interfaces for the forum data
+interface ForumPost {
+  id: number;
+  title: string;
+  content: string;
+  author_id: number;
+  author_name: string;
+  category: string;
+  tags: string[];
+  likes_count: number;
+  replies_count: number;
+  is_urgent: boolean;
+  created_at: string;
+  updated_at: string;
+  is_liked: boolean;
+  timestamp: string;
+}
+
+interface ForumStats {
+  total_members: number;
+  posts_today: number;
+  active_now: number;
+  total_posts: number;
+}
+
 const CommunityForum = () => {
   useEffect(() => {
     document.body.style.overflow = "auto";
@@ -68,75 +93,139 @@ const CommunityForum = () => {
   const [selectedPostId, setSelectedPostId] = useState<number | null>(null);
   const [likedPosts, setLikedPosts] = useState<Set<number>>(new Set());
   const [sortBy, setSortBy] = useState("recent");
+  const [forumPosts, setForumPosts] = useState<ForumPost[]>([]);
+  const [forumStats, setForumStats] = useState<ForumStats>({
+    total_members: 0,
+    posts_today: 0,
+    active_now: 0,
+    total_posts: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // ...existing state and data...
-  const [forumPosts, setForumPosts] = useState([
-    {
-      id: 1,
-      title: "Flooding on Veterans Avenue - Alternative Routes?",
-      author: "Maria Santos",
-      category: "alerts",
-      timestamp: "2 hours ago",
-      replies: 8,
-      likes: 15,
-      content:
-        "Heavy flooding observed on Veterans Avenue near the market. Looking for safe alternative routes to downtown area.",
-      tags: ["flooding", "veterans-avenue", "downtown"],
-      urgent: true,
-    },
-    {
-      id: 2,
-      title: "Road Construction Update - Canelar Road",
-      author: "Juan Dela Cruz",
-      category: "reports",
-      timestamp: "4 hours ago",
-      replies: 3,
-      likes: 7,
-      content:
-        "Construction work has started on Canelar Road. Expected completion in 2 weeks. Traffic diverted to side streets.",
-      tags: ["construction", "canelar-road", "traffic"],
-      urgent: false,
-    },
-    {
-      id: 3,
-      title: "Suggestion: Add Weather Radar Feature",
-      author: "Anna Reyes",
-      category: "suggestions",
-      timestamp: "1 day ago",
-      replies: 12,
-      likes: 23,
-      content:
-        "Would be great to have a weather radar overlay on the map to better predict rainfall patterns.",
-      tags: ["feature-request", "weather", "radar"],
-      urgent: false,
-    },
-    {
-      id: 4,
-      title: "Thank you for the safe route alerts!",
-      author: "Pedro Martinez",
-      category: "general",
-      timestamp: "2 days ago",
-      replies: 5,
-      likes: 18,
-      content:
-        "This app has been incredibly helpful during the rainy season. The flood alerts saved me from getting stuck yesterday.",
-      tags: ["appreciation", "feedback"],
-      urgent: false,
-    },
-    {
-      id: 5,
-      title: "Landslide Warning - Tumaga Road",
-      author: "Local Authority",
-      category: "alerts",
-      timestamp: "3 days ago",
-      replies: 15,
-      likes: 32,
-      content:
-        "URGENT: Landslide risk on Tumaga Road due to continuous rainfall. Avoid this route until further notice.",
-      tags: ["landslide", "tumaga-road", "urgent"],
-      urgent: true,
-    },
-  ]);
+  // API functions
+  const getAuthHeaders = () => {
+    const token =
+      localStorage.getItem("access_token") ||
+      localStorage.getItem("admin_token");
+    return {
+      "Content-Type": "application/json",
+      ...(token && { Authorization: `Bearer ${token}` }),
+    };
+  };
+
+  const fetchPosts = async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams({
+        skip: "0",
+        limit: "50",
+        sort_by: sortBy,
+      });
+
+      if (selectedCategory !== "all") {
+        params.append("category", selectedCategory);
+      }
+
+      if (searchTerm.trim()) {
+        params.append("search", searchTerm.trim());
+      }
+
+      const response = await fetch(
+        `http://localhost:8001/api/forum/posts?${params}`,
+        {
+          headers: getAuthHeaders(),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setForumPosts(data.posts || []);
+      setError(null);
+    } catch (err) {
+      console.error("Error fetching posts:", err);
+      setError("Failed to load posts. Please try again.");
+      setForumPosts([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchStats = async () => {
+    try {
+      const response = await fetch("http://localhost:8001/api/forum/stats", {
+        headers: getAuthHeaders(),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setForumStats(data);
+      }
+    } catch (err) {
+      console.error("Error fetching stats:", err);
+    }
+  };
+
+  const handleLike = async (postId: number) => {
+    try {
+      const response = await fetch(
+        `http://localhost:8001/api/forum/posts/${postId}/like`,
+        {
+          method: "POST",
+          headers: getAuthHeaders(),
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+
+        // Update the post in the list
+        setForumPosts((posts) =>
+          posts.map((post) =>
+            post.id === postId
+              ? {
+                  ...post,
+                  likes_count: data.likes_count,
+                  is_liked: data.liked,
+                }
+              : post
+          )
+        );
+
+        // Update liked posts set
+        setLikedPosts((prev) => {
+          const newSet = new Set(prev);
+          if (data.liked) {
+            newSet.add(postId);
+          } else {
+            newSet.delete(postId);
+          }
+          return newSet;
+        });
+      }
+    } catch (err) {
+      console.error("Error toggling like:", err);
+    }
+  };
+
+  // Load data on component mount and when filters change
+  useEffect(() => {
+    fetchPosts();
+  }, [selectedCategory, searchTerm, sortBy]);
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
+
+  // Update liked posts set when posts are loaded
+  useEffect(() => {
+    const likedSet = new Set(
+      forumPosts.filter((post) => post.is_liked).map((post) => post.id)
+    );
+    setLikedPosts(likedSet);
+  }, [forumPosts]);
 
   const categories = [
     { name: "All Posts", count: forumPosts.length },
@@ -159,61 +248,27 @@ const CommunityForum = () => {
   ];
 
   const stats = [
-    { label: "Total Members", value: 1247 },
-    { label: "Posts Today", value: 8 },
-    { label: "Active Now", value: 23 },
-    { label: "Total Posts", value: 567 },
+    { label: "Total Members", value: forumStats.total_members },
+    { label: "Posts Today", value: forumStats.posts_today },
+    { label: "Active Now", value: forumStats.active_now },
+    { label: "Total Posts", value: forumStats.total_posts },
   ];
 
-  const filteredPosts = forumPosts.filter((post) => {
-    const matchesCategory =
-      selectedCategory === "all" ||
-      (selectedCategory === "route-alerts" && post.category === "alerts") ||
-      (selectedCategory === "road-reports" && post.category === "reports") ||
-      (selectedCategory === "suggestions" && post.category === "suggestions") ||
-      (selectedCategory === "general-discussion" &&
-        post.category === "general");
+  // Since we're now filtering on the backend, we can use all posts
+  const filteredPosts = forumPosts;
 
-    const matchesSearch =
-      post.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      post.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      post.tags.some((tag) =>
-        tag.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-
-    return matchesCategory && matchesSearch;
-  });
-
-  const handlePostCreated = (newPost: any) => {
+  const handlePostCreated = (newPost: ForumPost) => {
     setForumPosts([newPost, ...forumPosts]);
-  };
-
-  const handleLike = (postId: number) => {
-    const isAlreadyLiked = likedPosts.has(postId);
-
-    setForumPosts((posts) =>
-      posts.map((post) =>
-        post.id === postId
-          ? { ...post, likes: isAlreadyLiked ? post.likes - 1 : post.likes + 1 }
-          : post
-      )
-    );
-
-    setLikedPosts((prev) => {
-      const newSet = new Set(prev);
-      if (isAlreadyLiked) {
-        newSet.delete(postId);
-      } else {
-        newSet.add(postId);
-      }
-      return newSet;
-    });
+    // Refresh stats
+    fetchStats();
   };
 
   const handleReplyAdded = (postId: number) => {
     setForumPosts((posts) =>
       posts.map((post) =>
-        post.id === postId ? { ...post, replies: post.replies + 1 } : post
+        post.id === postId
+          ? { ...post, replies_count: post.replies_count + 1 }
+          : post
       )
     );
   };
@@ -367,103 +422,148 @@ const CommunityForum = () => {
 
                 {/* Enhanced Forum Posts */}
                 <div className="space-y-6">
-                  {filteredPosts.map((post) => (
-                    <div
-                      key={post.id}
-                      className={`bg-white rounded-2xl shadow-xl border transition-all duration-300 hover:shadow-2xl hover:scale-[1.02] ${
-                        post.urgent
-                          ? "border-l-4 border-l-red-500 bg-gradient-to-r from-red-50 to-white"
-                          : "border-gray-100 hover:border-blue-200"
-                      }`}
-                    >
-                      {/* Enhanced Post Header */}
-                      <div className="p-6 border-b border-gray-100">
-                        <div className="flex items-start space-x-4">
-                          <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                            <User className="w-6 h-6 text-white" />
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-3 mb-2">
-                              <h3 className="font-bold text-xl text-gray-900 hover:text-blue-600 transition-colors cursor-pointer">
-                                {post.title}
-                              </h3>
-                              {post.urgent && (
-                                <span className="bg-red-500 text-white text-xs px-3 py-1 rounded-full font-bold animate-pulse">
-                                  URGENT
-                                </span>
-                              )}
+                  {loading ? (
+                    <div className="flex justify-center items-center py-12">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                      <span className="ml-3 text-gray-600">
+                        Loading posts...
+                      </span>
+                    </div>
+                  ) : error ? (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+                      <p className="text-red-600 mb-4">{error}</p>
+                      <Button
+                        onClick={fetchPosts}
+                        className="bg-red-600 hover:bg-red-700"
+                      >
+                        Try Again
+                      </Button>
+                    </div>
+                  ) : filteredPosts.length === 0 ? (
+                    <div className="text-center py-12">
+                      <MessageSquare className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">
+                        No posts found
+                      </h3>
+                      <p className="text-gray-500 mb-4">
+                        {searchTerm || selectedCategory !== "all"
+                          ? "Try adjusting your search or filters"
+                          : "Be the first to start a discussion!"}
+                      </p>
+                      {!searchTerm && selectedCategory === "all" && (
+                        <Button
+                          onClick={() => setIsCreatePostOpen(true)}
+                          className="bg-blue-600 hover:bg-blue-700"
+                        >
+                          <Plus className="w-4 h-4 mr-2" />
+                          Create First Post
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    filteredPosts.map((post) => (
+                      <div
+                        key={post.id}
+                        className={`bg-white rounded-2xl shadow-xl border transition-all duration-300 hover:shadow-2xl hover:scale-[1.02] ${
+                          post.is_urgent
+                            ? "border-l-4 border-l-red-500 bg-gradient-to-r from-red-50 to-white"
+                            : "border-gray-100 hover:border-blue-200"
+                        }`}
+                      >
+                        {/* Enhanced Post Header */}
+                        <div className="p-6 border-b border-gray-100">
+                          <div className="flex items-start space-x-4">
+                            <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+                              <User className="w-6 h-6 text-white" />
                             </div>
-                            <div className="flex items-center text-sm text-gray-500 space-x-4">
-                              <span className="font-medium text-blue-600">
-                                {post.author}
-                              </span>
-                              <div className="flex items-center">
-                                <Clock className="w-3 h-3 mr-1" />
-                                {post.timestamp}
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-3 mb-2">
+                                <h3 className="font-bold text-xl text-gray-900 hover:text-blue-600 transition-colors cursor-pointer">
+                                  {post.title}
+                                </h3>
+                                {post.is_urgent && (
+                                  <span className="bg-red-500 text-white text-xs px-3 py-1 rounded-full font-bold animate-pulse">
+                                    URGENT
+                                  </span>
+                                )}
                               </div>
-                              <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-full text-xs">
-                                {post.category}
-                              </span>
+                              <div className="flex items-center text-sm text-gray-500 space-x-4">
+                                <span className="font-medium text-blue-600">
+                                  {post.author_name}
+                                </span>
+                                <div className="flex items-center">
+                                  <Clock className="w-3 h-3 mr-1" />
+                                  {post.timestamp}
+                                </div>
+                                <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-full text-xs">
+                                  {post.category}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* Enhanced Post Content */}
-                      <div className="p-6">
-                        <p className="text-gray-700 text-lg leading-relaxed mb-4">
-                          {post.content}
-                        </p>
+                        {/* Enhanced Post Content */}
+                        <div className="p-6">
+                          <p className="text-gray-700 text-lg leading-relaxed mb-4">
+                            {post.content}
+                          </p>
 
-                        {/* Enhanced Tags */}
-                        <div className="flex flex-wrap gap-2 mb-6">
-                          {post.tags.map((tag) => (
-                            <span
-                              key={tag}
-                              className="bg-blue-100 hover:bg-blue-200 text-blue-700 text-sm px-3 py-1 rounded-full cursor-pointer transition-colors duration-200"
-                            >
-                              #{tag}
-                            </span>
-                          ))}
-                        </div>
+                          {/* Enhanced Tags */}
+                          <div className="flex flex-wrap gap-2 mb-6">
+                            {post.tags.map((tag) => (
+                              <span
+                                key={tag}
+                                className="bg-blue-100 hover:bg-blue-200 text-blue-700 text-sm px-3 py-1 rounded-full cursor-pointer transition-colors duration-200"
+                              >
+                                #{tag}
+                              </span>
+                            ))}
+                          </div>
 
-                        {/* Enhanced Post Actions */}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-6">
+                          {/* Enhanced Post Actions */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-6">
+                              <button
+                                onClick={() => setSelectedPostId(post.id)}
+                                className="flex items-center text-gray-600 hover:text-blue-600 transition-colors duration-200 group"
+                              >
+                                <MessageSquare className="w-5 h-5 mr-2 group-hover:scale-110 transition-transform duration-200" />
+                                <span className="font-medium">
+                                  {post.replies_count} replies
+                                </span>
+                              </button>
+                              <button
+                                onClick={() => handleLike(post.id)}
+                                className={`flex items-center transition-all duration-200 group ${
+                                  likedPosts.has(post.id)
+                                    ? "text-red-500"
+                                    : "text-gray-600 hover:text-red-500"
+                                }`}
+                              >
+                                <ThumbsUp
+                                  className={`w-5 h-5 mr-2 group-hover:scale-110 transition-transform duration-200 ${
+                                    likedPosts.has(post.id)
+                                      ? "fill-current"
+                                      : ""
+                                  }`}
+                                />
+                                <span className="font-medium">
+                                  {post.likes_count} likes
+                                </span>
+                              </button>
+                            </div>
                             <button
                               onClick={() => setSelectedPostId(post.id)}
-                              className="flex items-center text-gray-600 hover:text-blue-600 transition-colors duration-200 group"
+                              className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-3 rounded-xl font-medium hover:shadow-lg transform hover:scale-105 transition-all duration-200"
                             >
-                              <MessageSquare className="w-5 h-5 mr-2 group-hover:scale-110 transition-transform duration-200" />
-                              <span className="font-medium">
-                                {post.replies} replies
-                              </span>
-                            </button>
-                            <button
-                              onClick={() => handleLike(post.id)}
-                              className={`flex items-center transition-all duration-200 group ${
-                                likedPosts.has(post.id)
-                                  ? "text-red-500"
-                                  : "text-gray-600 hover:text-red-500"
-                              }`}
-                            >
-                              <ThumbsUp
-                                className={`w-5 h-5 mr-2 group-hover:scale-110 transition-transform duration-200 ${
-                                  likedPosts.has(post.id) ? "fill-current" : ""
-                                }`}
-                              />
-                              <span className="font-medium">
-                                {post.likes} likes
-                              </span>
+                              Read More
                             </button>
                           </div>
-                          <button className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-3 rounded-xl font-medium hover:shadow-lg transform hover:scale-105 transition-all duration-200">
-                            Read More
-                          </button>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
 
                 {/* Load More Button */}
@@ -487,7 +587,34 @@ const CommunityForum = () => {
             <PostRepliesModal
               isOpen={selectedPostId !== null}
               onClose={() => setSelectedPostId(null)}
-              post={forumPosts.find((p) => p.id === selectedPostId)!}
+              post={{
+                id: forumPosts.find((p) => p.id === selectedPostId)?.id || 0,
+                title:
+                  forumPosts.find((p) => p.id === selectedPostId)?.title || "",
+                author:
+                  forumPosts.find((p) => p.id === selectedPostId)
+                    ?.author_name || "",
+                content:
+                  forumPosts.find((p) => p.id === selectedPostId)?.content ||
+                  "",
+                timestamp:
+                  forumPosts.find((p) => p.id === selectedPostId)?.timestamp ||
+                  "",
+                replies:
+                  forumPosts.find((p) => p.id === selectedPostId)
+                    ?.replies_count || 0,
+                likes:
+                  forumPosts.find((p) => p.id === selectedPostId)
+                    ?.likes_count || 0,
+                urgent:
+                  forumPosts.find((p) => p.id === selectedPostId)?.is_urgent ||
+                  false,
+                category:
+                  forumPosts.find((p) => p.id === selectedPostId)?.category ||
+                  "",
+                tags:
+                  forumPosts.find((p) => p.id === selectedPostId)?.tags || [],
+              }}
               onReplyAdded={() => handleReplyAdded(selectedPostId)}
             />
           )}

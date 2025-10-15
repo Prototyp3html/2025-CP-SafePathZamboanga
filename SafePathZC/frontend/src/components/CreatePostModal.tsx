@@ -1,12 +1,11 @@
-
-import { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
-import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Textarea } from './ui/textarea';
-import { Badge } from './ui/badge';
-import { X } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import { useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Textarea } from "./ui/textarea";
+import { Badge } from "./ui/badge";
+import { X } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 interface CreatePostModalProps {
   isOpen: boolean;
@@ -14,34 +13,38 @@ interface CreatePostModalProps {
   onPostCreated: (post: any) => void;
 }
 
-export const CreatePostModal = ({ isOpen, onClose, onPostCreated }: CreatePostModalProps) => {
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  const [category, setCategory] = useState('general');
+export const CreatePostModal = ({
+  isOpen,
+  onClose,
+  onPostCreated,
+}: CreatePostModalProps) => {
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [category, setCategory] = useState("general");
   const [tags, setTags] = useState<string[]>([]);
-  const [newTag, setNewTag] = useState('');
+  const [newTag, setNewTag] = useState("");
   const [isUrgent, setIsUrgent] = useState(false);
   const { toast } = useToast();
 
   const categories = [
-    { id: 'alerts', name: 'Route Alerts' },
-    { id: 'reports', name: 'Road Reports' },
-    { id: 'suggestions', name: 'Suggestions' },
-    { id: 'general', name: 'General Discussion' }
+    { id: "alerts", name: "Route Alerts" },
+    { id: "reports", name: "Road Reports" },
+    { id: "suggestions", name: "Suggestions" },
+    { id: "general", name: "General Discussion" },
   ];
 
   const handleAddTag = () => {
     if (newTag.trim() && !tags.includes(newTag.trim().toLowerCase())) {
       setTags([...tags, newTag.trim().toLowerCase()]);
-      setNewTag('');
+      setNewTag("");
     }
   };
 
   const handleRemoveTag = (tagToRemove: string) => {
-    setTags(tags.filter(tag => tag !== tagToRemove));
+    setTags(tags.filter((tag) => tag !== tagToRemove));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!title.trim() || !content.trim()) {
@@ -53,39 +56,59 @@ export const CreatePostModal = ({ isOpen, onClose, onPostCreated }: CreatePostMo
       return;
     }
 
-    const newPost = {
-      id: Date.now(),
-      title: title.trim(),
-      author: 'Current User', // In a real app, this would come from auth
-      category,
-      timestamp: 'Just now',
-      replies: 0,
-      likes: 0,
-      content: content.trim(),
-      tags,
-      urgent: isUrgent
-    };
+    try {
+      const token =
+        localStorage.getItem("access_token") ||
+        localStorage.getItem("admin_token");
 
-    onPostCreated(newPost);
+      const response = await fetch("http://localhost:8001/api/forum/posts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify({
+          title: title.trim(),
+          content: content.trim(),
+          category,
+          tags,
+          is_urgent: isUrgent,
+        }),
+      });
 
-    // Reset form
-    setTitle('');
-    setContent('');
-    setCategory('general');
-    setTags([]);
-    setNewTag('');
-    setIsUrgent(false);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
-    toast({
-      title: "Success",
-      description: "Your post has been created successfully!",
-    });
+      const newPost = await response.json();
+      onPostCreated(newPost);
 
-    onClose();
+      // Reset form
+      setTitle("");
+      setContent("");
+      setCategory("general");
+      setTags([]);
+      setNewTag("");
+      setIsUrgent(false);
+
+      toast({
+        title: "Success",
+        description: "Your post has been created successfully!",
+      });
+
+      onClose();
+    } catch (error) {
+      console.error("Error creating post:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create post. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       e.preventDefault();
       handleAddTag();
     }
@@ -159,7 +182,11 @@ export const CreatePostModal = ({ isOpen, onClose, onPostCreated }: CreatePostMo
             {tags.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {tags.map((tag) => (
-                  <Badge key={tag} variant="outline" className="flex items-center gap-1">
+                  <Badge
+                    key={tag}
+                    variant="outline"
+                    className="flex items-center gap-1"
+                  >
                     #{tag}
                     <X
                       className="w-3 h-3 cursor-pointer"
@@ -190,9 +217,7 @@ export const CreatePostModal = ({ isOpen, onClose, onPostCreated }: CreatePostMo
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit">
-              Create Post
-            </Button>
+            <Button type="submit">Create Post</Button>
           </div>
         </form>
       </DialogContent>

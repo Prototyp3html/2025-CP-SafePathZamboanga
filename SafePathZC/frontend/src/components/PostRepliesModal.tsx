@@ -1,18 +1,20 @@
+import { useState, useEffect } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Button } from "./ui/button";
+import { Textarea } from "./ui/textarea";
+import { Badge } from "./ui/badge";
+import { User, Clock, ThumbsUp } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
-import { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
-import { Button } from './ui/button';
-import { Textarea } from './ui/textarea';
-import { Badge } from './ui/badge';
-import { User, Clock, ThumbsUp } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
-
-interface Reply {
+interface Comment {
   id: number;
-  author: string;
+  post_id: number;
+  author_id: number;
+  author_name: string;
   content: string;
+  created_at: string;
+  updated_at: string;
   timestamp: string;
-  likes: number;
 }
 
 interface PostRepliesModalProps {
@@ -33,28 +35,71 @@ interface PostRepliesModalProps {
   onReplyAdded: () => void;
 }
 
-export const PostRepliesModal = ({ isOpen, onClose, post, onReplyAdded }: PostRepliesModalProps) => {
-  const [newReply, setNewReply] = useState('');
-  const [replies, setReplies] = useState<Reply[]>([
-    {
-      id: 1,
-      author: 'Carlos Rivera',
-      content: 'I can confirm the flooding. I suggest using the bypass road through San Jose Street.',
-      timestamp: '1 hour ago',
-      likes: 3
-    },
-    {
-      id: 2,
-      author: 'Lisa Chen',
-      content: 'Thanks for the update! The alternative route worked perfectly for me.',
-      timestamp: '45 minutes ago',
-      likes: 1
-    }
-  ]);
-  const [likedReplies, setLikedReplies] = useState<Set<number>>(new Set());
+export const PostRepliesModal = ({
+  isOpen,
+  onClose,
+  post,
+  onReplyAdded,
+}: PostRepliesModalProps) => {
+  const [newReply, setNewReply] = useState("");
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
 
-  const handleSubmitReply = (e: React.FormEvent) => {
+  // Fetch comments when modal opens
+  useEffect(() => {
+    if (isOpen && post?.id) {
+      fetchComments();
+    }
+  }, [isOpen, post?.id]);
+
+  const getAuthHeaders = () => {
+    const token =
+      localStorage.getItem("access_token") ||
+      localStorage.getItem("admin_token");
+    return {
+      "Content-Type": "application/json",
+      ...(token && { Authorization: `Bearer ${token}` }),
+    };
+  };
+
+  const fetchComments = async () => {
+    if (!post?.id) return;
+
+    try {
+      setLoading(true);
+      const response = await fetch(
+        `http://localhost:8001/api/forum/posts/${post.id}/comments`,
+        {
+          headers: getAuthHeaders(),
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setComments(data);
+      } else {
+        console.error("Failed to fetch comments");
+        toast({
+          title: "Error",
+          description: "Failed to load comments. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching comments:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load comments. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmitReply = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!newReply.trim()) {
@@ -66,141 +111,161 @@ export const PostRepliesModal = ({ isOpen, onClose, post, onReplyAdded }: PostRe
       return;
     }
 
-    const reply: Reply = {
-      id: Date.now(),
-      author: 'Current User',
-      content: newReply.trim(),
-      timestamp: 'Just now',
-      likes: 0
-    };
+    if (!post?.id) return;
 
-    setReplies([...replies, reply]);
-    setNewReply('');
-    onReplyAdded();
+    try {
+      setSubmitting(true);
+      const response = await fetch(
+        `http://localhost:8001/api/forum/posts/${post.id}/comments`,
+        {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            content: newReply.trim(),
+          }),
+        }
+      );
 
-    toast({
-      title: "Reply posted!",
-      description: "Your reply has been added to the discussion.",
-    });
-  };
+      if (response.ok) {
+        const newComment = await response.json();
+        setComments([...comments, newComment]);
+        setNewReply("");
+        onReplyAdded();
 
-  const handleLikeReply = (replyId: number) => {
-    const isAlreadyLiked = likedReplies.has(replyId);
-
-    setReplies(prevReplies => prevReplies.map(reply =>
-      reply.id === replyId
-        ? { ...reply, likes: isAlreadyLiked ? reply.likes - 1 : reply.likes + 1 }
-        : reply
-    ));
-
-    setLikedReplies(prev => {
-      const newSet = new Set(prev);
-      if (isAlreadyLiked) {
-        newSet.delete(replyId);
+        toast({
+          title: "Reply posted!",
+          description: "Your reply has been added to the discussion.",
+        });
       } else {
-        newSet.add(replyId);
+        throw new Error("Failed to post reply");
       }
-      return newSet;
-    });
+    } catch (error) {
+      console.error("Error posting reply:", error);
+      toast({
+        title: "Error",
+        description: "Failed to post reply. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  if (!post) return null;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
         <DialogHeader>
-          <DialogTitle className="text-left">Discussion</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <span>Discussion</span>
+            {post.urgent && (
+              <Badge variant="destructive" className="animate-pulse">
+                URGENT
+              </Badge>
+            )}
+          </DialogTitle>
         </DialogHeader>
 
-        {/* Original Post */}
-        <div className="border-b pb-6 mb-6">
-          <div className="flex items-start space-x-3 mb-3">
-            <div className="w-10 h-10 bg-wmsu-blue rounded-full flex items-center justify-center">
-              <User className="w-5 h-5 text-white" />
+        <div className="flex flex-col h-full max-h-[70vh]">
+          {/* Original Post */}
+          <div className="border-b pb-4 mb-4">
+            <h3 className="font-bold text-lg mb-2">{post.title}</h3>
+            <div className="flex items-center gap-2 text-sm text-gray-500 mb-3">
+              <User className="w-4 h-4" />
+              <span>{post.author}</span>
+              <Clock className="w-4 h-4 ml-2" />
+              <span>{post.timestamp}</span>
+              <Badge variant="outline" className="ml-2">
+                {post.category}
+              </Badge>
             </div>
-            <div className="flex-1">
-              <h3 className="font-semibold text-lg mb-1">
-                {post.title}
-                {post.urgent && (
-                  <Badge variant="destructive" className="ml-2">URGENT</Badge>
-                )}
-              </h3>
-              <div className="flex items-center text-sm text-gray-600 space-x-4 mb-3">
-                <span>by {post.author}</span>
-                <div className="flex items-center">
-                  <Clock className="w-3 h-3 mr-1" />
-                  {post.timestamp}
-                </div>
-              </div>
-              <p className="text-gray-700 mb-3">{post.content}</p>
-              <div className="flex flex-wrap gap-2">
-                {post.tags.map((tag) => (
-                  <Badge key={tag} variant="outline" className="text-xs">
+            <p className="text-gray-700 mb-3">{post.content}</p>
+            {post.tags && post.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {post.tags.map((tag, index) => (
+                  <Badge key={index} variant="secondary" className="text-xs">
                     #{tag}
                   </Badge>
                 ))}
               </div>
-            </div>
+            )}
           </div>
-        </div>
 
-        {/* Replies */}
-        <div className="space-y-4 mb-6">
-          <h4 className="font-semibold text-lg">Replies ({replies.length})</h4>
-          {replies.map((reply) => (
-            <div key={reply.id} className="flex items-start space-x-3 bg-gray-50 p-4 rounded-lg">
-              <div className="w-8 h-8 bg-gray-400 rounded-full flex items-center justify-center">
-                <User className="w-4 h-4 text-white" />
+          {/* Comments Section */}
+          <div className="flex-1 overflow-y-auto mb-4">
+            <h4 className="font-semibold mb-3">
+              {comments.length} {comments.length === 1 ? "Reply" : "Replies"}
+            </h4>
+
+            {loading ? (
+              <div className="flex justify-center items-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <span className="ml-3 text-gray-600">Loading comments...</span>
               </div>
-              <div className="flex-1">
-                <div className="flex items-center text-sm text-gray-600 space-x-4 mb-2">
-                  <span className="font-medium">{reply.author}</span>
-                  <div className="flex items-center">
-                    <Clock className="w-3 h-3 mr-1" />
-                    {reply.timestamp}
+            ) : comments.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <p>No replies yet. Be the first to respond!</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {comments.map((comment) => (
+                  <div
+                    key={comment.id}
+                    className="bg-gray-50 rounded-lg p-4 border border-gray-200"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <User className="w-4 h-4 text-blue-600" />
+                        <span className="font-medium text-blue-600">
+                          {comment.author_name}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {comment.timestamp}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-gray-700">{comment.content}</p>
                   </div>
-                </div>
-                <p className="text-gray-700 mb-2">{reply.content}</p>
-                <button
-                  onClick={() => handleLikeReply(reply.id)}
-                  className={`flex items-center text-sm transition-colors ${
-                    likedReplies.has(reply.id)
-                      ? 'text-red-500 hover:text-red-600'
-                      : 'text-gray-600 hover:text-wmsu-blue'
-                  }`}
-                >
-                  <ThumbsUp className={`w-3 h-3 mr-1 ${likedReplies.has(reply.id) ? 'fill-current' : ''}`} />
-                  <span>{reply.likes}</span>
-                </button>
+                ))}
               </div>
-            </div>
-          ))}
-        </div>
+            )}
+          </div>
 
-        {/* Reply Form */}
-        <form onSubmit={handleSubmitReply} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-2">Add a reply</label>
+          {/* Reply Form */}
+          <form onSubmit={handleSubmitReply} className="border-t pt-4">
             <Textarea
+              placeholder="Write your reply..."
               value={newReply}
               onChange={(e) => setNewReply(e.target.value)}
-              placeholder="Share your thoughts or provide additional information..."
-              rows={3}
-              maxLength={500}
+              className="min-h-[100px] mb-3"
+              disabled={submitting}
             />
-            <div className="text-right text-xs text-gray-500 mt-1">
-              {newReply.length}/500 characters
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-500">
+                {newReply.length}/500 characters
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onClose}
+                  disabled={submitting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={
+                    !newReply.trim() || newReply.length > 500 || submitting
+                  }
+                >
+                  {submitting ? "Posting..." : "Post Reply"}
+                </Button>
+              </div>
             </div>
-          </div>
-
-          <div className="flex justify-end space-x-2">
-            <Button type="button" variant="outline" onClick={onClose}>
-              Close
-            </Button>
-            <Button type="submit">
-              Post Reply
-            </Button>
-          </div>
-        </form>
+          </form>
+        </div>
       </DialogContent>
     </Dialog>
   );
