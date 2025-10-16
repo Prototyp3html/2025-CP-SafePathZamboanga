@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # OSRM Driving Profile (Cars/Motorcycles)
   osrm-driving:
@@ -8,7 +6,7 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - C:/Users/Lenovo/osrm-data:/data
+      - ./backend/osrm-data:/data
     command: osrm-routed --algorithm mld /data/zamboanga-driving.osrm
     restart: unless-stopped
     healthcheck:
@@ -30,7 +28,7 @@ services:
     ports:
       - "5001:5000"
     volumes:
-      - C:/Users/Lenovo/osrm-data:/data
+      - ./backend/osrm-data:/data
     command: osrm-routed --algorithm mld /data/zamboanga-foot.osrm
     restart: unless-stopped
     healthcheck:
