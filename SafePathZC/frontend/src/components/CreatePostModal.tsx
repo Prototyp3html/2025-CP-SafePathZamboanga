@@ -59,7 +59,8 @@ export const CreatePostModal = ({
     try {
       const token =
         localStorage.getItem("access_token") ||
-        localStorage.getItem("admin_token");
+        localStorage.getItem("admin_token") ||
+        localStorage.getItem("user_token");
 
       const response = await fetch("http://localhost:8001/api/forum/posts", {
         method: "POST",

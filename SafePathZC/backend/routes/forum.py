@@ -58,12 +58,16 @@ def verify_token_optional(request: Request):
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)):
     try:
+        print(f"Verifying token: {credentials.credentials[:20]}...")
         payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: int = payload.get("sub")
         if user_id is None:
+            print("No user_id in token payload")
             raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+        print(f"Token verified for user_id: {user_id}")
         return int(user_id)
-    except jwt.PyJWTError:
+    except jwt.PyJWTError as e:
+        print(f"JWT Error: {e}")
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
 
 def get_current_user(user_id: int = Depends(verify_token), db: Session = Depends(get_db)) -> User:
@@ -360,6 +364,8 @@ def delete_post(post_id: int, current_user: User = Depends(get_current_user), db
 @router.post("/posts/{post_id}/like")
 def toggle_like(post_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Toggle like status for a post"""
+    print(f"Like request: post_id={post_id}, user_id={current_user.id}, user_email={current_user.email}")
+    
     # Check if post exists
     post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
@@ -376,12 +382,14 @@ def toggle_like(post_id: int, current_user: User = Depends(get_current_user), db
         db.delete(existing_like)
         post.likes_count = max(0, post.likes_count - 1)
         liked = False
+        print(f"Unliked post {post_id}, new count: {post.likes_count}")
     else:
         # Like
         new_like = PostLike(post_id=post_id, user_id=current_user.id)
         db.add(new_like)
         post.likes_count += 1
         liked = True
+        print(f"Liked post {post_id}, new count: {post.likes_count}")
     
     db.commit()
     
@@ -442,7 +450,7 @@ def get_forum_stats(db: Session = Depends(get_db)):
     return {
         "total_members": total_users,
         "posts_today": posts_today,
-        "active_now": 23,  # Static for now
+        "active_now": min(total_users, max(1, total_users // 3)),  # Realistic estimate: ~1/3 of users could be active
         "total_posts": total_posts
     }
 

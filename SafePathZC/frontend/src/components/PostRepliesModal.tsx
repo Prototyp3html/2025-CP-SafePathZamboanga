@@ -57,7 +57,8 @@ export const PostRepliesModal = ({
   const getAuthHeaders = () => {
     const token =
       localStorage.getItem("access_token") ||
-      localStorage.getItem("admin_token");
+      localStorage.getItem("admin_token") ||
+      localStorage.getItem("user_token");
     return {
       "Content-Type": "application/json",
       ...(token && { Authorization: `Bearer ${token}` }),

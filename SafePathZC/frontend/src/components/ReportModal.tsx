@@ -109,16 +109,10 @@ export const ReportModal = ({ onClose, isLoggedIn = false, onLoginRequired }: Re
       id: 'damage', 
       label: 'Road Damage', 
       icon: 'fas fa-road-spikes',
-      getStatus: () => {
-        if (!weatherData) return { enabled: true, reason: 'Checking...' };
-        const isActive = activeWarnings.includes('damage');
-        return {
-          enabled: isActive,
-          reason: isActive
-            ? 'Active: Extreme weather conditions detected'
-            : 'No severe conditions detected'
-        };
-      }
+      getStatus: () => ({
+        enabled: true,
+        reason: 'Always available for reporting road damage, accidents, construction issues, etc.'
+      })
     },
     { 
       id: 'weather', 
@@ -154,26 +148,72 @@ export const ReportModal = ({ onClose, isLoggedIn = false, onLoginRequired }: Re
 
     setIsSubmitting(true);
 
-    // Simulate API call
-    setTimeout(() => {
-      console.log('Report submitted:', {
-        type: reportType,
-        location,
-        description,
-        severity,
-        timestamp: new Date(),
-        weather_conditions: weatherData ? {
-          temp_c: weatherData.current.temp_c,
-          condition: weatherData.current.condition.text,
-          precip_mm: weatherData.current.precip_mm,
-          wind_kph: weatherData.current.wind_kph
-        } : null
+    try {
+      const token = localStorage.getItem("access_token") || 
+                   localStorage.getItem("admin_token") || 
+                   localStorage.getItem("user_token");
+
+      if (!token) {
+        alert("Please log in to submit reports");
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Map report type to readable labels
+      const typeLabels = {
+        'flood': 'Flooding',
+        'roadblock': 'Road Blockage', 
+        'damage': 'Road Damage',
+        'weather': 'Weather Hazard',
+        'other': 'Other Issue'
+      };
+
+      // Create forum post for the report
+      const postData = {
+        title: `🚨 ${typeLabels[reportType as keyof typeof typeLabels]} Report - ${location}`,
+        content: `**Report Details:**
+📍 **Location:** ${location}
+⚠️ **Issue Type:** ${typeLabels[reportType as keyof typeof typeLabels]}
+📝 **Description:** ${description}
+🔴 **Severity:** ${severity.charAt(0).toUpperCase() + severity.slice(1)}
+
+${weatherData ? `**Weather Conditions at Time of Report:**
+🌡️ Temperature: ${weatherData.current.temp_c}°C
+🌤️ Condition: ${weatherData.current.condition.text}
+🌧️ Precipitation: ${weatherData.current.precip_mm}mm
+💨 Wind: ${weatherData.current.wind_kph}kph
+` : ''}
+**Reported:** ${new Date().toLocaleString()}
+
+*This is a community-generated report. Please verify information before taking action.*`,
+        category: "reports",
+        tags: [reportType, severity, "community-report"],
+        is_urgent: severity === "severe"
+      };
+
+      const response = await fetch("http://localhost:8001/api/forum/posts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(postData)
       });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Report posted to forum:', result);
+        alert('Thank you for your report! It has been posted to the community forum for others to see and verify.');
+        onClose();
+      } else {
+        throw new Error(`Failed to submit report: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('Error submitting report:', error);
+      alert('Failed to submit report. Please try again or check your internet connection.');
+    } finally {
       setIsSubmitting(false);
-      onClose();
-      // Show success message
-      alert('Thank you for your report! It has been submitted to the community.');
-    }, 1000);
+    }
   };
 
   return (

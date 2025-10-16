@@ -41,6 +41,18 @@ interface LatLng {
   lng: number;
 }
 
+interface CommunityReport {
+  id: number;
+  title: string;
+  content: string;
+  location: string;
+  reportType: string;
+  severity: string;
+  author: string;
+  created_at: string;
+  coordinates?: LatLng;
+}
+
 interface FloodRoute {
   waypoints: LatLng[];
   distance: string;
@@ -869,6 +881,12 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const [useOfflineMode, setUseOfflineMode] = useState(false);
   const elevationCacheRef = useRef<Map<string, TerrainData>>(new Map());
 
+  // Community reports state
+  const [communityReports, setCommunityReports] = useState<CommunityReport[]>(
+    []
+  );
+  const [showReportMarkers, setShowReportMarkers] = useState(true);
+
   // New states for route planner modal
   const [showRoutePlannerModal, setShowRoutePlannerModal] = useState(false);
   const [startLocationInput, setStartLocationInput] = useState("");
@@ -955,6 +973,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const placeDataRef = useRef<Map<string, PlaceDefinition>>(new Map());
   const placePopupRef = useRef<L.Popup | null>(null);
   const activePlaceIdRef = useRef<string | null>(null);
+  const reportMarkersRef = useRef<Map<number, L.Marker>>(new Map());
   const startDirectionsFromPlaceRef = useRef<
     ((place: PlaceDefinition) => void) | null
   >(null);
@@ -1123,6 +1142,213 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     startUserLocationWatch();
     return location;
   }, [startUserLocationWatch, updateUserLocationMarker]);
+
+  // Community Reports Functions
+  const geocodeLocation = useCallback(
+    async (locationName: string): Promise<LatLng | null> => {
+      try {
+        // Try to find in Zamboanga City locations first
+        const localResults = await searchZamboCityLocations(locationName);
+        if (localResults.length > 0) {
+          const result = localResults[0];
+          return { lat: result.lat, lng: result.lng };
+        }
+
+        // Fallback to OpenStreetMap Nominatim API for geocoding
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(
+            locationName + ", Zamboanga City, Philippines"
+          )}`
+        );
+
+        if (!response.ok) throw new Error("Geocoding failed");
+
+        const data = await response.json();
+        if (data.length > 0) {
+          return {
+            lat: parseFloat(data[0].lat),
+            lng: parseFloat(data[0].lon),
+          };
+        }
+
+        return null;
+      } catch (error) {
+        console.error("Geocoding error:", error);
+        return null;
+      }
+    },
+    []
+  );
+
+  const fetchCommunityReports = useCallback(async () => {
+    try {
+      const response = await fetch(
+        "http://localhost:8001/api/forum/posts?category=reports&limit=100"
+      );
+      if (!response.ok) return;
+
+      const data = await response.json();
+      const reports: CommunityReport[] = [];
+
+      for (const post of data.posts) {
+        // Extract report data from post content
+        const content = post.content;
+        const locationMatch = content.match(/\*\*Location:\*\* (.+)/);
+        const severityMatch = content.match(/\*\*Severity:\*\* (.+)/);
+        const typeMatch = content.match(/\*\*Issue Type:\*\* (.+)/);
+
+        if (locationMatch) {
+          const location = locationMatch[1].trim();
+          const coordinates = await geocodeLocation(location);
+
+          reports.push({
+            id: post.id,
+            title: post.title,
+            content: post.content,
+            location: location,
+            reportType: typeMatch ? typeMatch[1].trim() : "Unknown",
+            severity: severityMatch ? severityMatch[1].trim() : "Moderate",
+            author: post.author_name,
+            created_at: post.created_at,
+            coordinates: coordinates,
+          });
+        }
+      }
+
+      setCommunityReports(reports);
+    } catch (error) {
+      console.error("Failed to fetch community reports:", error);
+    }
+  }, [geocodeLocation]);
+
+  const createReportMarker = useCallback((report: CommunityReport) => {
+    if (!report.coordinates || !mapRef.current) return null;
+
+    // Define icon styles for different report types
+    const getReportIcon = (type: string, severity: string) => {
+      const iconColors = {
+        flooding: "#3B82F6", // Blue
+        "road blockage": "#EF4444", // Red
+        "road damage": "#F59E0B", // Amber
+        "weather hazard": "#8B5CF6", // Purple
+        "other issue": "#6B7280", // Gray
+      };
+
+      const severitySize =
+        severity.toLowerCase() === "severe" ? "w-6 h-6" : "w-5 h-5";
+      const color =
+        iconColors[type.toLowerCase() as keyof typeof iconColors] ||
+        iconColors["other issue"];
+
+      return L.divIcon({
+        html: `
+          <div class="relative">
+            <div class="absolute inset-0 bg-white rounded-full shadow-lg"></div>
+            <div class="relative ${severitySize} rounded-full flex items-center justify-center" 
+                 style="background-color: ${color}; margin: 2px;">
+              <i class="fas fa-exclamation-triangle text-white text-xs"></i>
+            </div>
+            ${
+              severity.toLowerCase() === "severe"
+                ? '<div class="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border border-white"></div>'
+                : ""
+            }
+          </div>
+        `,
+        className: "report-marker",
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+      });
+    };
+
+    const marker = L.marker([report.coordinates.lat, report.coordinates.lng], {
+      icon: getReportIcon(report.reportType, report.severity),
+      title: report.title,
+    });
+
+    // Create popup content
+    const popupContent = `
+      <div class="max-w-xs">
+        <h3 class="font-bold text-sm text-gray-800 mb-2">${report.title}</h3>
+        <div class="space-y-1 text-xs">
+          <p><span class="font-semibold">Type:</span> ${report.reportType}</p>
+          <p><span class="font-semibold">Severity:</span> 
+            <span class="px-1 py-0.5 rounded text-xs ${
+              report.severity.toLowerCase() === "severe"
+                ? "bg-red-100 text-red-800"
+                : report.severity.toLowerCase() === "moderate"
+                ? "bg-yellow-100 text-yellow-800"
+                : "bg-green-100 text-green-800"
+            }">${report.severity}</span>
+          </p>
+          <p><span class="font-semibold">Location:</span> ${report.location}</p>
+          <p><span class="font-semibold">Reported by:</span> ${
+            report.author
+          }</p>
+          <p><span class="font-semibold">Date:</span> ${new Date(
+            report.created_at
+          ).toLocaleDateString()}</p>
+        </div>
+        <button 
+          onclick="window.open('/community', '_blank')" 
+          class="mt-2 px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
+        >
+          View Full Report
+        </button>
+      </div>
+    `;
+
+    marker.bindPopup(popupContent, {
+      maxWidth: 300,
+      className: "report-popup",
+    });
+
+    // Add hover behavior
+    marker.on("mouseover", () => {
+      if (!marker.getPopup()?.isOpen()) {
+        marker.openPopup();
+      }
+    });
+
+    return marker;
+  }, []);
+
+  const updateReportMarkers = useCallback(() => {
+    if (!mapRef.current) return;
+
+    // Clear existing report markers
+    reportMarkersRef.current.forEach((marker) => {
+      mapRef.current?.removeLayer(marker);
+    });
+    reportMarkersRef.current.clear();
+
+    // Add new markers if enabled
+    if (showReportMarkers) {
+      communityReports.forEach((report) => {
+        if (report.coordinates) {
+          const marker = createReportMarker(report);
+          if (marker) {
+            marker.addTo(mapRef.current!);
+            reportMarkersRef.current.set(report.id, marker);
+          }
+        }
+      });
+    }
+  }, [communityReports, showReportMarkers, createReportMarker]);
+
+  // Fetch reports on component mount and periodically
+  useEffect(() => {
+    fetchCommunityReports();
+
+    // Refresh reports every 5 minutes
+    const interval = setInterval(fetchCommunityReports, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [fetchCommunityReports]);
+
+  // Update markers when reports or visibility changes
+  useEffect(() => {
+    updateReportMarkers();
+  }, [updateReportMarkers]);
 
   // GraphHopper rate limiting
   const lastGraphHopperRequest = useRef<number>(0);
@@ -3210,9 +3436,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         );
       }
     } else {
-      console.log(
-        `  Local OSRM disabled for ${routeName}, returning null...`
-      );
+      console.log(`  Local OSRM disabled for ${routeName}, returning null...`);
     }
 
     // No external routing fallbacks - only use local OSRM
@@ -3293,14 +3517,19 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   };
 
   // Simple elevation estimation based on terrain data
-  const getPointElevation = async (lat: number, lng: number): Promise<number> => {
+  const getPointElevation = async (
+    lat: number,
+    lng: number
+  ): Promise<number> => {
     // Try to find nearby terrain feature (if terrain data is a FeatureCollection)
-    if (terrainData && 'features' in terrainData) {
+    if (terrainData && "features" in terrainData) {
       const nearbyFeature = (terrainData as any).features.find((f: any) => {
         const coords = f.geometry.coordinates;
         if (f.geometry.type === "LineString") {
           return coords.some((c: number[]) => {
-            const distance = Math.sqrt(Math.pow(c[1] - lat, 2) + Math.pow(c[0] - lng, 2));
+            const distance = Math.sqrt(
+              Math.pow(c[1] - lat, 2) + Math.pow(c[0] - lng, 2)
+            );
             return distance < 0.001; // ~100m
           });
         }
@@ -3314,9 +3543,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     // Fallback: estimate based on distance from coast
     const coastalPoint = { lat: 6.9056, lng: 122.0756 };
-    const distanceFromCoast = Math.sqrt(
-      Math.pow(lat - coastalPoint.lat, 2) + Math.pow(lng - coastalPoint.lng, 2)
-    ) * 111 * 1000; // Convert to meters
+    const distanceFromCoast =
+      Math.sqrt(
+        Math.pow(lat - coastalPoint.lat, 2) +
+          Math.pow(lng - coastalPoint.lng, 2)
+      ) *
+      111 *
+      1000; // Convert to meters
 
     // Simple elevation model: 0m at coast, increases with distance
     return Math.min(distanceFromCoast / 200, 50); // Max 50m
@@ -4540,7 +4773,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         lng: start.lng + (end.lng - start.lng) * 0.2 - 0.012,
       };
       try {
-        moderateRoute = await getLocalOSRMRoute(start, end, [westHighwayDirection]);
+        moderateRoute = await getLocalOSRMRoute(start, end, [
+          westHighwayDirection,
+        ]);
         console.log("  ✅ Local OSRM western highway route successful");
       } catch (error) {
         console.log(
@@ -5305,7 +5540,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         );
 
         if (!response.ok) {
-          throw new Error(`Backend returned ${response.status}: ${response.statusText}`);
+          throw new Error(
+            `Backend returned ${response.status}: ${response.statusText}`
+          );
         }
 
         const data = await response.json();
@@ -5323,18 +5560,20 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         const routes = data.routes;
         const analyses = data.analyses;
 
-        console.log(`📊 Processing ${routes.length} routes with flood analysis...`);
+        console.log(
+          `📊 Processing ${routes.length} routes with flood analysis...`
+        );
 
         // Convert routes to waypoints
         const routeDetails = routes.map((route: any, index: number) => {
           const coords = route.geometry?.coordinates || [];
           const waypoints = coords.map((coord: number[]) => ({
             lat: coord[1],
-            lng: coord[0]
+            lng: coord[0],
           }));
 
           const analysis = analyses[index] || {};
-          
+
           return {
             waypoints,
             distance: `${((route.distance || 0) / 1000).toFixed(1)} km`,
@@ -5344,19 +5583,35 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             safeDistance: analysis.safe_distance_m || 0,
             segmentsAnalyzed: analysis.segments_analyzed || 0,
             riskLevel: analysis.risk_level || "unknown",
-            description: analysis.description || "Route analysis unavailable"
+            description: analysis.description || "Route analysis unavailable",
           };
         });
 
         // Find routes by classification (safe, manageable, prone)
-        const safeRoute = routeDetails.find((r: any) => r.riskLevel === "safe") || routeDetails[0];
-        const manageableRoute = routeDetails.find((r: any) => r.riskLevel === "manageable") || routeDetails[1] || routeDetails[0];
-        const proneRoute = routeDetails.find((r: any) => r.riskLevel === "prone") || routeDetails[2] || routeDetails[0];
+        const safeRoute =
+          routeDetails.find((r: any) => r.riskLevel === "safe") ||
+          routeDetails[0];
+        const manageableRoute =
+          routeDetails.find((r: any) => r.riskLevel === "manageable") ||
+          routeDetails[1] ||
+          routeDetails[0];
+        const proneRoute =
+          routeDetails.find((r: any) => r.riskLevel === "prone") ||
+          routeDetails[2] ||
+          routeDetails[0];
 
         console.log("✅ Route classification:");
-        console.log(`  Safe: ${safeRoute.floodPercentage?.toFixed(1)}% flooded`);
-        console.log(`  Manageable: ${manageableRoute.floodPercentage?.toFixed(1)}% flooded`);
-        console.log(`  Prone: ${proneRoute.floodPercentage?.toFixed(1)}% flooded`);
+        console.log(
+          `  Safe: ${safeRoute.floodPercentage?.toFixed(1)}% flooded`
+        );
+        console.log(
+          `  Manageable: ${manageableRoute.floodPercentage?.toFixed(
+            1
+          )}% flooded`
+        );
+        console.log(
+          `  Prone: ${proneRoute.floodPercentage?.toFixed(1)}% flooded`
+        );
 
         return {
           safeRoute: {
@@ -5366,7 +5621,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             riskLevel: "Safe Route",
             floodRisk: "safe",
             color: "#27ae60",
-            description: `${safeRoute.floodPercentage?.toFixed(1)}% flooded (${(safeRoute.floodedDistance / 1000).toFixed(2)} km)`,
+            description: `${safeRoute.floodPercentage?.toFixed(1)}% flooded (${(
+              safeRoute.floodedDistance / 1000
+            ).toFixed(2)} km)`,
           },
           manageableRoute: {
             waypoints: manageableRoute.waypoints,
@@ -5375,7 +5632,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             riskLevel: "Manageable Risk",
             floodRisk: "manageable",
             color: "#f39c12",
-            description: `${manageableRoute.floodPercentage?.toFixed(1)}% flooded (${(manageableRoute.floodedDistance / 1000).toFixed(2)} km)`,
+            description: `${manageableRoute.floodPercentage?.toFixed(
+              1
+            )}% flooded (${(manageableRoute.floodedDistance / 1000).toFixed(
+              2
+            )} km)`,
           },
           proneRoute: {
             waypoints: proneRoute.waypoints,
@@ -5384,7 +5645,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             riskLevel: "High Risk",
             floodRisk: "prone",
             color: "#e74c3c",
-            description: `${proneRoute.floodPercentage?.toFixed(1)}% flooded (${(proneRoute.floodedDistance / 1000).toFixed(2)} km)`,
+            description: `${proneRoute.floodPercentage?.toFixed(
+              1
+            )}% flooded (${(proneRoute.floodedDistance / 1000).toFixed(2)} km)`,
           },
           startName: selectedStartLocation?.display_name || "Start Point",
           endName: selectedEndLocation?.display_name || "End Point",
@@ -5397,44 +5660,44 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           console.log("Attempting fallback to direct local OSRM route...");
           const basicRoute = await getLocalOSRMRoute(start, end);
 
-        if (basicRoute && basicRoute.length > 2) {
-          const distance = calculateRouteDistance(basicRoute);
+          if (basicRoute && basicRoute.length > 2) {
+            const distance = calculateRouteDistance(basicRoute);
 
-          return {
-            safeRoute: {
-              waypoints: basicRoute,
-              distance: distance.toFixed(1) + " km",
-              time: Math.round((distance / 40) * 60) + " min",
-              floodRisk: "safe",
-              riskLevel: "Low Risk",
-              description: `Basic safe route - Fallback mode`,
-              color: "#27ae60",
-            },
-            manageableRoute: {
-              waypoints: basicRoute,
-              distance: distance.toFixed(1) + " km",
-              time: Math.round((distance / 35) * 60) + " min",
-              floodRisk: "manageable",
-              riskLevel: "Medium Risk",
-              description: "Same route - API unavailable",
-              color: "#f39c12",
-            },
-            proneRoute: {
-              waypoints: basicRoute,
-              distance: distance.toFixed(1) + " km",
-              time: Math.round((distance / 30) * 60) + " min",
-              floodRisk: "prone",
-              riskLevel: "High Risk",
-              description: "Same route - API unavailable",
-              color: "#e74c3c",
-            },
-            startName: selectedStartLocation?.display_name || "Start Point",
-            endName: selectedEndLocation?.display_name || "End Point",
-          };
+            return {
+              safeRoute: {
+                waypoints: basicRoute,
+                distance: distance.toFixed(1) + " km",
+                time: Math.round((distance / 40) * 60) + " min",
+                floodRisk: "safe",
+                riskLevel: "Low Risk",
+                description: `Basic safe route - Fallback mode`,
+                color: "#27ae60",
+              },
+              manageableRoute: {
+                waypoints: basicRoute,
+                distance: distance.toFixed(1) + " km",
+                time: Math.round((distance / 35) * 60) + " min",
+                floodRisk: "manageable",
+                riskLevel: "Medium Risk",
+                description: "Same route - API unavailable",
+                color: "#f39c12",
+              },
+              proneRoute: {
+                waypoints: basicRoute,
+                distance: distance.toFixed(1) + " km",
+                time: Math.round((distance / 30) * 60) + " min",
+                floodRisk: "prone",
+                riskLevel: "High Risk",
+                description: "Same route - API unavailable",
+                color: "#e74c3c",
+              },
+              startName: selectedStartLocation?.display_name || "Start Point",
+              endName: selectedEndLocation?.display_name || "End Point",
+            };
+          }
+        } catch (fallbackError) {
+          console.error("Fallback OSRM route also failed:", fallbackError);
         }
-      } catch (fallbackError) {
-        console.error("Fallback OSRM route also failed:", fallbackError);
-      }
 
         // Last resort: Create fallback direct route (straight line)
         const directRoute = [start, end];
@@ -5442,36 +5705,36 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
         return {
           safeRoute: {
-          waypoints: directRoute,
-          distance: directDistance.toFixed(1) + " km",
-          time: Math.round((directDistance / 40) * 60) + " min",
-          floodRisk: "safe",
-          riskLevel: "Low Risk",
-          description: `Direct route - All APIs unavailable`,
-          color: "#27ae60",
-        },
-        manageableRoute: {
-          waypoints: directRoute,
-          distance: (directDistance * 1.1).toFixed(1) + " km",
-          time: Math.round(((directDistance * 1.1) / 35) * 60) + " min",
-          floodRisk: "manageable",
-          riskLevel: "Medium Risk",
-          description: "Direct route - All APIs unavailable",
-          color: "#f39c12",
-        },
-        proneRoute: {
-          waypoints: directRoute,
-          distance: (directDistance * 1.2).toFixed(1) + " km",
-          time: Math.round(((directDistance * 1.2) / 30) * 60) + " min",
-          floodRisk: "prone",
-          riskLevel: "High Risk",
-          description: "Direct route - All APIs unavailable",
-          color: "#e74c3c",
-        },
-        startName: selectedStartLocation?.display_name || "Start Point",
-        endName: selectedEndLocation?.display_name || "End Point",
-      };
-    }
+            waypoints: directRoute,
+            distance: directDistance.toFixed(1) + " km",
+            time: Math.round((directDistance / 40) * 60) + " min",
+            floodRisk: "safe",
+            riskLevel: "Low Risk",
+            description: `Direct route - All APIs unavailable`,
+            color: "#27ae60",
+          },
+          manageableRoute: {
+            waypoints: directRoute,
+            distance: (directDistance * 1.1).toFixed(1) + " km",
+            time: Math.round(((directDistance * 1.1) / 35) * 60) + " min",
+            floodRisk: "manageable",
+            riskLevel: "Medium Risk",
+            description: "Direct route - All APIs unavailable",
+            color: "#f39c12",
+          },
+          proneRoute: {
+            waypoints: directRoute,
+            distance: (directDistance * 1.2).toFixed(1) + " km",
+            time: Math.round(((directDistance * 1.2) / 30) * 60) + " min",
+            floodRisk: "prone",
+            riskLevel: "High Risk",
+            description: "Direct route - All APIs unavailable",
+            color: "#e74c3c",
+          },
+          startName: selectedStartLocation?.display_name || "Start Point",
+          endName: selectedEndLocation?.display_name || "End Point",
+        };
+      }
     } catch (outerError) {
       console.error("Fatal error in generateFloodRoutes:", outerError);
       // Return a basic fallback if everything fails
@@ -7455,6 +7718,72 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     const terrainOverlayBtn = new TerrainOverlayBtn();
     map.addControl(terrainOverlayBtn);
 
+    // 6. Add community reports toggle button
+    const ReportsToggleBtn = L.Control.extend({
+      options: {
+        position: "topright",
+      },
+      onAdd: function () {
+        const btn = L.DomUtil.create(
+          "button",
+          "leaflet-bar leaflet-control leaflet-control-custom"
+        );
+
+        btn.style.cssText = `
+            background: #ffffff;
+            border: 2px solid #000000;
+            width: 120px;
+            height: 37px;
+            cursor: pointer;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            padding: 0 8px;
+            gap: 6px;
+            margin: 10px;
+            margin-right: 50px;
+          `;
+
+        const container = document.createElement("div");
+        container.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+          `;
+
+        const icon = document.createElement("i");
+        icon.className = "fas fa-exclamation-triangle";
+        icon.style.fontSize = "14px";
+        icon.style.color = "#000";
+
+        const text = document.createElement("span");
+        text.innerText = `Reports (${communityReports.length})`;
+        text.style.fontSize = "12px";
+        text.style.fontWeight = "500";
+        text.style.color = "#000";
+
+        container.appendChild(icon);
+        container.appendChild(text);
+        btn.appendChild(container);
+
+        btn.onclick = (e: Event) => {
+          e.stopPropagation();
+          setShowReportMarkers((prev) => {
+            const newState = !prev;
+            btn.style.background = newState ? "#3B82F6" : "#ffffff";
+            icon.style.color = newState ? "#ffffff" : "#000";
+            text.style.color = newState ? "#ffffff" : "#000";
+            return newState;
+          });
+        };
+
+        return btn;
+      },
+    });
+    const reportsToggleBtn = new ReportsToggleBtn();
+    map.addControl(reportsToggleBtn);
+
     return () => {
       map.remove();
       if (routingControlRef.current) routingControlRef.current.remove();
@@ -8106,6 +8435,23 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           font-size: 0.9rem;
           text-align: center;
           max-width: 300px;
+          line-height: 1.4;
+        }
+        
+        /* Community Report Marker Styles */
+        .report-marker {
+          transition: transform 0.2s ease;
+        }
+        .report-marker:hover {
+          transform: scale(1.1);
+          z-index: 1000;
+        }
+        .report-popup .leaflet-popup-content-wrapper {
+          border-radius: 8px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        .report-popup .leaflet-popup-content {
+          margin: 8px 12px;
           line-height: 1.4;
         }
       `}</style>

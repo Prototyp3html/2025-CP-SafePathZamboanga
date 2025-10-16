@@ -102,12 +102,22 @@ const CommunityForum = () => {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  // Check authentication status
+  useEffect(() => {
+    const token = localStorage.getItem("access_token") || 
+                  localStorage.getItem("admin_token") || 
+                  localStorage.getItem("user_token");
+    setIsLoggedIn(!!token);
+  }, []);
 
   // API functions
   const getAuthHeaders = () => {
     const token =
       localStorage.getItem("access_token") ||
-      localStorage.getItem("admin_token");
+      localStorage.getItem("admin_token") ||
+      localStorage.getItem("user_token");
     return {
       "Content-Type": "application/json",
       ...(token && { Authorization: `Bearer ${token}` }),
@@ -169,6 +179,11 @@ const CommunityForum = () => {
   };
 
   const handleLike = async (postId: number) => {
+    if (!isLoggedIn) {
+      alert("Please log in to like posts");
+      return;
+    }
+
     try {
       const response = await fetch(
         `http://localhost:8001/api/forum/posts/${postId}/like`,
@@ -204,9 +219,20 @@ const CommunityForum = () => {
           }
           return newSet;
         });
+      } else {
+        // Handle error responses
+        const errorData = await response.json();
+        console.error("Like error:", response.status, errorData);
+        
+        if (response.status === 403 || response.status === 401) {
+          alert("Please log in to like posts");
+        } else {
+          alert("Failed to like post. Please try again.");
+        }
       }
     } catch (err) {
       console.error("Error toggling like:", err);
+      alert("Network error. Please check your connection.");
     }
   };
 
@@ -295,7 +321,7 @@ const CommunityForum = () => {
               <div className="mb-6">
                 <div className="inline-flex items-center px-4 py-2 bg-white/20 rounded-full text-white/90 text-sm font-medium mb-4">
                   <TrendingUp className="w-4 h-4 mr-2" />
-                  1,247 Active Members
+                  {forumStats.total_members.toLocaleString()} Total Members
                 </div>
               </div>
 
@@ -313,8 +339,20 @@ const CommunityForum = () => {
               </p>
 
               <button
-                onClick={() => setIsCreatePostOpen(true)}
-                className="group inline-flex items-center px-8 py-4 bg-white text-blue-600 font-semibold rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
+                onClick={() => {
+                  if (!isLoggedIn) {
+                    alert("Please log in to create posts");
+                    return;
+                  }
+                  setIsCreatePostOpen(true);
+                }}
+                disabled={!isLoggedIn}
+                className={`group inline-flex items-center px-8 py-4 font-semibold rounded-2xl shadow-xl transition-all duration-300 ${
+                  isLoggedIn
+                    ? "bg-white text-blue-600 hover:shadow-2xl transform hover:scale-105"
+                    : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                }`}
+                title={!isLoggedIn ? "Please log in to create posts" : ""}
               >
                 <Plus className="w-5 h-5 mr-3 group-hover:rotate-90 transition-transform duration-300" />
                 Create New Post
@@ -535,11 +573,15 @@ const CommunityForum = () => {
                               </button>
                               <button
                                 onClick={() => handleLike(post.id)}
+                                disabled={!isLoggedIn}
                                 className={`flex items-center transition-all duration-200 group ${
                                   likedPosts.has(post.id)
                                     ? "text-red-500"
-                                    : "text-gray-600 hover:text-red-500"
+                                    : isLoggedIn 
+                                      ? "text-gray-600 hover:text-red-500"
+                                      : "text-gray-400 cursor-not-allowed"
                                 }`}
+                                title={!isLoggedIn ? "Please log in to like posts" : ""}
                               >
                                 <ThumbsUp
                                   className={`w-5 h-5 mr-2 group-hover:scale-110 transition-transform duration-200 ${

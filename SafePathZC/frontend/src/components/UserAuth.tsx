@@ -72,6 +72,15 @@ export const UserAuth: React.FC<UserAuthProps> = ({
           JSON.stringify({ ...data.user, userType: "user" })
         );
 
+        // If user has admin role, also store admin token
+        if (data.user.role === "admin") {
+          localStorage.setItem("admin_token", data.token);
+          localStorage.setItem(
+            "admin_data",
+            JSON.stringify({ ...data.user, userType: "admin" })
+          );
+        }
+
         // Clear form
         setFormData({
           email: "",
