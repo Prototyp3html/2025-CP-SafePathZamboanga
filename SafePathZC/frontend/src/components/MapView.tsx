@@ -974,6 +974,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const placePopupRef = useRef<L.Popup | null>(null);
   const activePlaceIdRef = useRef<string | null>(null);
   const reportMarkersRef = useRef<Map<number, L.Marker>>(new Map());
+  const reportsButtonTextRef = useRef<HTMLSpanElement | null>(null);
   const startDirectionsFromPlaceRef = useRef<
     ((place: PlaceDefinition) => void) | null
   >(null);
@@ -1349,6 +1350,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   useEffect(() => {
     updateReportMarkers();
   }, [updateReportMarkers]);
+
+  // Update reports button text when reports are fetched
+  useEffect(() => {
+    if (reportsButtonTextRef.current) {
+      reportsButtonTextRef.current.innerText = `Reports (${communityReports.length})`;
+    }
+  }, [communityReports.length]);
 
   // GraphHopper rate limiting
   const lastGraphHopperRequest = useRef<number>(0);
@@ -7762,6 +7770,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         text.style.fontSize = "12px";
         text.style.fontWeight = "500";
         text.style.color = "#000";
+        
+        // Store reference to update later
+        reportsButtonTextRef.current = text;
 
         container.appendChild(icon);
         container.appendChild(text);
