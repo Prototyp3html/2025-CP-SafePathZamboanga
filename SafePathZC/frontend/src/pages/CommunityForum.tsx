@@ -106,9 +106,10 @@ const CommunityForum = () => {
 
   // Check authentication status
   useEffect(() => {
-    const token = localStorage.getItem("access_token") || 
-                  localStorage.getItem("admin_token") || 
-                  localStorage.getItem("user_token");
+    const token =
+      localStorage.getItem("access_token") ||
+      localStorage.getItem("admin_token") ||
+      localStorage.getItem("user_token");
     setIsLoggedIn(!!token);
   }, []);
 
@@ -223,7 +224,7 @@ const CommunityForum = () => {
         // Handle error responses
         const errorData = await response.json();
         console.error("Like error:", response.status, errorData);
-        
+
         if (response.status === 403 || response.status === 401) {
           alert("Please log in to like posts");
         } else {
@@ -577,11 +578,15 @@ const CommunityForum = () => {
                                 className={`flex items-center transition-all duration-200 group ${
                                   likedPosts.has(post.id)
                                     ? "text-red-500"
-                                    : isLoggedIn 
-                                      ? "text-gray-600 hover:text-red-500"
-                                      : "text-gray-400 cursor-not-allowed"
+                                    : isLoggedIn
+                                    ? "text-gray-600 hover:text-red-500"
+                                    : "text-gray-400 cursor-not-allowed"
                                 }`}
-                                title={!isLoggedIn ? "Please log in to like posts" : ""}
+                                title={
+                                  !isLoggedIn
+                                    ? "Please log in to like posts"
+                                    : ""
+                                }
                               >
                                 <ThumbsUp
                                   className={`w-5 h-5 mr-2 group-hover:scale-110 transition-transform duration-200 ${

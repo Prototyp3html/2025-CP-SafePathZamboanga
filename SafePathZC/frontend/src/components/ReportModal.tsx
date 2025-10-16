@@ -1,5 +1,4 @@
-
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 
 interface ReportModalProps {
   onClose: () => void;
@@ -7,29 +6,36 @@ interface ReportModalProps {
   onLoginRequired?: () => void;
 }
 
-export const ReportModal = ({ onClose, isLoggedIn = false, onLoginRequired }: ReportModalProps) => {
-  const [reportType, setReportType] = useState('');
-  const [location, setLocation] = useState('');
-  const [description, setDescription] = useState('');
-  const [severity, setSeverity] = useState('moderate');
+export const ReportModal = ({
+  onClose,
+  isLoggedIn = false,
+  onLoginRequired,
+}: ReportModalProps) => {
+  const [reportType, setReportType] = useState("");
+  const [location, setLocation] = useState("");
+  const [description, setDescription] = useState("");
+  const [severity, setSeverity] = useState("moderate");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeWarnings, setActiveWarnings] = useState<string[]>([]);
   const [weatherData, setWeatherData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   // WeatherAPI.com configuration
-  const WEATHER_API_KEY = import.meta.env.VITE_WEATHER_API_KEY || "11b60f9fe8df4418a12152441251310";
+  const WEATHER_API_KEY =
+    import.meta.env.VITE_WEATHER_API_KEY || "11b60f9fe8df4418a12152441251310";
   const LOCATION = "Zamboanga City, Philippines";
 
   // Fetch weather data and determine active warnings
   const fetchActiveWarnings = async () => {
     try {
       const response = await fetch(
-        `https://api.weatherapi.com/v1/forecast.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(LOCATION)}&days=1&aqi=no&alerts=yes`
+        `https://api.weatherapi.com/v1/forecast.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(
+          LOCATION
+        )}&days=1&aqi=no&alerts=yes`
       );
 
       if (!response.ok) {
-        console.error('Weather API failed:', response.status);
+        console.error("Weather API failed:", response.status);
         setLoading(false);
         return;
       }
@@ -42,36 +48,35 @@ export const ReportModal = ({ onClose, isLoggedIn = false, onLoginRequired }: Re
 
       // Check for flooding conditions (heavy rain)
       if (current.precip_mm > 5) {
-        warnings.push('flood');
+        warnings.push("flood");
       }
 
       // Check for weather hazards (storms, heavy rain, strong winds)
       if (current.condition.code >= 1087 && current.condition.code <= 1282) {
-        warnings.push('weather');
+        warnings.push("weather");
       } else if (current.precip_mm > 10 || current.wind_kph > 40) {
-        warnings.push('weather');
+        warnings.push("weather");
       }
 
       // Check for road damage risk (extreme conditions)
       if (current.precip_mm > 25 || current.wind_kph > 60) {
-        warnings.push('damage');
+        warnings.push("damage");
       }
 
       // Road blockage is always available (can happen anytime)
-      warnings.push('roadblock');
+      warnings.push("roadblock");
 
       // Other issue is always available
-      warnings.push('other');
+      warnings.push("other");
 
       setActiveWarnings(warnings);
       setLoading(false);
 
-      console.log(`🚨 Active warnings detected: ${warnings.join(', ')}`);
-      
+      console.log(`🚨 Active warnings detected: ${warnings.join(", ")}`);
     } catch (error) {
-      console.error('Failed to fetch weather warnings:', error);
+      console.error("Failed to fetch weather warnings:", error);
       // Fallback: enable all options if API fails
-      setActiveWarnings(['flood', 'roadblock', 'damage', 'weather', 'other']);
+      setActiveWarnings(["flood", "roadblock", "damage", "weather", "other"]);
       setLoading(false);
     }
   };
@@ -81,66 +86,69 @@ export const ReportModal = ({ onClose, isLoggedIn = false, onLoginRequired }: Re
   }, []);
 
   const reportTypes = [
-    { 
-      id: 'flood', 
-      label: 'Flooding', 
-      icon: 'fas fa-water',
+    {
+      id: "flood",
+      label: "Flooding",
+      icon: "fas fa-water",
       getStatus: () => {
-        if (!weatherData) return { enabled: true, reason: 'Checking...' };
-        const isActive = activeWarnings.includes('flood');
+        if (!weatherData) return { enabled: true, reason: "Checking..." };
+        const isActive = activeWarnings.includes("flood");
         return {
           enabled: isActive,
-          reason: isActive 
-            ? `Active: ${weatherData.current.precip_mm.toFixed(1)}mm rainfall detected`
-            : 'No flooding risk detected currently'
+          reason: isActive
+            ? `Active: ${weatherData.current.precip_mm.toFixed(
+                1
+              )}mm rainfall detected`
+            : "No flooding risk detected currently",
         };
-      }
+      },
     },
-    { 
-      id: 'roadblock', 
-      label: 'Road Blockage', 
-      icon: 'fas fa-road-barrier',
+    {
+      id: "roadblock",
+      label: "Road Blockage",
+      icon: "fas fa-road-barrier",
       getStatus: () => ({
         enabled: true,
-        reason: 'Always available for reporting'
-      })
+        reason: "Always available for reporting",
+      }),
     },
-    { 
-      id: 'damage', 
-      label: 'Road Damage', 
-      icon: 'fas fa-road-spikes',
+    {
+      id: "damage",
+      label: "Road Damage",
+      icon: "fas fa-road-spikes",
       getStatus: () => ({
         enabled: true,
-        reason: 'Always available for reporting road damage, accidents, construction issues, etc.'
-      })
+        reason:
+          "Always available for reporting road damage, accidents, construction issues, etc.",
+      }),
     },
-    { 
-      id: 'weather', 
-      label: 'Weather Hazard', 
-      icon: 'fas fa-cloud-bolt',
+    {
+      id: "weather",
+      label: "Weather Hazard",
+      icon: "fas fa-cloud-bolt",
       getStatus: () => {
-        if (!weatherData) return { enabled: true, reason: 'Checking...' };
-        const isActive = activeWarnings.includes('weather');
+        if (!weatherData) return { enabled: true, reason: "Checking..." };
+        const isActive = activeWarnings.includes("weather");
         const current = weatherData.current;
         return {
           enabled: isActive,
           reason: isActive
-            ? (current.precip_mm > 10 
-                ? `Active: Heavy rain ${current.precip_mm.toFixed(1)}mm` 
-                : `Active: Strong winds ${current.wind_kph.toFixed(0)}kph`)
-            : 'No weather hazards detected'
+            ? current.precip_mm > 10
+              ? `Active: Heavy rain ${current.precip_mm.toFixed(1)}mm`
+              : `Active: Strong winds ${current.wind_kph.toFixed(0)}kph`
+            : "No weather hazards detected",
         };
-      }
+      },
     },
-    { 
-      id: 'other', 
-      label: 'Other Issue', 
-      icon: 'fas fa-exclamation-circle',
+    {
+      id: "other",
+      label: "Other Issue",
+      icon: "fas fa-exclamation-circle",
       getStatus: () => ({
         enabled: true,
-        reason: 'Always available for reporting'
-      })
-    }
+        reason: "Always available for reporting",
+      }),
+    },
   ];
 
   const handleSubmit = async () => {
@@ -149,9 +157,10 @@ export const ReportModal = ({ onClose, isLoggedIn = false, onLoginRequired }: Re
     setIsSubmitting(true);
 
     try {
-      const token = localStorage.getItem("access_token") || 
-                   localStorage.getItem("admin_token") || 
-                   localStorage.getItem("user_token");
+      const token =
+        localStorage.getItem("access_token") ||
+        localStorage.getItem("admin_token") ||
+        localStorage.getItem("user_token");
 
       if (!token) {
         alert("Please log in to submit reports");
@@ -161,56 +170,66 @@ export const ReportModal = ({ onClose, isLoggedIn = false, onLoginRequired }: Re
 
       // Map report type to readable labels
       const typeLabels = {
-        'flood': 'Flooding',
-        'roadblock': 'Road Blockage', 
-        'damage': 'Road Damage',
-        'weather': 'Weather Hazard',
-        'other': 'Other Issue'
+        flood: "Flooding",
+        roadblock: "Road Blockage",
+        damage: "Road Damage",
+        weather: "Weather Hazard",
+        other: "Other Issue",
       };
 
       // Create forum post for the report
       const postData = {
-        title: `🚨 ${typeLabels[reportType as keyof typeof typeLabels]} Report - ${location}`,
+        title: `🚨 ${
+          typeLabels[reportType as keyof typeof typeLabels]
+        } Report - ${location}`,
         content: `**Report Details:**
 📍 **Location:** ${location}
 ⚠️ **Issue Type:** ${typeLabels[reportType as keyof typeof typeLabels]}
 📝 **Description:** ${description}
 🔴 **Severity:** ${severity.charAt(0).toUpperCase() + severity.slice(1)}
 
-${weatherData ? `**Weather Conditions at Time of Report:**
+${
+  weatherData
+    ? `**Weather Conditions at Time of Report:**
 🌡️ Temperature: ${weatherData.current.temp_c}°C
 🌤️ Condition: ${weatherData.current.condition.text}
 🌧️ Precipitation: ${weatherData.current.precip_mm}mm
 💨 Wind: ${weatherData.current.wind_kph}kph
-` : ''}
+`
+    : ""
+}
 **Reported:** ${new Date().toLocaleString()}
 
 *This is a community-generated report. Please verify information before taking action.*`,
         category: "reports",
         tags: [reportType, severity, "community-report"],
-        is_urgent: severity === "severe"
+        is_urgent: severity === "severe",
       };
 
       const response = await fetch("http://localhost:8001/api/forum/posts", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(postData)
+        body: JSON.stringify(postData),
       });
 
       if (response.ok) {
         const result = await response.json();
-        console.log('Report posted to forum:', result);
-        alert('Thank you for your report! It has been posted to the community forum for others to see and verify.');
+        console.log("Report posted to forum:", result);
+        alert(
+          "Thank you for your report! It has been posted to the community forum for others to see and verify."
+        );
         onClose();
       } else {
         throw new Error(`Failed to submit report: ${response.status}`);
       }
     } catch (error) {
-      console.error('Error submitting report:', error);
-      alert('Failed to submit report. Please try again or check your internet connection.');
+      console.error("Error submitting report:", error);
+      alert(
+        "Failed to submit report. Please try again or check your internet connection."
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -243,9 +262,12 @@ ${weatherData ? `**Weather Conditions at Time of Report:**
               <div className="flex items-start">
                 <i className="fas fa-exclamation-triangle text-yellow-600 text-xl mr-3 mt-1"></i>
                 <div className="flex-1">
-                  <h4 className="text-sm font-bold text-yellow-800 mb-1">Login Required</h4>
+                  <h4 className="text-sm font-bold text-yellow-800 mb-1">
+                    Login Required
+                  </h4>
                   <p className="text-sm text-yellow-700 mb-3">
-                    You must be logged in to report issues to the community. This helps us maintain accountability and prevent spam.
+                    You must be logged in to report issues to the community.
+                    This helps us maintain accountability and prevent spam.
                   </p>
                   <button
                     onClick={() => {
@@ -266,7 +288,9 @@ ${weatherData ? `**Weather Conditions at Time of Report:**
           {loading && (
             <div className="mb-4 p-3 bg-blue-50 rounded-lg flex items-center">
               <i className="fas fa-spinner fa-spin text-blue-500 mr-2"></i>
-              <span className="text-sm text-blue-700">Checking current weather conditions...</span>
+              <span className="text-sm text-blue-700">
+                Checking current weather conditions...
+              </span>
             </div>
           )}
 
@@ -289,31 +313,44 @@ ${weatherData ? `**Weather Conditions at Time of Report:**
                     title={status.reason}
                     className={`
                       relative p-4 rounded-lg border-2 transition-all duration-200
-                      ${isSelected 
-                        ? 'border-wmsu-blue bg-blue-50' 
-                        : isDisabled
-                        ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-50'
-                        : 'border-gray-300 hover:border-wmsu-blue hover:bg-blue-50'
+                      ${
+                        isSelected
+                          ? "border-wmsu-blue bg-blue-50"
+                          : isDisabled
+                          ? "border-gray-200 bg-gray-50 cursor-not-allowed opacity-50"
+                          : "border-gray-300 hover:border-wmsu-blue hover:bg-blue-50"
                       }
                     `}
                   >
                     <div className="flex flex-col items-center">
-                      <i className={`${type.icon} text-2xl mb-2 ${
-                        isSelected ? 'text-wmsu-blue' : 
-                        isDisabled ? 'text-gray-400' : 'text-gray-600'
-                      }`}></i>
-                      <span className={`text-sm font-medium ${
-                        isSelected ? 'text-wmsu-blue' : 
-                        isDisabled ? 'text-gray-400' : 'text-gray-700'
-                      }`}>
+                      <i
+                        className={`${type.icon} text-2xl mb-2 ${
+                          isSelected
+                            ? "text-wmsu-blue"
+                            : isDisabled
+                            ? "text-gray-400"
+                            : "text-gray-600"
+                        }`}
+                      ></i>
+                      <span
+                        className={`text-sm font-medium ${
+                          isSelected
+                            ? "text-wmsu-blue"
+                            : isDisabled
+                            ? "text-gray-400"
+                            : "text-gray-700"
+                        }`}
+                      >
                         {type.label}
                       </span>
-                      
+
                       {/* Active indicator */}
-                      {status.enabled && type.id !== 'other' && type.id !== 'roadblock' && (
-                        <span className="absolute top-2 right-2 w-2 h-2 bg-orange-500 rounded-full animate-pulse"></span>
-                      )}
-                      
+                      {status.enabled &&
+                        type.id !== "other" &&
+                        type.id !== "roadblock" && (
+                          <span className="absolute top-2 right-2 w-2 h-2 bg-orange-500 rounded-full animate-pulse"></span>
+                        )}
+
                       {/* Disabled indicator */}
                       {!status.enabled && isLoggedIn && (
                         <span className="absolute top-2 right-2">
@@ -328,7 +365,10 @@ ${weatherData ? `**Weather Conditions at Time of Report:**
             {reportType && !loading && (
               <p className="text-xs text-gray-500 mt-2 flex items-center">
                 <i className="fas fa-info-circle mr-1"></i>
-                {reportTypes.find(t => t.id === reportType)?.getStatus().reason}
+                {
+                  reportTypes.find((t) => t.id === reportType)?.getStatus()
+                    .reason
+                }
               </p>
             )}
           </div>
@@ -386,7 +426,9 @@ ${weatherData ? `**Weather Conditions at Time of Report:**
           {/* Community Guidelines */}
           {isLoggedIn && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
-              <h4 className="text-sm font-semibold text-blue-800 mb-1">Community Guidelines</h4>
+              <h4 className="text-sm font-semibold text-blue-800 mb-1">
+                Community Guidelines
+              </h4>
               <ul className="text-xs text-blue-700 space-y-1">
                 <li>• Provide accurate and specific location information</li>
                 <li>• Include time-sensitive details if applicable</li>
@@ -405,7 +447,13 @@ ${weatherData ? `**Weather Conditions at Time of Report:**
             </button>
             <button
               onClick={handleSubmit}
-              disabled={!isLoggedIn || !reportType || !location || !description || isSubmitting}
+              disabled={
+                !isLoggedIn ||
+                !reportType ||
+                !location ||
+                !description ||
+                isSubmitting
+              }
               className="flex-1 bg-wmsu-blue text-white py-2 px-4 rounded-lg font-medium hover:bg-wmsu-blue-light transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (
