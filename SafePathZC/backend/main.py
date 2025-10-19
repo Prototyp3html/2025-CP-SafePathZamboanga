@@ -2,9 +2,9 @@ from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime, date
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 import os
 import requests
 import math
@@ -13,7 +13,7 @@ import time
 import asyncio
 import logging
 from dotenv import load_dotenv
-from services.local_routing import LocalRoutingService, Coordinate
+from services.local_routing import get_routing_service, get_flood_service, Coordinate
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -130,12 +130,11 @@ class LocalRouteRequest(BaseModel):
     start: List[float]  # [lat, lng]
     end: List[float]    # [lat, lng]
 
-class LocalRouteResponse(BaseModel):  
+class LocalRouteResponse(BaseModel):
     success: bool
-    route: List[List[float]]  # Array of [lat, lng] coordinates
-    distance: float  # in meters
-    duration: float  # in seconds
+    routes: List[Dict] = Field(..., description="List of calculated routes (direct, balanced, safest)")
     message: str
+    snapped_waypoints: Optional[List[List[float]]] = None
 
 class CoordinatePoint(BaseModel):
     lat: float
@@ -323,6 +322,79 @@ async def get_osrm_route(start_lng: float, start_lat: float, end_lng: float, end
     except Exception as e:
         print(f"OSRM error: {e}")
         raise HTTPException(status_code=500, detail=f"Routing service error: {str(e)}")
+
+async def get_osrm_route_with_waypoints(
+    start_lng: float, 
+    start_lat: float, 
+    end_lng: float, 
+    end_lat: float, 
+    waypoints: List[List[float]],
+    alternatives: bool = False
+):
+    """Get route from OSRM with waypoints (multi-stop route)"""
+    try:
+        base_url = "http://localhost:5000/route/v1/driving"
+        
+        # Build coordinates string: start;waypoint1;waypoint2;...;end
+        coords_parts = [f"{start_lng},{start_lat}"]
+        for wp in waypoints:
+            coords_parts.append(f"{wp[0]},{wp[1]}")  # wp is [lng, lat]
+        coords_parts.append(f"{end_lng},{end_lat}")
+        
+        coords_string = ";".join(coords_parts)
+        url = f"{base_url}/{coords_string}"
+        
+        params = {
+            "geometries": "geojson",
+            "overview": "full",
+            "steps": "false"
+        }
+        
+        # Request alternative routes if specified
+        if alternatives:
+            params["alternatives"] = "true"
+        
+        print(f"🗺️ OSRM Waypoint Request: {url}")
+        print(f"   Route: A → {' → '.join([chr(67+i) for i in range(len(waypoints))])} → B")
+        print(f"   Alternatives: {alternatives}")
+        
+        response = requests.get(url, params=params, timeout=8)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if "routes" in data and len(data["routes"]) > 0:
+                num_routes = len(data["routes"])
+                print(f"   ✅ Got {num_routes} route(s) through waypoints: {data['routes'][0]['distance']/1000:.1f}km")
+                if alternatives and num_routes == 1:
+                    print(f"   ⚠️ OSRM only returned 1 route despite requesting alternatives")
+                
+                # Extract snapped waypoint coordinates from OSRM response
+                if "waypoints" in data:
+                    snapped_waypoints = []
+                    for wp in data["waypoints"]:
+                        snapped_waypoints.append({
+                            "location": wp.get("location", []),  # [lng, lat]
+                            "name": wp.get("name", ""),
+                            "hint": wp.get("hint", "")
+                        })
+                    print(f"   📍 OSRM snapped waypoints to roads:")
+                    for i, wp in enumerate(snapped_waypoints[1:-1], 1):  # Skip start and end
+                        loc = wp["location"]
+                        print(f"      Point {chr(66+i)}: [{loc[0]:.6f}, {loc[1]:.6f}] on {wp.get('name', 'unnamed road')}")
+                    # Attach snapped waypoints to response for frontend
+                    data["snapped_waypoints"] = snapped_waypoints
+                
+                return data
+            else:
+                raise Exception("No routes found in OSRM response")
+        else:
+            raise Exception(f"OSRM API returned {response.status_code}: {response.text}")
+            
+    except Exception as e:
+        print(f"⚠️ OSRM waypoint routing error: {e}")
+        # Fall back to direct route without waypoints
+        print("   Falling back to direct route (ignoring waypoints)")
+        return await get_osrm_route(start_lng, start_lat, end_lng, end_lat, alternatives=False)
 
 # Helper function for elevation data
 async def get_elevation_batch(coordinates: List[List[float]]):
@@ -525,20 +597,29 @@ def remove_dead_ends(coordinates: List[List[float]], dead_end_threshold: float =
     
     return cleaned
 
-def simplify_route(coordinates: List[List[float]], tolerance: float = 0.00015) -> List[List[float]]:
+def simplify_route(coordinates: List[List[float]], tolerance: float = 0.00003, waypoints: List[List[float]] = None) -> List[List[float]]:
     """
     Remove backtracking, dead-ends, and redundant points from route coordinates.
     This cleans up messy OSRM routes that have U-turns and side explorations.
+    PRESERVES waypoint coordinates to ensure routes visually pass through them.
     
     Args:
         coordinates: List of [lng, lat] coordinate pairs
-        tolerance: Distance tolerance for simplification (degrees, ~15m)
+        tolerance: Distance tolerance for simplification (degrees, ~3m) - REDUCED for better road alignment
+        waypoints: List of [lng, lat] waypoint coordinates that must be preserved
     
     Returns:
         Simplified list of coordinates
     """
     if len(coordinates) < 3:
         return coordinates
+    
+    # Build set of waypoint coordinates for fast lookup
+    waypoint_set = set()
+    if waypoints:
+        for wp in waypoints:
+            # Store as tuple with reasonable precision
+            waypoint_set.add((round(wp[0], 6), round(wp[1], 6)))
     
     original_count = len(coordinates)
     
@@ -615,8 +696,12 @@ def simplify_route(coordinates: List[List[float]], tolerance: float = 0.00015) -
                 index = i
                 dmax = d
         
-        # If max distance is greater than epsilon, recursively simplify
-        if dmax > epsilon:
+        # Check if the point with max distance is a waypoint
+        point_key = (round(points[index][0], 6), round(points[index][1], 6))
+        is_waypoint = point_key in waypoint_set
+        
+        # If max distance > epsilon, OR point is a waypoint, keep it and recursively simplify
+        if dmax > epsilon or is_waypoint:
             # Recursive call
             rec_results1 = rdp_simplify(points[:index + 1], epsilon)
             rec_results2 = rdp_simplify(points[index:], epsilon)
@@ -636,7 +721,8 @@ def simplify_route(coordinates: List[List[float]], tolerance: float = 0.00015) -
 async def get_route(
     start: str = Query(..., description="Start coordinates as lng,lat"),
     end: str = Query(..., description="End coordinates as lng,lat"),
-    alternatives: bool = Query(False, description="Include alternative routes")
+    alternatives: bool = Query(False, description="Include alternative routes"),
+    waypoints: str = Query(None, description="Optional waypoints as lng,lat;lng,lat")
 ):
     """Get routing data between two points using HYBRID APPROACH: OSRM for routing + GeoJSON for flood analysis"""
     try:
@@ -650,30 +736,99 @@ async def get_route(
         start_lng, start_lat = start_coords
         end_lng, end_lat = end_coords
         
+        # Parse waypoints if provided
+        waypoint_coords = []
+        if waypoints:
+            try:
+                waypoint_list = waypoints.split(';')
+                for wp in waypoint_list:
+                    wp_coords = [float(x) for x in wp.split(",")]
+                    if len(wp_coords) == 2:
+                        waypoint_coords.append(wp_coords)
+                print(f"🗺️ Route includes {len(waypoint_coords)} waypoint(s)")
+                for i, wp in enumerate(waypoint_coords):
+                    print(f"   Waypoint {i+1}: lng={wp[0]:.6f}, lat={wp[1]:.6f}")
+            except Exception as e:
+                print(f"⚠️ Error parsing waypoints: {e}")
+                # Continue without waypoints rather than failing
+        else:
+            print("⚠️ NO WAYPOINTS PROVIDED - routes will be direct A→B")
+        
         print(f"\n🎯 HYBRID ROUTING: Getting OSRM routes and analyzing flood risk...")
+        if waypoint_coords:
+            print(f"   ✅ Including {len(waypoint_coords)} waypoints in ALL 3 routes (green, orange, red)")
+        else:
+            print(f"   ⚠️ NO waypoints - generating simple A→B routes")
         
         # Step 1: Get 3 GUARANTEED DIFFERENT routes using multiple strategies
         routes = []
         route_metadata = []  # Track how each route was generated
+        snapped_waypoints = []  # Store OSRM-snapped waypoint coordinates
         
         try:
-            print("🔄 Generating 3 distinct route variations...")
+            print("🔄 Generating route variations...")
             
             # ROUTE 1: Direct/Fastest route (shortest path)
+            # If waypoints exist, route through them
             print("  📍 Route 1: Direct/fastest route...")
-            direct_route = await get_osrm_route(start_lng, start_lat, end_lng, end_lat, alternatives=False)
+            if waypoint_coords:
+                # Build route through all waypoints: start -> wp1 -> wp2 -> ... -> end
+                print(f"     ✅ GREEN ROUTE WILL USE WAYPOINTS!")
+                print(f"     🔍 Direct route waypoints: {waypoint_coords}")
+                print(f"     🔍 Direct route: A({start_lng:.6f},{start_lat:.6f}) -> ", end="")
+                for i, wp in enumerate(waypoint_coords):
+                    print(f"{chr(67+i)}({wp[0]:.6f},{wp[1]:.6f}) -> ", end="")
+                print(f"B({end_lng:.6f},{end_lat:.6f})")
+                
+                direct_route = await get_osrm_route_with_waypoints(
+                    start_lng, start_lat, end_lng, end_lat, waypoint_coords, alternatives=False
+                )
+                
+                # Extract snapped waypoints from OSRM response (actual road coordinates)
+                snapped_wp_coords = []
+                if direct_route.get("snapped_waypoints"):
+                    snapped_waypoints = direct_route["snapped_waypoints"]
+                    # Extract just the coordinates from middle waypoints (skip start/end)
+                    for i in range(1, len(snapped_waypoints) - 1):
+                        loc = snapped_waypoints[i]["location"]
+                        if loc and len(loc) == 2:
+                            snapped_wp_coords.append(loc)  # [lng, lat]
+            else:
+                print(f"     ⚠️⚠️⚠️ GREEN ROUTE GOING DIRECT A→B (NO WAYPOINTS!) ⚠️⚠️⚠️")
+                direct_route = await get_osrm_route(start_lng, start_lat, end_lng, end_lat, alternatives=False)
+                
             if direct_route.get("routes"):
                 aligned_direct, _ = align_osrm_routes(
                     direct_route["routes"], start_lat, start_lng, end_lat, end_lng
                 )
-                # Simplify direct route to remove redundant points
-                direct_coords = aligned_direct[0]["geometry"]["coordinates"]
-                simplified_direct = simplify_route(direct_coords, tolerance=0.00015)
-                aligned_direct[0]["geometry"]["coordinates"] = simplified_direct
                 
-                routes.append(aligned_direct[0])
-                route_metadata.append("direct")
-                print(f"     ✅ Direct route: {aligned_direct[0]['distance']/1000:.1f}km")
+                if aligned_direct:
+                    route = aligned_direct[0]
+                    # Simplify route with MINIMAL tolerance to preserve road geometry
+                    # Use SNAPPED waypoint coordinates (where OSRM actually routed)
+                    direct_coords = route["geometry"]["coordinates"]
+                    simplified_direct = simplify_route(direct_coords, tolerance=0.00003, waypoints=snapped_wp_coords)
+                    route["geometry"]["coordinates"] = simplified_direct
+                    
+                    # Debug: Check if waypoints are in the route
+                    if waypoint_coords:
+                        print(f"     🔍 Checking if waypoints are in direct route geometry...")
+                        for i, wp in enumerate(waypoint_coords):
+                            letter = chr(67 + i)  # C, D, E...
+                            # Check if any coordinate is close to this waypoint (within ~100m)
+                            found = False
+                            for coord in simplified_direct:
+                                dist = ((coord[0] - wp[0])**2 + (coord[1] - wp[1])**2) ** 0.5
+                                if dist < 0.001:  # ~100m in degrees
+                                    found = True
+                                    print(f"        ✅ Point {letter} found in route at lng={coord[0]:.6f}, lat={coord[1]:.6f}")
+                                    break
+                            if not found:
+                                print(f"        ⚠️ Point {letter} NOT found in route! Waypoint is at lng={wp[0]:.6f}, lat={wp[1]:.6f}")
+                    
+                    routes.append(route)
+                    route_metadata.append("direct")
+                    print(f"     ✅ Direct route: {route['distance']/1000:.1f}km")
             
             # Calculate perpendicular direction for side detours
             route_vector_lng = end_lng - start_lng
@@ -684,120 +839,288 @@ async def get_route(
             perp_lng = -route_vector_lat / route_length if route_length > 0 else 0
             perp_lat = route_vector_lng / route_length if route_length > 0 else 0
             
-            # ROUTE 2 & 3: Generate in parallel for speed
+            # ROUTE 2 & 3: Generate alternative routes with detours
+            # For waypoints: Create variations by adding detours BETWEEN waypoint segments
+            # For no waypoints: Create detours along the main route
             if len(routes) < 3:
-                print("  📍 Routes 2 & 3: Generating detours in parallel...")
+                print("  📍 Routes 2 & 3: Generating detour variations...")
                 
-                # Waypoints along the route
-                wp_25_lng = start_lng + route_vector_lng * 0.25
-                wp_25_lat = start_lat + route_vector_lat * 0.25
-                
-                wp_50_lng = start_lng + route_vector_lng * 0.50
-                wp_50_lat = start_lat + route_vector_lat * 0.50
-                
-                wp_75_lng = start_lng + route_vector_lng * 0.75
-                wp_75_lat = start_lat + route_vector_lat * 0.75
-                
-                offset = 0.018  # ~2km offset
-                
-                # RIGHT detour waypoint
-                wp_50_right_lng = wp_50_lng + (perp_lng * offset)
-                wp_50_right_lat = wp_50_lat + (perp_lat * offset)
-                
-                # LEFT detour waypoint
-                wp_50_left_lng = wp_50_lng - (perp_lng * offset)
-                wp_50_left_lat = wp_50_lat - (perp_lat * offset)
-                
-                try:
-                    # Parallelize ALL segment calls for both routes
-                    segments_to_fetch = [
-                        # RIGHT detour segments
-                        (start_lng, start_lat, wp_25_lng, wp_25_lat, "r1"),
-                        (wp_25_lng, wp_25_lat, wp_50_right_lng, wp_50_right_lat, "r2"),
-                        (wp_50_right_lng, wp_50_right_lat, wp_75_lng, wp_75_lat, "r3"),
-                        (wp_75_lng, wp_75_lat, end_lng, end_lat, "r4"),
-                        # LEFT detour segments
-                        (start_lng, start_lat, wp_25_lng, wp_25_lat, "l1"),
-                        (wp_25_lng, wp_25_lat, wp_50_left_lng, wp_50_left_lat, "l2"),
-                        (wp_50_left_lng, wp_50_left_lat, wp_75_lng, wp_75_lat, "l3"),
-                        (wp_75_lng, wp_75_lat, end_lng, end_lat, "l4"),
-                    ]
+                if waypoint_coords:
+                    # WITH WAYPOINTS: Generate detours between each waypoint segment
+                    # This creates 3 different physical routes that ALL pass through the waypoints
+                    print("     Creating waypoint segment detours (all routes pass through A→C→D→B)...")
                     
-                    # Fetch all segments in parallel (8 calls → ~1-2 seconds instead of 8 seconds!)
-                    segment_results = await asyncio.gather(*[
-                        get_osrm_route(s[0], s[1], s[2], s[3], alternatives=False)
-                        for s in segments_to_fetch
-                    ], return_exceptions=True)
+                    # Build list of all points: start -> waypoint1 -> waypoint2 -> ... -> end
+                    all_points = [[start_lng, start_lat]] + waypoint_coords + [[end_lng, end_lat]]
                     
-                    # Build RIGHT detour route
-                    right_coords = []
-                    right_dist = 0
-                    right_dur = 0
+                    print(f"     🗺️ Waypoint routing plan:")
+                    for i, point in enumerate(all_points):
+                        if i == 0:
+                            print(f"        Start (A): lng={point[0]:.6f}, lat={point[1]:.6f}")
+                        elif i == len(all_points) - 1:
+                            print(f"        End (B): lng={point[0]:.6f}, lat={point[1]:.6f}")
+                        else:
+                            letter = chr(66 + i)  # B=66, so waypoint 1 = C, waypoint 2 = D, etc.
+                            print(f"        Waypoint {i} ({letter}): lng={point[0]:.6f}, lat={point[1]:.6f}")
                     
-                    for i in range(4):  # First 4 segments
-                        result = segment_results[i]
-                        if isinstance(result, Exception) or not result.get("routes"):
-                            continue
-                        coords = result["routes"][0]["geometry"]["coordinates"]
-                        if right_coords:
-                            coords = coords[1:]  # Skip duplicate
-                        right_coords.extend(coords)
-                        right_dist += result["routes"][0]["distance"]
-                        right_dur += result["routes"][0]["duration"]
-                    
-                    if right_coords and len(right_coords) > 1:
-                        # Simplify route to remove backtracking and dead-ends
-                        right_coords = simplify_route(right_coords, tolerance=0.00015)
+                    # Generate 2 detour variations (right and left)
+                    for detour_type in ["right", "left"]:
+                        try:
+                            detour_coords = []
+                            detour_dist = 0
+                            detour_dur = 0
+                            detour_snapped_waypoints = []  # Collect snapped waypoint coordinates
+                            
+                            # For each segment between waypoints (A→C, C→D, D→B)
+                            for seg_idx in range(len(all_points) - 1):
+                                seg_start = all_points[seg_idx]
+                                seg_end = all_points[seg_idx + 1]
+                                
+                                # Determine segment label (A→C, C→D, etc.)
+                                start_label = "A" if seg_idx == 0 else chr(66 + seg_idx)
+                                end_label = "B" if seg_idx == len(all_points) - 2 else chr(67 + seg_idx)
+                                print(f"        Segment {seg_idx + 1}: {start_label} → {end_label}")
+                                
+                                # Calculate segment vector and midpoint
+                                seg_vec_lng = seg_end[0] - seg_start[0]
+                                seg_vec_lat = seg_end[1] - seg_start[1]
+                                seg_length = (seg_vec_lng**2 + seg_vec_lat**2) ** 0.5
+                                
+                                if seg_length > 0.01:  # Only add detour if segment is long enough
+                                    # Calculate perpendicular direction for this segment
+                                    perp_seg_lng = -seg_vec_lat / seg_length
+                                    perp_seg_lat = seg_vec_lng / seg_length
+                                    
+                                    # Create detour point at segment midpoint
+                                    mid_lng = seg_start[0] + seg_vec_lng * 0.5
+                                    mid_lat = seg_start[1] + seg_vec_lat * 0.5
+                                    
+                                    # Offset amount (smaller for tighter detours)
+                                    offset = 0.01 if detour_type == "right" else 0.015  # ~1km vs ~1.5km
+                                    direction = 1 if detour_type == "right" else -1
+                                    
+                                    detour_lng = mid_lng + (perp_seg_lng * offset * direction)
+                                    detour_lat = mid_lat + (perp_seg_lat * offset * direction)
+                                    
+                                    # Route: segment_start -> detour_point -> segment_end (MUST go through segment_end!)
+                                    # Use 3-point routing to ensure we hit the waypoint
+                                    detour_segment = await get_osrm_route_with_waypoints(
+                                        seg_start[0], seg_start[1], seg_end[0], seg_end[1],
+                                        [[detour_lng, detour_lat]],  # Detour point as intermediate waypoint
+                                        alternatives=False
+                                    )
+                                    
+                                    if detour_segment.get("routes"):
+                                        coords = detour_segment["routes"][0]["geometry"]["coordinates"]
+                                        
+                                        # Extract snapped waypoint from this segment (the endpoint if it's a user waypoint)
+                                        if detour_segment.get("snapped_waypoints") and seg_end != all_points[-1]:
+                                            # Get the last waypoint (which is the segment endpoint)
+                                            snapped_wps = detour_segment["snapped_waypoints"]
+                                            if len(snapped_wps) >= 2:
+                                                endpoint_snapped = snapped_wps[-1]["location"]
+                                                if endpoint_snapped and len(endpoint_snapped) == 2:
+                                                    detour_snapped_waypoints.append(endpoint_snapped)
+                                        
+                                        # Debug: Check if this segment passes through the waypoint
+                                        if seg_end == all_points[-1]:
+                                            print(f"          → Final segment to destination")
+                                        else:
+                                            waypoint_at_end = f"Waypoint at end: lng={seg_end[0]:.6f}, lat={seg_end[1]:.6f}"
+                                            route_end = f"Route ends at: lng={coords[-1][0]:.6f}, lat={coords[-1][1]:.6f}"
+                                            print(f"          → {waypoint_at_end}")
+                                            print(f"          → {route_end}")
+                                        
+                                        if detour_coords:
+                                            coords = coords[1:]  # Skip duplicate with previous segment
+                                        
+                                        detour_coords.extend(coords)
+                                        detour_dist += detour_segment["routes"][0]["distance"]
+                                        detour_dur += detour_segment["routes"][0]["duration"]
+                                    else:
+                                        # Fallback: direct route for this segment
+                                        direct_seg = await get_osrm_route(seg_start[0], seg_start[1], seg_end[0], seg_end[1], alternatives=False)
+                                        if direct_seg.get("routes"):
+                                            coords = direct_seg["routes"][0]["geometry"]["coordinates"]
+                                            if detour_coords:
+                                                coords = coords[1:]
+                                            detour_coords.extend(coords)
+                                            detour_dist += direct_seg["routes"][0]["distance"]
+                                            detour_dur += direct_seg["routes"][0]["duration"]
+                                else:
+                                    # Segment too short for detour, use direct route
+                                    direct_seg = await get_osrm_route(seg_start[0], seg_start[1], seg_end[0], seg_end[1], alternatives=False)
+                                    if direct_seg.get("routes"):
+                                        coords = direct_seg["routes"][0]["geometry"]["coordinates"]
+                                        if detour_coords:
+                                            coords = coords[1:]
+                                        detour_coords.extend(coords)
+                                        detour_dist += direct_seg["routes"][0]["distance"]
+                                        detour_dur += direct_seg["routes"][0]["duration"]
+                            
+                            # Add this detour route
+                            if detour_coords and len(detour_coords) > 1:
+                                # Use SNAPPED waypoint coordinates for protection (where OSRM actually routed)
+                                detour_coords = simplify_route(detour_coords, tolerance=0.00003, waypoints=detour_snapped_waypoints)
+                                
+                                # Debug: Check if waypoints are in the detour route
+                                print(f"     🔍 Checking if waypoints are in {detour_type} detour route...")
+                                for i, wp in enumerate(waypoint_coords):
+                                    letter = chr(67 + i)  # C, D, E...
+                                    found = False
+                                    for coord in detour_coords:
+                                        dist = ((coord[0] - wp[0])**2 + (coord[1] - wp[1])**2) ** 0.5
+                                        if dist < 0.001:  # ~100m in degrees
+                                            found = True
+                                            print(f"        ✅ Point {letter} found in route at lng={coord[0]:.6f}, lat={coord[1]:.6f}")
+                                            break
+                                    if not found:
+                                        print(f"        ⚠️ Point {letter} NOT found in route! Waypoint is at lng={wp[0]:.6f}, lat={wp[1]:.6f}")
+                                
+                                alt_route = {
+                                    "geometry": {"coordinates": detour_coords, "type": "LineString"},
+                                    "distance": detour_dist,
+                                    "duration": detour_dur,
+                                    "weight": detour_dur,
+                                    "weight_name": "routability"
+                                }
+                                aligned, _ = align_route_geometry_with_request(alt_route, start_lat, start_lng, end_lat, end_lng)
+                                routes.append(aligned)
+                                route_metadata.append(f"{detour_type}_detour_waypoints")
+                                print(f"     ✅ {detour_type.capitalize()} detour through waypoints: {detour_dist/1000:.1f}km")
+                                
+                                if len(routes) >= 3:
+                                    break
                         
-                        alt_route = {
-                            "geometry": {"coordinates": right_coords, "type": "LineString"},
-                            "distance": right_dist,
-                            "duration": right_dur,
-                            "weight": right_dur,
-                            "weight_name": "routability"
-                        }
-                        aligned, _ = align_route_geometry_with_request(alt_route, start_lat, start_lng, end_lat, end_lng)
-                        routes.append(aligned)
-                        route_metadata.append("right_detour")
-                        print(f"     ✅ Right detour: {right_dist/1000:.1f}km")
+                        except Exception as e:
+                            print(f"     ⚠️ {detour_type.capitalize()} detour generation failed: {e}")
+                
+                else:
+                    # NO WAYPOINTS: Use original perpendicular detour strategy
+                    # Waypoints along the route
+                    wp_25_lng = start_lng + route_vector_lng * 0.25
+                    wp_25_lat = start_lat + route_vector_lat * 0.25
                     
-                    # Build LEFT detour route
-                    left_coords = []
-                    left_dist = 0
-                    left_dur = 0
+                    wp_50_lng = start_lng + route_vector_lng * 0.50
+                    wp_50_lat = start_lat + route_vector_lat * 0.50
                     
-                    for i in range(4, 8):  # Last 4 segments
-                        result = segment_results[i]
-                        if isinstance(result, Exception) or not result.get("routes"):
-                            continue
-                        coords = result["routes"][0]["geometry"]["coordinates"]
-                        if left_coords:
-                            coords = coords[1:]  # Skip duplicate
-                        left_coords.extend(coords)
-                        left_dist += result["routes"][0]["distance"]
-                        left_dur += result["routes"][0]["duration"]
+                    wp_75_lng = start_lng + route_vector_lng * 0.75
+                    wp_75_lat = start_lat + route_vector_lat * 0.75
                     
-                    if left_coords and len(left_coords) > 1:
-                        # Simplify route to remove backtracking and dead-ends
-                        left_coords = simplify_route(left_coords, tolerance=0.00015)
+                    offset = 0.018  # ~2km offset
+                    
+                    # RIGHT detour waypoint
+                    wp_50_right_lng = wp_50_lng + (perp_lng * offset)
+                    wp_50_right_lat = wp_50_lat + (perp_lat * offset)
+                    
+                    # LEFT detour waypoint
+                    wp_50_left_lng = wp_50_lng - (perp_lng * offset)
+                    wp_50_left_lat = wp_50_lat - (perp_lat * offset)
+                    
+                    try:
+                        # Parallelize ALL segment calls for both routes
+                        segments_to_fetch = [
+                            # RIGHT detour segments
+                            (start_lng, start_lat, wp_25_lng, wp_25_lat, "r1"),
+                            (wp_25_lng, wp_25_lat, wp_50_right_lng, wp_50_right_lat, "r2"),
+                            (wp_50_right_lng, wp_50_right_lat, wp_75_lng, wp_75_lat, "r3"),
+                            (wp_75_lng, wp_75_lat, end_lng, end_lat, "r4"),
+                            # LEFT detour segments
+                            (start_lng, start_lat, wp_25_lng, wp_25_lat, "l1"),
+                            (wp_25_lng, wp_25_lat, wp_50_left_lng, wp_50_left_lat, "l2"),
+                            (wp_50_left_lng, wp_50_left_lat, wp_75_lng, wp_75_lat, "l3"),
+                            (wp_75_lng, wp_75_lat, end_lng, end_lat, "l4"),
+                        ]
                         
-                        alt_route = {
-                            "geometry": {"coordinates": left_coords, "type": "LineString"},
-                            "distance": left_dist,
-                            "duration": left_dur,
-                            "weight": left_dur,
-                            "weight_name": "routability"
-                        }
-                        aligned, _ = align_route_geometry_with_request(alt_route, start_lat, start_lng, end_lat, end_lng)
-                        routes.append(aligned)
-                        route_metadata.append("left_detour")
-                        print(f"     ✅ Left detour: {left_dist/1000:.1f}km")
-                    
-                except Exception as e:
-                    print(f"     ⚠️ Parallel detour generation failed: {e}")
+                        # Fetch all segments in parallel (8 calls → ~1-2 seconds instead of 8 seconds!)
+                        segment_results = await asyncio.gather(*[
+                            get_osrm_route(s[0], s[1], s[2], s[3], alternatives=False)
+                            for s in segments_to_fetch
+                        ], return_exceptions=True)
+                        
+                        # Build RIGHT detour route
+                        right_coords = []
+                        right_dist = 0
+                        right_dur = 0
+                        
+                        for i in range(4):  # First 4 segments
+                            result = segment_results[i]
+                            if isinstance(result, Exception) or not result.get("routes"):
+                                continue
+                            coords = result["routes"][0]["geometry"]["coordinates"]
+                            if right_coords:
+                                coords = coords[1:]  # Skip duplicate
+                            right_coords.extend(coords)
+                            right_dist += result["routes"][0]["distance"]
+                            right_dur += result["routes"][0]["duration"]
+                        
+                        if right_coords and len(right_coords) > 1:
+                            # Simplify route with MINIMAL tolerance to preserve road geometry
+                            right_coords = simplify_route(right_coords, tolerance=0.00003)  # Reduced from 0.00015 to ~3m
+                            
+                            alt_route = {
+                                "geometry": {"coordinates": right_coords, "type": "LineString"},
+                                "distance": right_dist,
+                                "duration": right_dur,
+                                "weight": right_dur,
+                                "weight_name": "routability"
+                            }
+                            aligned, _ = align_route_geometry_with_request(alt_route, start_lat, start_lng, end_lat, end_lng)
+                            routes.append(aligned)
+                            route_metadata.append("right_detour")
+                            print(f"     ✅ Right detour: {right_dist/1000:.1f}km")
+                        
+                        # Build LEFT detour route
+                        left_coords = []
+                        left_dist = 0
+                        left_dur = 0
+                        
+                        for i in range(4, 8):  # Last 4 segments
+                            result = segment_results[i]
+                            if isinstance(result, Exception) or not result.get("routes"):
+                                continue
+                            coords = result["routes"][0]["geometry"]["coordinates"]
+                            if left_coords:
+                                coords = coords[1:]  # Skip duplicate
+                            left_coords.extend(coords)
+                            left_dist += result["routes"][0]["distance"]
+                            left_dur += result["routes"][0]["duration"]
+                        
+                        if left_coords and len(left_coords) > 1:
+                            # Simplify route with MINIMAL tolerance to preserve road geometry
+                            left_coords = simplify_route(left_coords, tolerance=0.00003)  # Reduced from 0.00015 to ~3m
+                            
+                            alt_route = {
+                                "geometry": {"coordinates": left_coords, "type": "LineString"},
+                                "distance": left_dist,
+                                "duration": left_dur,
+                                "weight": left_dur,
+                                "weight_name": "routability"
+                            }
+                            aligned, _ = align_route_geometry_with_request(alt_route, start_lat, start_lng, end_lat, end_lng)
+                            routes.append(aligned)
+                            route_metadata.append("left_detour")
+                            print(f"     ✅ Left detour: {left_dist/1000:.1f}km")
+                        
+                    except Exception as e:
+                        print(f"     ⚠️ Parallel detour generation failed: {e}")
             
             if not routes:
                 raise HTTPException(status_code=500, detail="Could not generate any routes from OSRM")
+            
+            # If we still only have 1 route (detour generation failed), duplicate it
+            # This ensures we always provide 3 options for comparison
+            if len(routes) == 1:
+                print(f"  ⚠️ Only generated 1 route - duplicating for 3 risk level classifications")
+                routes = [
+                    routes[0].copy(),
+                    routes[0].copy(),
+                    routes[0].copy()
+                ]
+                route_metadata = ["route_1", "route_2", "route_3"]
+            else:
+                print(f"  ✅ Successfully generated {len(routes)} distinct routes!")
+
             
             print(f"\n☁️ Fetching current weather conditions for Zamboanga City...")
             weather_data = await fetch_zamboanga_weather()
@@ -905,7 +1228,7 @@ async def get_route(
             
             print(f"\n✅ HYBRID ROUTING COMPLETE: Returning {len(final_routes)} flood-analyzed routes\n")
             
-            return {
+            response_data = {
                 "routes": final_routes,
                 "analyses": final_analyses,
                 "source": "hybrid_osrm_geojson",
@@ -917,6 +1240,26 @@ async def get_route(
                     "humidity": weather_data["humidity"]
                 }
             }
+            
+            # Include snapped waypoints if available (OSRM road-snapped coordinates)
+            if snapped_waypoints:
+                # Extract just the waypoint locations (excluding start and end)
+                waypoint_locations = []
+                for i, wp in enumerate(snapped_waypoints):
+                    if i > 0 and i < len(snapped_waypoints) - 1:  # Skip first (start) and last (end)
+                        loc = wp["location"]
+                        waypoint_locations.append({
+                            "lng": loc[0],
+                            "lat": loc[1],
+                            "name": wp.get("name", ""),
+                            "letter": chr(67 + len(waypoint_locations))  # C, D, E, ...
+                        })
+                
+                if waypoint_locations:
+                    response_data["snapped_waypoints"] = waypoint_locations
+                    print(f"📍 Returning {len(waypoint_locations)} snapped waypoint(s) for accurate marker placement")
+            
+            return response_data
             
         except Exception as osrm_error:
             print(f"❌ OSRM routing failed: {osrm_error}")
@@ -2128,33 +2471,33 @@ async def get_routes_summary(db: Session = Depends(get_db)):
         "recent_searches": recent_searches
     }
 
-# Initialize local routing service
-local_routing_service = None
+# Routing services are initialized via get_routing_service() and get_flood_service()
 
 @app.on_event("startup")
 async def startup_event():
-    global local_routing_service
+    """Initialize routing and flood services on startup"""
     try:
-        geojson_path = os.path.join(os.path.dirname(__file__), "data", "terrain_roads.geojson")
-        local_routing_service = LocalRoutingService(geojson_path)
-        success = local_routing_service.load_road_network()
-        if success:
-            print(f"✓ Local routing service loaded with {len(local_routing_service.road_segments)} road segments")
-        else:
-            print("✗ Failed to load local routing service")
-            
-        # Initialize admin user
-        db = SessionLocal()
-        try:
-            # Create admin tables
-            from routes.admin import Base as AdminBase
-            AdminBase.metadata.create_all(bind=engine)
-            init_admin_user(db)
-            init_demo_user(db)
-        finally:
-            db.close()
+        # Initialize routing service (zcroadmap.geojson - has highway classification)
+        routing_service = get_routing_service()
+        print(f"✓ Routing service loaded with {len(routing_service.road_segments)} road segments from zcroadmap.geojson")
+        
+        # Initialize flood service (terrain_roads.geojson - has flood data)
+        flood_service = get_flood_service()
+        print(f"✓ Flood service loaded with {len(flood_service.road_segments)} road segments from terrain_roads.geojson")
+        
     except Exception as e:
-        print(f"✗ Error initializing local routing service: {e}")
+        print(f"✗ Failed to load routing services: {e}")
+            
+    # Initialize admin user
+    db = SessionLocal()
+    try:
+        # Create admin tables
+        from models import Base
+        Base.metadata.create_all(bind=engine)
+        init_admin_user(db)
+        init_demo_user(db)
+    finally:
+        db.close()
 
 async def get_local_route(start_lat: float, start_lng: float, end_lat: float, end_lng: float, mode: str = "car", risk_profile: str = "safe"):
     """Get route using local routing service with specific transportation mode and flood risk profile
@@ -2163,9 +2506,9 @@ async def get_local_route(start_lat: float, start_lng: float, end_lat: float, en
         mode: Transportation mode (car/motorcycle/walking) - affects speed and road preferences
         risk_profile: Flood risk tolerance (safe/manageable/prone) - affects flood avoidance
     """
-    global local_routing_service
+    routing_service = get_routing_service()
     
-    if not local_routing_service or not local_routing_service.loaded:
+    if not routing_service or not routing_service.loaded:
         return None
     
     try:
@@ -2174,13 +2517,13 @@ async def get_local_route(start_lat: float, start_lng: float, end_lat: float, en
         end_coord = Coordinate(lat=end_lat, lng=end_lng)
         
         # Calculate route using local routing with specific mode and risk profile
-        route = local_routing_service.calculate_route(start_coord, end_coord, mode, risk_profile)
+        route = routing_service.calculate_route(start_coord, end_coord, mode, risk_profile)
         
         if not route:
             return None
         
         # Get route information with mode-specific calculations
-        route_info = local_routing_service.get_route_info(route, mode)
+        route_info = routing_service.get_route_info(route, mode)
         
         return {
             "success": True,
@@ -2203,9 +2546,9 @@ async def calculate_local_route(route_request: LocalRouteRequest):
     Input: {"start": [lat, lng], "end": [lat, lng]}
     Returns: Route with waypoints following actual roads in Zamboanga City
     """
-    global local_routing_service
+    routing_service = get_routing_service()
     
-    if not local_routing_service or not local_routing_service.loaded:
+    if not routing_service or not routing_service.loaded:
         raise HTTPException(status_code=503, detail="Local routing service not available")
     
     try:
@@ -2217,7 +2560,7 @@ async def calculate_local_route(route_request: LocalRouteRequest):
         end_coord = Coordinate(lat=end_lat, lng=end_lng)
         
         # Calculate route using local routing
-        route = local_routing_service.calculate_route(start_coord, end_coord)
+        route = routing_service.calculate_route(start_coord, end_coord)
         
         if not route:
             return LocalRouteResponse(
@@ -2232,7 +2575,7 @@ async def calculate_local_route(route_request: LocalRouteRequest):
         waypoints = [[coord.lat, coord.lng] for coord in route]
         
         # Get route information
-        route_info = local_routing_service.get_route_info(route)
+        route_info = routing_service.get_route_info(route)
         
         return LocalRouteResponse(
             success=True,
@@ -2248,3 +2591,59 @@ async def calculate_local_route(route_request: LocalRouteRequest):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001, reload=True)
+
+
+@app.get("/local-route")
+async def local_route(
+    start: str = Query(..., description="Start coordinates as 'lat,lng'"),
+    end: str = Query(..., description="End coordinates as 'lat,lng'"),
+    waypoints: Optional[str] = Query(None, description="Optional waypoints as 'lng,lat;lng,lat;...'")
+):
+    """
+    Calculate hybrid routes with waypoints using local routing service.
+    
+    Example: /local-route?start=6.9214,122.0790&end=6.9100,122.0850&waypoints=122.0800,6.9150;122.0820,6.9120
+    """
+    routing_service = get_routing_service()
+    if not routing_service: 
+        raise HTTPException(status_code=503, detail="Local routing service not available")
+    
+    try:
+        # Parse start coordinate (lat,lng)
+        start_parts = start.split(',')
+        if len(start_parts) != 2:
+            raise HTTPException(status_code=400, detail="Start coordinate must be in format 'lat,lng'")
+        start_lat, start_lng = float(start_parts[0]), float(start_parts[1])
+        start_coord = Coordinate(lat=start_lat, lng=start_lng)
+        
+        # Parse end coordinate (lat,lng)
+        end_parts = end.split(',')
+        if len(end_parts) != 2:
+            raise HTTPException(status_code=400, detail="End coordinate must be in format 'lat,lng'")
+        end_lat, end_lng = float(end_parts[0]), float(end_parts[1])
+        end_coord = Coordinate(lat=end_lat, lng=end_lng)
+        
+        # Parse waypoints (lng,lat;lng,lat;...)
+        waypoint_coords = []
+        if waypoints:
+            for waypoint_str in waypoints.split(';'):
+                waypoint_parts = waypoint_str.split(',')
+                if len(waypoint_parts) != 2:
+                    raise HTTPException(status_code=400, detail="Each waypoint must be in format 'lng,lat'")
+                wp_lng, wp_lat = float(waypoint_parts[0]), float(waypoint_parts[1])
+                waypoint_coords.append(Coordinate(lng=wp_lng, lat=wp_lat))
+        
+        # Call the routing service
+        response = await routing_service.calculate_hybrid_routes_with_waypoints(
+            start_coord=start_coord,
+            end_coord=end_coord,
+            waypoints=waypoint_coords,
+        )
+        
+        return response
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid coordinate format: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error calculating route: {e}") 
+        raise HTTPException(status_code=500, detail=f"Error calculating route: {str(e)}")

@@ -9,6 +9,14 @@ interface LocationSuggestion {
   isLocal?: boolean;
 }
 
+interface Waypoint {
+  id: string;
+  input: string;
+  location: LocationSuggestion | null;
+  suggestions: LocationSuggestion[];
+  showSuggestions: boolean;
+}
+
 interface RouteOptions {
   avoidFloods: boolean;
   highGround: boolean;
@@ -39,6 +47,9 @@ interface RouteModalProps {
     options: RouteOptions | ((prev: RouteOptions) => RouteOptions)
   ) => void;
   clearDestinations?: () => void;
+  searchLocations?: (query: string) => Promise<LocationSuggestion[]>;
+  waypoints?: Waypoint[];
+  setWaypoints?: React.Dispatch<React.SetStateAction<Waypoint[]>>;
 }
 
 export const RouteModal = ({
@@ -62,7 +73,84 @@ export const RouteModal = ({
   routeOptions,
   setRouteOptions,
   clearDestinations,
+  searchLocations,
+  waypoints: propsWaypoints,
+  setWaypoints: propsSetWaypoints,
 }: RouteModalProps) => {
+  // Use waypoints from props if available, otherwise fallback to local state
+  const [localWaypoints, setLocalWaypoints] = useState<Waypoint[]>([]);
+  const waypoints = propsWaypoints !== undefined ? propsWaypoints : localWaypoints;
+  const setWaypoints = propsSetWaypoints !== undefined ? propsSetWaypoints : setLocalWaypoints;
+
+  // Add a new waypoint
+  const addWaypoint = () => {
+    const newWaypoint: Waypoint = {
+      id: `waypoint-${Date.now()}`,
+      input: "",
+      location: null,
+      suggestions: [],
+      showSuggestions: false,
+    };
+    setWaypoints([...waypoints, newWaypoint]);
+    console.log("➕ Added new waypoint:", newWaypoint);
+  };
+
+  // Remove a waypoint
+  const removeWaypoint = (id: string) => {
+    setWaypoints(waypoints.filter((wp) => wp.id !== id));
+    console.log("🗑️ Removed waypoint:", id);
+  };
+
+  // Update waypoint input and search for suggestions
+  const updateWaypointInput = async (id: string, value: string) => {
+    setWaypoints(
+      waypoints.map((wp) =>
+        wp.id === id ? { ...wp, input: value } : wp
+      )
+    );
+    
+    // Search for location suggestions if searchLocations function is provided
+    if (searchLocations && value.length >= 2) {
+      try {
+        const suggestions = await searchLocations(value);
+        setWaypoints((prev) =>
+          prev.map((wp) =>
+            wp.id === id
+              ? { ...wp, suggestions, showSuggestions: suggestions.length > 0 }
+              : wp
+          )
+        );
+        console.log(`🔍 Found ${suggestions.length} suggestions for waypoint ${id}`);
+      } catch (error) {
+        console.error("Error searching waypoint locations:", error);
+      }
+    } else {
+      // Clear suggestions if query is too short
+      setWaypoints((prev) =>
+        prev.map((wp) =>
+          wp.id === id ? { ...wp, suggestions: [], showSuggestions: false } : wp
+        )
+      );
+    }
+  };
+
+  // Update waypoint location
+  const selectWaypointLocation = (id: string, location: LocationSuggestion) => {
+    setWaypoints(
+      waypoints.map((wp) =>
+        wp.id === id
+          ? { ...wp, location, input: location.display_name, showSuggestions: false }
+          : wp
+      )
+    );
+    console.log("📍 Selected waypoint location:", id, location);
+  };
+
+  // Get letter for waypoint (C, D, E, etc.)
+  const getWaypointLetter = (index: number) => {
+    return String.fromCharCode(67 + index); // C is 67 in ASCII
+  };
+
   return (
     <div
       style={{
@@ -454,6 +542,173 @@ export const RouteModal = ({
             )}
           </div>
 
+          {/* Waypoint Inputs */}
+          {waypoints.map((waypoint, index) => (
+            <div key={waypoint.id} style={{ marginBottom: "20px", position: "relative" }}>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: "8px" }}>
+                <label
+                  style={{
+                    flex: 1,
+                    fontWeight: "bold",
+                    color: "#333",
+                    fontSize: "14px",
+                  }}
+                >
+                  Point {getWaypointLetter(index)}
+                </label>
+                <button
+                  onClick={() => removeWaypoint(waypoint.id)}
+                  style={{
+                    background: "#ef4444",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    padding: "4px 8px",
+                    fontSize: "12px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "#dc2626";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "#ef4444";
+                  }}
+                >
+                  <span>✕</span> Remove
+                </button>
+              </div>
+              <div style={{ position: "relative" }}>
+                <div
+                  style={{
+                    position: "absolute",
+                    left: "12px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    width: "12px",
+                    height: "12px",
+                    background: "#f59e0b",
+                    borderRadius: "50%",
+                    zIndex: 1,
+                  }}
+                ></div>
+                <input
+                  type="text"
+                  value={waypoint.input}
+                  onChange={(e) => updateWaypointInput(waypoint.id, e.target.value)}
+                  placeholder={`Enter waypoint ${getWaypointLetter(index)}`}
+                  style={{
+                    width: "100%",
+                    padding: "12px 12px 12px 32px",
+                    border: "2px solid #e5e7eb",
+                    borderRadius: "8px",
+                    fontSize: "14px",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                  onFocus={() => {
+                    if (waypoint.suggestions.length > 0) {
+                      setWaypoints((prev) =>
+                        prev.map((wp) =>
+                          wp.id === waypoint.id ? { ...wp, showSuggestions: true } : wp
+                        )
+                      );
+                    }
+                  }}
+                />
+              </div>
+              
+              {/* Waypoint Suggestions Dropdown */}
+              {waypoint.showSuggestions && waypoint.suggestions.length > 0 && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    right: 0,
+                    background: "white",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "8px",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                    maxHeight: "200px",
+                    overflowY: "auto",
+                    zIndex: 1000,
+                    marginTop: "4px",
+                  }}
+                >
+                  {waypoint.suggestions.map((suggestion, suggestionIndex) => (
+                    <div
+                      key={suggestionIndex}
+                      onClick={(e) => {
+                        console.log("🖱️ Waypoint dropdown clicked!", suggestion);
+                        e.preventDefault();
+                        e.stopPropagation();
+                        selectWaypointLocation(waypoint.id, suggestion);
+                      }}
+                      style={{
+                        padding: "12px",
+                        borderBottom:
+                          suggestionIndex < waypoint.suggestions.length - 1
+                            ? "1px solid #f3f4f6"
+                            : "none",
+                        cursor: "pointer",
+                        fontSize: "14px",
+                        color: "#374151",
+                        transition: "background 0.2s ease",
+                      }}
+                      onMouseOver={(e) =>
+                        (e.currentTarget.style.background = "#f9fafb")
+                      }
+                      onMouseOut={(e) =>
+                        (e.currentTarget.style.background = "white")
+                      }
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        <div>
+                          {suggestion.isLocal && suggestion.type && (
+                            <span
+                              style={{
+                                fontSize: "12px",
+                                color: "#059669",
+                                backgroundColor: "#d1fae5",
+                                padding: "2px 6px",
+                                borderRadius: "4px",
+                                marginRight: "8px",
+                                fontWeight: "600",
+                              }}
+                            >
+                              {suggestion.type}
+                            </span>
+                          )}
+                          📍 {suggestion.display_name}
+                        </div>
+                        {suggestion.isLocal && (
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              color: "#059669",
+                              fontWeight: "600",
+                            }}
+                          >
+                            LOCAL
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+
           {/* Find Route Button */}
           <button
             onClick={handleFindRoute}
@@ -521,121 +776,45 @@ export const RouteModal = ({
               </button>
             )}
 
-          {/* Quick Options */}
+          {/* Add Destination Button */}
           <div>
-            <h4
+            <button
+              onClick={addWaypoint}
               style={{
-                margin: "0 0 12px 0",
+                width: "100%",
+                padding: "12px",
+                background: "#10b981",
+                color: "white",
+                border: "none",
+                borderRadius: "8px",
                 fontSize: "14px",
-                fontWeight: "bold",
-                color: "#374151",
-              }}
-            >
-              Quick Options:
-            </h4>
-
-            <div
-              style={{
+                fontWeight: "600",
+                cursor: "pointer",
                 display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
                 gap: "8px",
-                marginBottom: "12px",
-                flexWrap: "wrap",
+                transition: "background 0.2s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "#059669";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "#10b981";
               }}
             >
-              <button
-                onClick={() =>
-                  setRouteOptions((prev) => ({
-                    ...prev,
-                    avoidFloods: !prev.avoidFloods,
-                  }))
-                }
-                style={{
-                  padding: "6px 12px",
-                  background: routeOptions.avoidFloods ? "#667eea" : "#f3f4f6",
-                  color: routeOptions.avoidFloods ? "white" : "#374151",
-                  border: "none",
-                  borderRadius: "16px",
-                  fontSize: "12px",
-                  cursor: "pointer",
-                  transition: "all 0.2s ease",
-                }}
-              >
-                Avoid Floods
-              </button>
-
-              <button
-                onClick={() =>
-                  setRouteOptions((prev) => ({
-                    ...prev,
-                    highGround: !prev.highGround,
-                  }))
-                }
-                style={{
-                  padding: "6px 12px",
-                  background: routeOptions.highGround ? "#667eea" : "#f3f4f6",
-                  color: routeOptions.highGround ? "white" : "#374151",
-                  border: "none",
-                  borderRadius: "16px",
-                  fontSize: "12px",
-                  cursor: "pointer",
-                  transition: "all 0.2s ease",
-                }}
-              >
-                High Ground
-              </button>
-            </div>
-
-            <div
+              <span style={{ fontSize: "16px" }}>➕</span> Add Destination
+            </button>
+            <p
               style={{
-                display: "flex",
-                gap: "8px",
-                flexWrap: "wrap",
+                fontSize: "12px",
+                color: "#6b7280",
+                marginTop: "8px",
+                textAlign: "center",
               }}
             >
-              <button
-                onClick={() =>
-                  setRouteOptions((prev) => ({
-                    ...prev,
-                    fastest: !prev.fastest,
-                    safest: false,
-                  }))
-                }
-                style={{
-                  padding: "6px 12px",
-                  background: routeOptions.fastest ? "#22c55e" : "#f3f4f6",
-                  color: routeOptions.fastest ? "white" : "#374151",
-                  border: "none",
-                  borderRadius: "16px",
-                  fontSize: "12px",
-                  cursor: "pointer",
-                  transition: "all 0.2s ease",
-                }}
-              >
-                Fastest
-              </button>
-
-              <button
-                onClick={() =>
-                  setRouteOptions((prev) => ({
-                    ...prev,
-                    safest: !prev.safest,
-                    fastest: false,
-                  }))
-                }
-                style={{
-                  padding: "6px 12px",
-                  background: routeOptions.safest ? "#22c55e" : "#f3f4f6",
-                  color: routeOptions.safest ? "white" : "#374151",
-                  border: "none",
-                  borderRadius: "16px",
-                  fontSize: "12px",
-                  cursor: "pointer",
-                  transition: "all 0.2s ease",
-                }}
-              >
-                Safest
-              </button>
-            </div>
+              Add waypoints for multi-stop routes (Point C, D, E...)
+            </p>
           </div>
         </div>
       </div>
