@@ -133,7 +133,7 @@ class RoadSegment:
         
         if risk_profile == "safe":
             # SAFE ROUTE: Extremely high penalty for flooded roads
-            flood_factor = 10.0 if is_flooded else 1.0
+            flood_factor = 11.0 if is_flooded else 1.0
         elif risk_profile == "manageable":
             # MANAGEABLE ROUTE: Moderate penalty for flooded roads
             flood_factor = 3.0 if is_flooded else 1.0
@@ -153,11 +153,11 @@ class RoadSegment:
         if road_type in ["motorway", "trunk", "primary"] or any(keyword in road_name for keyword in [
             "national", "highway", "governor", "airport", "avenue", "boulevard", "n-", "r-"
         ]):
-            hierarchy_penalty = 0.5  # STRONGLY prefer major roads
+            hierarchy_penalty = 0.7  # STRONGLY prefer major roads
         elif road_type in ["secondary", "tertiary"] or any(keyword in road_name for keyword in [
             "road", "street", "drive"
         ]):
-            hierarchy_penalty = 1.0  # Normal roads
+            hierarchy_penalty = 1.2  # Normal roads
         else:  # residential, service, unclassified, unnamed
             hierarchy_penalty = 3.0  # HEAVILY discourage small roads
         
@@ -600,8 +600,8 @@ class LocalRoutingService:
                 logger.info(f"Successfully calculated route with {len(path)} waypoint nodes")
                 
                 # Simplify the path - only keep points where direction changes significantly
-                # Tolerance of 100 meters - very aggressive simplification for clean, navigable routes
-                simplified_path = self._simplify_path(path, tolerance=100.0)
+                # Increased tolerance to 150 meters for cleaner routes without dead-ends
+                simplified_path = self._simplify_path(path, tolerance=170.0)
                 
                 logger.info(f"Simplified route to {len(simplified_path)} points")
                 

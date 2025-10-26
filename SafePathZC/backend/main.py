@@ -2653,6 +2653,18 @@ async def local_route(
             raise HTTPException(status_code=400, detail="End coordinate must be in format 'lat,lng'")
         end_lat, end_lng = float(end_parts[0]), float(end_parts[1])
         
+        # Parse waypoints if provided (lng,lat;lng,lat;...)
+        waypoint_list = None
+        if waypoints:
+            waypoint_list = []
+            for wp_str in waypoints.split(';'):
+                wp_parts = wp_str.split(',')
+                if len(wp_parts) == 2:
+                    waypoint_list.append({
+                        "lng": float(wp_parts[0]),
+                        "lat": float(wp_parts[1])
+                    })
+        
         # Use the new OSRM-based flood routing endpoint (much faster!)
         from routes.flood_routing import get_flood_aware_routes, FloodRouteRequest
         
@@ -2661,6 +2673,7 @@ async def local_route(
             start_lng=start_lng,
             end_lat=end_lat,
             end_lng=end_lng,
+            waypoints=waypoint_list,
             weather_data=None
         )
         
