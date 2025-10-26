@@ -110,7 +110,7 @@ class RoadSegment:
         slope_factor = 1.0 + (self.get_elevation_gain() / self.length_m * 10.0)  # Slope penalty
         return elevation_factor * slope_factor
     
-    def get_routing_cost(self, transportation_mode: str = "car", risk_profile: str = "safe", flood_lookup_cache: Optional[Dict[str, bool]] = None) -> float:
+    def get_routing_cost(self, transportation_mode: str = "car", risk_profile: str = "safe") -> float:
         """Calculate routing cost based on transportation mode AND flood risk profile
         
         Args:
@@ -119,47 +119,22 @@ class RoadSegment:
                 - "safe": Heavily avoids flooded roads (10x penalty)
                 - "manageable": Moderate avoidance (3x penalty)  
                 - "prone": Minimal avoidance (1.2x penalty) - shortest path
-            flood_lookup_cache: Optional pre-built dict mapping osm_id -> is_flooded (fast O(1) lookup)
         """
         base_cost = self.length_m
         
         # FLOOD RISK FACTOR - Primary differentiator based on risk profile
-        # Check flood status from this segment OR from flood lookup cache
-        is_flooded = self.flooded
-        
-        # If this segment has no flood data but we have a flood lookup cache, check it (O(1) lookup!)
-        if not is_flooded and flood_lookup_cache and self.osm_id:
-            is_flooded = flood_lookup_cache.get(self.osm_id, False)
-        
         if risk_profile == "safe":
             # SAFE ROUTE: Extremely high penalty for flooded roads
-            flood_factor = 10.0 if is_flooded else 1.0
+            flood_factor = 10.0 if self.flooded else 1.0
         elif risk_profile == "manageable":
             # MANAGEABLE ROUTE: Moderate penalty for flooded roads
-            flood_factor = 3.0 if is_flooded else 1.0
+            flood_factor = 3.0 if self.flooded else 1.0
         else:  # "prone"
             # FLOOD-PRONE ROUTE: Minimal penalty - takes shortest path
-            flood_factor = 1.2 if is_flooded else 1.0
+            flood_factor = 1.2 if self.flooded else 1.0
         
         # Apply terrain difficulty (elevation, surface)
         terrain_factor = self.get_terrain_difficulty()
-        
-        # ROAD HIERARCHY PENALTY - Prefer major roads over side streets
-        # CRITICAL FIX: GeoJSON has NO highway field! Infer from road name patterns
-        road_type = (self.highway_type or "unclassified").lower()
-        road_name = (self.name or "").lower()
-        
-        # Infer major roads from common name patterns in Zamboanga
-        if road_type in ["motorway", "trunk", "primary"] or any(keyword in road_name for keyword in [
-            "national", "highway", "governor", "airport", "avenue", "boulevard", "n-", "r-"
-        ]):
-            hierarchy_penalty = 0.5  # STRONGLY prefer major roads
-        elif road_type in ["secondary", "tertiary"] or any(keyword in road_name for keyword in [
-            "road", "street", "drive"
-        ]):
-            hierarchy_penalty = 1.0  # Normal roads
-        else:  # residential, service, unclassified, unnamed
-            hierarchy_penalty = 3.0  # HEAVILY discourage small roads
         
         # Transportation mode adjustments
         mode_factors = {
@@ -169,7 +144,7 @@ class RoadSegment:
         }
         mode_factor = mode_factors.get(transportation_mode, 1.0)
         
-        return base_cost * flood_factor * terrain_factor * mode_factor * hierarchy_penalty
+        return base_cost * flood_factor * terrain_factor * mode_factor
     
     def get_speed_limit(self) -> int:
         """Get speed limit with terrain adjustments"""
@@ -368,10 +343,10 @@ class LocalRoutingService:
         return result
     
     def _build_routing_graph(self):
-        """Build routing graph from road segments with smart intersection detection"""
+        """Build routing graph from road segments"""
         logger.info("Building routing graph...")
         
-        # Step 1: Create nodes for all coordinates
+        # Create nodes for all road endpoints and intersections
         for segment in self.road_segments:
             for i, coord in enumerate(segment.coordinates):
                 if coord not in self.routing_graph:
@@ -383,66 +358,7 @@ class LocalRoutingService:
                 # Add segment connection
                 self.routing_graph[coord].connected_segments.append((segment, i))
         
-        logger.info(f"Built initial graph with {len(self.routing_graph)} nodes")
-        
-        # Step 2: Smart intersection detection - only connect endpoints OR points with multiple nearby segments
-        logger.info("Detecting road intersections...")
-        connection_threshold = 50.0  # meters - reasonable threshold for road intersections in Zamboanga
-        connections_added = 0
-        
-        # Build a spatial grid for fast lookup
-        from collections import defaultdict
-        grid_size = 0.0005  # About 50 meters at this latitude
-        point_grid = defaultdict(list)
-        
-        # Collect endpoints and "junction points" (points near other segments)
-        for segment in self.road_segments:
-            if len(segment.coordinates) == 0:
-                continue
-                
-            # Always include endpoints
-            first = segment.coordinates[0]
-            last = segment.coordinates[-1]
-            
-            grid_key = (round(first.lat / grid_size), round(first.lng / grid_size))
-            point_grid[grid_key].append((first, segment, 0, True))  # True = is_endpoint
-            
-            grid_key = (round(last.lat / grid_size), round(last.lng / grid_size))
-            point_grid[grid_key].append((last, segment, len(segment.coordinates) - 1, True))
-        
-        logger.info(f"Indexed {sum(len(v) for v in point_grid.values())} endpoint candidates")
-        
-        # Connect nearby endpoints only
-        processed_pairs = set()
-        for grid_key, points_in_cell in point_grid.items():
-            # Check this cell and adjacent cells
-            for dx in [-1, 0, 1]:
-                for dy in [-1, 0, 1]:
-                    neighbor_key = (grid_key[0] + dx, grid_key[1] + dy)
-                    if neighbor_key not in point_grid:
-                        continue
-                    
-                    for coord1, seg1, idx1, is_end1 in points_in_cell:
-                        for coord2, seg2, idx2, is_end2 in point_grid[neighbor_key]:
-                            # Skip if same segment
-                            if seg1 == seg2:
-                                continue
-                            
-                            # Skip if already processed
-                            pair_id = (id(seg1), idx1, id(seg2), idx2)
-                            if pair_id in processed_pairs or (id(seg2), idx2, id(seg1), idx1) in processed_pairs:
-                                continue
-                            processed_pairs.add(pair_id)
-                            
-                            # Connect if close enough
-                            distance = coord1.distance_to(coord2)
-                            if distance <= connection_threshold:
-                                self.routing_graph[coord1].connected_segments.append((seg2, idx2))
-                                self.routing_graph[coord2].connected_segments.append((seg1, idx1))
-                                connections_added += 2
-        
-        logger.info(f"Added {connections_added} intersection connections (50m threshold)")
-        logger.info(f"Final routing graph: {len(self.routing_graph)} nodes")
+        logger.info(f"Built routing graph with {len(self.routing_graph)} nodes")
     
     def find_nearest_road_point(self, target: Coordinate, max_distance: float = 5000) -> Optional[Coordinate]:
         """Find the nearest point on the road network"""
@@ -521,69 +437,19 @@ class LocalRoutingService:
     
     def _a_star_search(self, start: Coordinate, end: Coordinate, mode: str = "car", risk_profile: str = "safe") -> Optional[List[Coordinate]]:
         """A* pathfinding algorithm with terrain-aware routing costs and flood risk profiles"""
-        
-        # Build flood lookup cache ONCE at the start (O(n) build time, then O(1) lookups!)
-        flood_cache = {}
-        if risk_profile != "prone":  # Only build cache if we care about flood avoidance
-            flood_service = get_flood_service()
-            if flood_service:
-                logger.info(f"Building flood cache from {len(flood_service.road_segments)} segments...")
-                for seg in flood_service.road_segments:
-                    if seg.osm_id and seg.flooded:  # Only cache flooded segments to save memory
-                        flood_cache[seg.osm_id] = True
-                logger.info(f"Flood cache built: {len(flood_cache)} flooded segments indexed")
-        
         open_set = [(0, start)]  # (f_score, coordinate)
         came_from = {}
         g_score = {start: 0}
         f_score = {start: start.distance_to(end)}
         visited = set()
         
-        iterations = 0
-        max_iterations = 50000  # Reduced from 100k - routes in Zamboanga shouldn't need this many
-        
-        # Track best distance to goal for early termination
-        best_distance_to_goal = float('inf')
-        iterations_since_improvement = 0
-        max_stagnant_iterations = 3000  # Reduced from 10k - terminate faster if stuck
-        
-        # Calculate search boundary - don't explore nodes too far from direct line
-        direct_distance = start.distance_to(end)
-        max_detour_factor = 2.5  # Allow up to 2.5x the direct distance as detour
-        search_boundary = direct_distance * max_detour_factor
-        
-        logger.info(f"A* Search: Direct distance {direct_distance:.0f}m, Search boundary {search_boundary:.0f}m")
-        
-        # Cache for neighbor lookups to avoid repeated expensive calls
-        neighbor_cache = {}
-        
-        while open_set and iterations < max_iterations:
-            iterations += 1
+        while open_set:
             current_f, current = heapq.heappop(open_set)
             
             if current in visited:
                 continue
-            
-            # Skip nodes too far from start or end (outside search boundary)
-            distance_from_start = start.distance_to(current)
-            distance_to_end = current.distance_to(end)
-            if distance_from_start > search_boundary or distance_to_end > search_boundary:
-                continue  # Skip this node - too far from reasonable path
                 
             visited.add(current)
-            
-            # Track if we're making progress toward goal
-            if distance_to_end < best_distance_to_goal:
-                best_distance_to_goal = distance_to_end
-                iterations_since_improvement = 0
-            else:
-                iterations_since_improvement += 1
-            
-            # Early termination if stuck in disconnected area
-            if iterations_since_improvement > max_stagnant_iterations:
-                logger.warning(f"Terminating search: No progress for {max_stagnant_iterations} iterations")
-                logger.warning(f"Best distance achieved: {best_distance_to_goal:.1f}m, Currently at: {distance_to_end:.1f}m")
-                break
             
             if current == end:
                 # Reconstruct path with proper road segment following
@@ -597,189 +463,66 @@ class LocalRoutingService:
                 # Reverse to get start->end order
                 path = list(reversed(path))
                 
-                logger.info(f"Successfully calculated route with {len(path)} waypoint nodes")
+                # Now fill in the detailed road segments between waypoints
+                detailed_path = []
+                for i in range(len(path) - 1):
+                    current_point = path[i]
+                    next_point = path[i + 1]
+                    
+                    # Find the road segment that connects these points
+                    segment_path = self._get_segment_path(current_point, next_point)
+                    if segment_path:
+                        detailed_path.extend(segment_path[:-1])  # Exclude last point to avoid duplicates
+                    else:
+                        detailed_path.append(current_point)  # Fallback
                 
-                # Simplify the path - only keep points where direction changes significantly
-                # Tolerance of 100 meters - very aggressive simplification for clean, navigable routes
-                simplified_path = self._simplify_path(path, tolerance=100.0)
+                # Add the final point
+                if path:
+                    detailed_path.append(path[-1])
                 
-                logger.info(f"Simplified route to {len(simplified_path)} points")
-                
-                return simplified_path
+                return detailed_path if detailed_path else path
             
             # Explore neighbors
             if current in self.routing_graph:
-                total_neighbors_found = 0
-                neighbors_added_to_open_set = 0
-                neighbors_already_visited = 0
-                
                 for segment, point_index in self.routing_graph[current].connected_segments:
-                    # Use cached neighbors if available
-                    cache_key = (id(segment), point_index)
-                    if cache_key not in neighbor_cache:
-                        neighbor_cache[cache_key] = self._get_segment_neighbors(segment, point_index)
-                    neighbors = neighbor_cache[cache_key]
-                    total_neighbors_found += len(neighbors)
+                    neighbors = self._get_segment_neighbors(segment, point_index)
                     
                     for neighbor in neighbors:
                         if neighbor in visited:
-                            neighbors_already_visited += 1
                             continue
                         
-                        # Calculate terrain-aware movement cost WITH RISK PROFILE AND FLOOD DATA
+                        # Calculate terrain-aware movement cost WITH RISK PROFILE
                         base_distance = current.distance_to(neighbor)
-                        
-                        # Use pre-built flood cache (passed from parent function, built once)
-                        routing_cost = segment.get_routing_cost(mode, risk_profile, flood_cache)
-                        
-                        # Use TIME as the cost metric (seconds), not distance
-                        # This properly penalizes slow roads and rewards fast main roads
-                        speed_kph = segment.get_terrain_adjusted_speed(mode)
-                        time_cost = (base_distance / 1000) / speed_kph * 3600  # Convert to seconds
-                        
-                        # Apply routing cost multiplier (flood risk, terrain, hierarchy)
-                        tentative_g = g_score[current] + (time_cost * routing_cost)
+                        routing_cost = segment.get_routing_cost(mode, risk_profile)
+                        tentative_g = g_score[current] + (base_distance * routing_cost)
                         
                         if neighbor not in g_score or tentative_g < g_score[neighbor]:
                             came_from[neighbor] = current
                             g_score[neighbor] = tentative_g
-                            
-                            # CRITICAL FIX: Weight the heuristic heavily to guide toward goal
-                            # Use CONSERVATIVE speed (30 kph) matching typical road speeds
-                            # This creates stronger directional pull than using 50 kph
-                            HEURISTIC_WEIGHT = 8.0  # ULTRA aggressive - explore toward goal first! (increased from 5.0)
-                            AVERAGE_HEURISTIC_SPEED_KPH = 30  # Conservative speed matching road network
-                            
-                            heuristic_distance = neighbor.distance_to(end)
-                            heuristic_time = (heuristic_distance / 1000) / AVERAGE_HEURISTIC_SPEED_KPH * 3600  # seconds
-                            
-                            f_score[neighbor] = tentative_g + (heuristic_time * HEURISTIC_WEIGHT)
+                            f_score[neighbor] = tentative_g + neighbor.distance_to(end)
                             
                             heapq.heappush(open_set, (f_score[neighbor], neighbor))
-                            neighbors_added_to_open_set += 1
-                
-                # Debug less frequently - every 500 iterations
-                if iterations % 500 == 0:
-                    logger.info(f"A* Progress: Iter {iterations}/{max_iterations}, Distance to goal: {distance_to_end:.1f}m, visited {len(visited)} nodes, open_set size={len(open_set)}")
-            else:
-                logger.warning(f"Iter {iterations}: Current node NOT in routing graph!")
         
-        logger.warning(f"No route found after {iterations} iterations, visited {len(visited)} nodes")
-        logger.warning(f"Start: ({start.lat}, {start.lng}), End: ({end.lat}, {end.lng})")
-        logger.warning(f"Start in graph: {start in self.routing_graph}, End in graph: {end in self.routing_graph}")
-        logger.warning(f"Best distance to goal achieved: {best_distance_to_goal:.1f}m")
-        logger.warning(f"Iterations since last improvement: {iterations_since_improvement}")
-        
-        # Diagnose connectivity issue
-        if start in self.routing_graph:
-            start_connections = len(self.routing_graph[start].connected_segments)
-            logger.warning(f"Start point has {start_connections} connections")
-        if end in self.routing_graph:
-            end_connections = len(self.routing_graph[end].connected_segments)
-            logger.warning(f"End point has {end_connections} connections")
-        
+        logger.warning("No route found between points")
         return None
     
-    def _simplify_path(self, path: List[Coordinate], tolerance: float = 50.0) -> List[Coordinate]:
-        """
-        Simplify a path using Douglas-Peucker algorithm to reduce point count
-        while preserving the overall shape. Tolerance is in meters.
-        """
-        if len(path) <= 2:
-            return path
-        
-        def perpendicular_distance(point: Coordinate, line_start: Coordinate, line_end: Coordinate) -> float:
-            """Calculate perpendicular distance from point to line segment in meters"""
-            # Use the actual distance_to method which calculates meters
-            line_length = line_start.distance_to(line_end)
-            
-            if line_length < 1e-6:
-                return point.distance_to(line_start)
-            
-            # Calculate the position along the line (0 to 1)
-            # Using dot product of vectors
-            t = max(0, min(1, (
-                (point.lat - line_start.lat) * (line_end.lat - line_start.lat) +
-                (point.lng - line_start.lng) * (line_end.lng - line_start.lng)
-            ) / (
-                (line_end.lat - line_start.lat) ** 2 + 
-                (line_end.lng - line_start.lng) ** 2
-            )))
-            
-            # Find the closest point on the line segment
-            closest_lat = line_start.lat + t * (line_end.lat - line_start.lat)
-            closest_lng = line_start.lng + t * (line_end.lng - line_start.lng)
-            closest = Coordinate(lat=closest_lat, lng=closest_lng)
-            
-            # Return distance to that closest point in meters
-            return point.distance_to(closest)
-        
-        def douglas_peucker(points: List[Coordinate], epsilon: float) -> List[Coordinate]:
-            """Recursive Douglas-Peucker implementation"""
-            if len(points) <= 2:
-                return points
-            
-            # Find point with maximum distance from line between first and last
-            max_dist = 0
-            max_index = 0
-            
-            for i in range(1, len(points) - 1):
-                dist = perpendicular_distance(points[i], points[0], points[-1])
-                if dist > max_dist:
-                    max_dist = dist
-                    max_index = i
-            
-            # If max distance is greater than epsilon, split and recurse
-            if max_dist > epsilon:
-                # Recursive call on both segments
-                left = douglas_peucker(points[:max_index + 1], epsilon)
-                right = douglas_peucker(points[max_index:], epsilon)
-                
-                # Combine results (removing duplicate middle point)
-                return left[:-1] + right
-            else:
-                # All points are close to line, just keep endpoints
-                return [points[0], points[-1]]
-        
-        return douglas_peucker(path, tolerance)
-    
     def _get_segment_neighbors(self, segment: RoadSegment, point_index: int) -> List[Coordinate]:
-        """Get neighboring points along a road segment AND at intersections with other segments"""
+        """Get neighboring points along a road segment"""
         neighbors = []
         coords = segment.coordinates
-        current_coord = coords[point_index]
         
-        # 1. Can move to adjacent points within the same segment
+        # Can move to adjacent points in the segment
         if point_index > 0:
             neighbors.append(coords[point_index - 1])
         
         if point_index < len(coords) - 1:
             neighbors.append(coords[point_index + 1])
         
-        # 2. Handle oneway restrictions for this segment
+        # Handle oneway restrictions
         if segment.oneway and point_index > 0:
             # Remove backward movement for oneway roads
             if coords[point_index - 1] in neighbors:
                 neighbors.remove(coords[point_index - 1])
-        
-        # 3. CRITICAL: Explore connections to OTHER segments at this intersection point
-        # This allows A* to "jump" between road segments at intersections
-        if current_coord in self.routing_graph:
-            for other_segment, other_index in self.routing_graph[current_coord].connected_segments:
-                # Skip the current segment we're already on
-                if other_segment == segment:
-                    continue
-                
-                # Add neighboring points from the connected segment
-                other_coords = other_segment.coordinates
-                
-                # Can move to previous point in the other segment
-                if other_index > 0:
-                    neighbors.append(other_coords[other_index - 1])
-                
-                # Can move to next point in the other segment
-                if other_index < len(other_coords) - 1:
-                    neighbors.append(other_coords[other_index + 1])
         
         return neighbors
     
@@ -887,166 +630,17 @@ class LocalRoutingService:
             "terrain_summary": terrain_summary
         }
 
-    def _join_segment_routes(self, routes: List[List[Coordinate]]) -> List[Coordinate]:
-        """Joins a list of route segments into a single cohesive route, avoiding duplicate points."""
-        full_route = []
-        for segment in routes:
-            if not full_route:
-                # Add the first segment entirely
-                full_route.extend(segment)
-            else:
-                # Append segment, excluding the first point if it duplicates the last point of the previous segment
-                if segment and full_route[-1] == segment[0]:
-                    full_route.extend(segment[1:])
-                else:
-                    full_route.extend(segment)
-        return full_route
-
-    async def calculate_hybrid_routes_with_waypoints(
-        self, start_coord: Coordinate, end_coord: Coordinate, waypoints: List[Coordinate]
-    ) -> Dict: 
-        """
-        Calculates 3 distinct routes (Direct, Balanced, Safest) using A* pathfinding.
-        """
-        if not self.loaded:
-            logger.error("Road network not loaded")
-            return {"success": False, "message": "Road network not loaded"}
-        
-        logger.info(f"Hybrid Routing: Calculating route with {len(waypoints)} waypoint(s)...")
-
-        # 1. Prepare the full sequence of points (A, C, D, E, B)
-        full_coords = [start_coord] + waypoints + [end_coord]
-
-        # 2. Risk profiles: direct (prone), balanced (manageable), safest (safe)
-        risk_profiles = ["prone", "manageable", "safe"]
-        route_labels = ["direct", "balanced", "safest"]
-        all_routes = []
-
-        for profile, label in zip(risk_profiles, route_labels):
-            segment_routes = []
-            total_distance = 0.0
-            total_duration = 0.0
-
-            # 3. Calculate each segment (A→C, C→D, D→E, E→B)
-            for i in range(len(full_coords) - 1):
-                seg_start = full_coords[i]
-                seg_end = full_coords[i + 1]
-
-                # Run A* for this segment
-                seg_route = self.calculate_route(seg_start, seg_end, mode="car", risk_profile=profile)
-
-                if not seg_route:
-                    logger.warning(f"Segment {i} failed for profile {profile}")
-                    segment_routes = None
-                    break
-
-                segment_routes.append(seg_route)
-
-                # Get route info for this segment
-                route_info = self.get_route_info(seg_route, mode="car")
-                total_distance += route_info["distance"]
-                total_duration += route_info["duration"]
-
-            if not segment_routes:
-                logger.error(f"Failed to calculate full route for profile: {profile}")
-                continue
-
-            # 4. Join all segments into a single cohesive route
-            full_route = self._join_segment_routes(segment_routes)
-            
-            logger.info(f"Calculating flood analysis for {len(full_route)} point route...")
-
-            # 5. Fast flood analysis using coordinate lookup from FLOOD SERVICE (terrain_roads.geojson)
-            flood_service = get_flood_service()
-            flooded_distance = 0.0
-            total_route_distance = 0.0
-            
-            # Build a quick lookup set of flooded segment coordinates for O(1) lookup
-            flooded_coords = set()
-            for road_segment in flood_service.road_segments:  # Use flood service data
-                if road_segment.flooded:
-                    for j in range(len(road_segment.coordinates) - 1):
-                        # Store both directions as route might go either way
-                        flooded_coords.add((road_segment.coordinates[j], road_segment.coordinates[j + 1]))
-                        flooded_coords.add((road_segment.coordinates[j + 1], road_segment.coordinates[j]))
-            
-            # Now check route segments in O(n) time
-            for i in range(len(full_route) - 1):
-                segment_dist = full_route[i].distance_to(full_route[i + 1])
-                total_route_distance += segment_dist
-                
-                # O(1) lookup instead of nested loops
-                if (full_route[i], full_route[i + 1]) in flooded_coords:
-                    flooded_distance += segment_dist
-            
-            flood_percentage = (flooded_distance / total_route_distance * 100) if total_route_distance > 0 else 0
-            
-            logger.info(f"Route {label}: {total_route_distance:.0f}m total, {flooded_distance:.0f}m flooded ({flood_percentage:.1f}%)")
-            
-            # 6. Package the route data with flood analysis
-            all_routes.append({
-                "label": label,
-                "risk_profile": profile,
-                "geometry": {
-                    "coordinates": [[coord.lng, coord.lat] for coord in full_route],  # [lng, lat] format
-                    "type": "LineString"
-                },
-                "distance": total_distance,
-                "duration": total_duration,
-                "flooded_distance": flooded_distance,
-                "flood_percentage": flood_percentage,
-            })
-
-        if not all_routes:
-            logger.error("All routing profiles failed")
-            return {"success": False, "message": "Could not calculate any routes"}
-
-        # Create analyses array for frontend compatibility
-        analyses = []
-        for route in all_routes:
-            # Convert coordinates back to waypoints format
-            waypoints = [{"lat": coord[1], "lng": coord[0]} for coord in route["geometry"]["coordinates"]]
-            
-            analyses.append({
-                "waypoints": waypoints,
-                "distance": f"{route['distance'] / 1000:.1f} km",
-                "time": f"{int(route['duration'] / 60)} min",
-                "flooded_distance_m": route["flooded_distance"],
-                "flooded_percentage": route["flood_percentage"],
-                "risk_level": route["risk_profile"],
-                "description": f"{route['flood_percentage']:.1f}% flooded ({route['flooded_distance']/1000:.2f} km)"
-            })
-
-        return {
-            "success": True,
-            "routes": all_routes,
-            "analyses": analyses,  # Added for frontend compatibility
-            "message": f"Successfully calculated {len(all_routes)} route(s) with waypoints"
-        }
-
-# Global instances - separate services for routing and flood analysis
+# Global instance
 _routing_service = None
-_flood_service = None
 
 def get_routing_service() -> LocalRoutingService:
-    """Get the global routing service instance (uses zcroadmap.geojson for road hierarchy)"""
+    """Get the global routing service instance"""
     global _routing_service
     if _routing_service is None:
-        # zcroadmap.geojson - has highway classification for proper routing!
-        geojson_path = Path(__file__).parent.parent / "data" / "zcroadmap.geojson"
+        geojson_path = Path(__file__).parent.parent / "data" / "terrain_roads.geojson"
         _routing_service = LocalRoutingService(str(geojson_path))
         _routing_service.load_road_network()
     return _routing_service
-
-def get_flood_service() -> LocalRoutingService:
-    """Get the global flood analysis service instance (uses terrain_roads.geojson for flood data)"""
-    global _flood_service
-    if _flood_service is None:
-        # terrain_roads.geojson - has flood data for risk analysis!
-        geojson_path = Path(__file__).parent.parent / "data" / "terrain_roads.geojson"
-        _flood_service = LocalRoutingService(str(geojson_path))
-        _flood_service.load_road_network()
-    return _flood_service
 
 def calculate_local_route(start_lat: float, start_lng: float, 
                          end_lat: float, end_lng: float, mode: str = "car") -> Optional[Dict]:
@@ -1073,6 +667,7 @@ def calculate_local_route(start_lat: float, start_lng: float,
 
     return None
 
+
 def analyze_route_flood_risk(
     route_coordinates: List[Tuple[float, float]], 
     buffer_meters: float = 50.0,
@@ -1089,8 +684,7 @@ def analyze_route_flood_risk(
     Returns:
         Dict with flood analysis: flood_score, flooded_percentage, risk_level, etc.
     """
-    # Use flood service (terrain_roads.geojson) for flood data analysis
-    service = get_flood_service()
+    service = get_routing_service()
     
     if not service.loaded or not route_coordinates or len(route_coordinates) < 2:
         return {

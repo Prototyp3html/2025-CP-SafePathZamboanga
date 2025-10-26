@@ -1,8 +1,0 @@
-{
-"type": "FeatureCollection",
-"name": "zamboanga_roads",
-"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
-"features": [
-{ "type": "Feature", "properties": { "osm_id": "1384034304", "name": "Governor Camins Avenue", "highway": "primary", "waterway": null, "aerialway": null, "barrier": null, "man_made": null, "railway": null, "z_order": 7, "other_tags": "\"designation\"=>\"national_secondary_road\",\"dual_carriageway\"=>\"yes\",\"lane_markings\"=>\"no\",\"lanes\"=>\"3\",\"maxspeed\"=>\"40\",\"name:etymology\"=>\"Carlos Camins y Hernandez\",\"name:etymology:wikidata\"=>\"Q5041882\",\"nat_name\"=>\"Governor Camins Road\",\"oneway\"=>\"yes\",\"placement\"=>\"right_of:2\",\"ref\"=>\"968\",\"smoothness\"=>\"intermediate\",\"source:maxspeed\"=>\"PH:urban\",\"surface\"=>\"concrete\"" }, "geometry": { "type": "LineString", "coordinates": [ [ 122.0780566, 6.9215723 ], [ 122.0782904, 6.9216026 ], [ 122.0783817, 6.9216145 ], [ 122.0787068, 6.9216567 ], [ 122.0788027, 6.92167 ], [ 122.0788791, 6.9216814 ], [ 122.0789645, 6.9216994 ] ] } }
-]
-}
