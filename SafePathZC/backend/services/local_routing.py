@@ -132,19 +132,19 @@ class RoadSegment:
             is_flooded = flood_lookup_cache.get(self.osm_id, False)
         
         if risk_profile == "safe":
-            # SAFE ROUTE: Strong penalty for flooded roads but not so high it blocks all paths
-            flood_factor = 5.5 if is_flooded else 1.0
+            # SAFE ROUTE: Extremely high penalty for flooded roads
+            flood_factor = 10.0 if is_flooded else 1.0
         elif risk_profile == "manageable":
             # MANAGEABLE ROUTE: Moderate penalty for flooded roads
             flood_factor = 3.0 if is_flooded else 1.0
         else:  # "prone"
             # FLOOD-PRONE ROUTE: Minimal penalty - takes shortest path
-            flood_factor = 1.1 if is_flooded else 1.0
+            flood_factor = 1.2 if is_flooded else 1.0
         
         # Apply terrain difficulty (elevation, surface)
         terrain_factor = self.get_terrain_difficulty()
         
-        # ROAD HIERARCHY PENALTY - Prefer local roads over highways
+        # ROAD HIERARCHY PENALTY - Prefer major roads over side streets
         # CRITICAL FIX: GeoJSON has NO highway field! Infer from road name patterns
         road_type = (self.highway_type or "unclassified").lower()
         road_name = (self.name or "").lower()
@@ -153,13 +153,13 @@ class RoadSegment:
         if road_type in ["motorway", "trunk", "primary"] or any(keyword in road_name for keyword in [
             "national", "highway", "governor", "airport", "avenue", "boulevard", "n-", "r-"
         ]):
-            hierarchy_penalty = 1.5  # STRONGLY DISCOURAGE highways - they cost 2x more
+            hierarchy_penalty = 0.5  # STRONGLY prefer major roads
         elif road_type in ["secondary", "tertiary"] or any(keyword in road_name for keyword in [
             "road", "street", "drive"
         ]):
-            hierarchy_penalty = 1.0  # Normal roads - baseline (preferred)
+            hierarchy_penalty = 1.0  # Normal roads
         else:  # residential, service, unclassified, unnamed
-            hierarchy_penalty = 0.9  # Prefer local/residential roads
+            hierarchy_penalty = 3.0  # HEAVILY discourage small roads
         
         # Transportation mode adjustments
         mode_factors = {
@@ -527,23 +527,11 @@ class LocalRoutingService:
         if risk_profile != "prone":  # Only build cache if we care about flood avoidance
             flood_service = get_flood_service()
             if flood_service:
-                logger.info(f"🌊 Building flood cache for {risk_profile} route from {len(flood_service.road_segments)} segments...")
-                flooded_count = 0
+                logger.info(f"Building flood cache from {len(flood_service.road_segments)} segments...")
                 for seg in flood_service.road_segments:
                     if seg.osm_id and seg.flooded:  # Only cache flooded segments to save memory
-                        # Strip 'w' prefix from terrain_roads osm_id to match zcroadmap format (w22772337 → 22772337)
-                        osm_id_normalized = seg.osm_id.lstrip('w') if seg.osm_id.startswith('w') else seg.osm_id
-                        flood_cache[osm_id_normalized] = True
-                        flooded_count += 1
-                logger.info(f"🌊 Flood cache built: {len(flood_cache)} flooded segments indexed (out of {flooded_count} total flooded)")
-                
-                # Debug: Check if routing segments have matching OSM IDs
-                if len(flood_cache) > 0:
-                    sample_routing_ids = [seg.osm_id for seg in self.road_segments[:10] if seg.osm_id]
-                    matches = sum(1 for rid in sample_routing_ids if rid in flood_cache)
-                    logger.info(f"🔍 Debug: {matches}/{len(sample_routing_ids)} sample routing segments have flood data")
-            else:
-                logger.warning(f"⚠️ Flood service not available for {risk_profile} route")
+                        flood_cache[seg.osm_id] = True
+                logger.info(f"Flood cache built: {len(flood_cache)} flooded segments indexed")
         
         open_set = [(0, start)]  # (f_score, coordinate)
         came_from = {}
@@ -557,11 +545,11 @@ class LocalRoutingService:
         # Track best distance to goal for early termination
         best_distance_to_goal = float('inf')
         iterations_since_improvement = 0
-        max_stagnant_iterations = 5000  # Give safe routes more chances to find paths around floods
+        max_stagnant_iterations = 3000  # Reduced from 10k - terminate faster if stuck
         
         # Calculate search boundary - don't explore nodes too far from direct line
         direct_distance = start.distance_to(end)
-        max_detour_factor = 5.0  # Increased to allow more detours for flood avoidance
+        max_detour_factor = 2.5  # Allow up to 2.5x the direct distance as detour
         search_boundary = direct_distance * max_detour_factor
         
         logger.info(f"A* Search: Direct distance {direct_distance:.0f}m, Search boundary {search_boundary:.0f}m")
@@ -598,45 +586,26 @@ class LocalRoutingService:
                 break
             
             if current == end:
-                # Reconstruct path WITH FULL ROAD SEGMENT DETAILS
-                waypoint_path = []
+                # Reconstruct path with proper road segment following
+                path = []
                 current_node = current
                 while current_node in came_from:
-                    waypoint_path.append(current_node)
+                    path.append(current_node)
                     current_node = came_from[current_node]
-                waypoint_path.append(start)
+                path.append(start)
                 
                 # Reverse to get start->end order
-                waypoint_path = list(reversed(waypoint_path))
+                path = list(reversed(path))
                 
-                logger.info(f"Successfully calculated route with {len(waypoint_path)} waypoint nodes")
+                logger.info(f"Successfully calculated route with {len(path)} waypoint nodes")
                 
-                # NOW EXPAND WAYPOINTS TO INCLUDE ALL ROAD SEGMENT COORDINATES
-                # This ensures the route follows the actual road geometry
-                full_path = []
-                for i in range(len(waypoint_path) - 1):
-                    segment_coords = self._get_segment_path(waypoint_path[i], waypoint_path[i + 1])
-                    if segment_coords:
-                        # Add all coordinates except the last one (to avoid duplicates)
-                        full_path.extend(segment_coords[:-1])
+                # Simplify the path - only keep points where direction changes significantly
+                # Tolerance of 100 meters - very aggressive simplification for clean, navigable routes
+                simplified_path = self._simplify_path(path, tolerance=100.0)
                 
-                # Add the final waypoint
-                if waypoint_path:
-                    full_path.append(waypoint_path[-1])
+                logger.info(f"Simplified route to {len(simplified_path)} points")
                 
-                logger.info(f"Expanded route to {len(full_path)} coordinates following road geometry")
-                
-                # OPTIONAL: Light simplification to reduce data transfer size
-                # Set tolerance high to keep most road details (or skip simplification entirely)
-                # Lower tolerance = more detail, Higher tolerance = more simplification
-                if len(full_path) > 500:  # Only simplify if route has many points
-                    simplified_path = self._simplify_path(full_path, tolerance=15.0)
-                    logger.info(f"Final simplified route: {len(simplified_path)} points")
-                    return simplified_path
-                else:
-                    # Keep full detail for shorter routes
-                    logger.info(f"Keeping full detail route: {len(full_path)} points")
-                    return full_path
+                return simplified_path
             
             # Explore neighbors
             if current in self.routing_graph:
@@ -815,12 +784,8 @@ class LocalRoutingService:
         return neighbors
     
     def _get_segment_path(self, start_point: Coordinate, end_point: Coordinate) -> Optional[List[Coordinate]]:
-        """Get the detailed path along a road segment between two points
-        
-        This method finds the road segment containing both points and returns
-        all coordinates along that segment between them, preserving road geometry.
-        """
-        # Strategy 1: Find a segment that contains both points (common case - on same road)
+        """Get the detailed path along a road segment between two points"""
+        # Find the segment that contains both points
         for segment in self.road_segments:
             start_idx = None
             end_idx = None
@@ -829,30 +794,19 @@ class LocalRoutingService:
             for i, coord in enumerate(segment.coordinates):
                 if coord == start_point:
                     start_idx = i
-                if coord == end_point:
+                elif coord == end_point:
                     end_idx = i
             
             # If both points are found in this segment
             if start_idx is not None and end_idx is not None:
                 # Return the path between them (including both endpoints)
-                if start_idx < end_idx:
+                if start_idx <= end_idx:
                     return segment.coordinates[start_idx:end_idx + 1]
-                elif start_idx > end_idx:
+                else:
                     # Reverse direction if needed
                     return list(reversed(segment.coordinates[end_idx:start_idx + 1]))
-                else:
-                    # Same point
-                    return [start_point]
         
-        # Strategy 2: Points are on different segments (intersection)
-        # Check if they're close enough to be connected directly
-        distance = start_point.distance_to(end_point)
-        if distance < 100:  # Within 100m - likely at an intersection
-            return [start_point, end_point]
-        
-        # Strategy 3: Points are far apart - A* failed to find connecting segment
-        # This shouldn't happen in well-formed routing, but fallback gracefully
-        logger.debug(f"No segment contains both points (distance: {distance:.1f}m), using direct connection")
+        # If no segment contains both points, return direct connection
         return [start_point, end_point]
     
     def get_route_info(self, route: List[Coordinate], mode: str = "car") -> Dict:
