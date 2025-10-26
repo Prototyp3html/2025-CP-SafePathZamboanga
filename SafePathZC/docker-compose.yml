@@ -7,7 +7,7 @@ services:
       - "5000:5000"
     volumes:
       - ./backend/osrm-data:/data
-    command: osrm-routed --algorithm mld /data/zamboanga-driving.osrm
+    command: osrm-routed --algorithm ch /data/zamboanga_roads.osrm
     restart: unless-stopped
     healthcheck:
       test:

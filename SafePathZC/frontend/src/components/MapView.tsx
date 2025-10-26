@@ -172,6 +172,14 @@ interface LocationSuggestion {
   isLocal?: boolean;
 }
 
+interface Waypoint {
+  id: string;
+  input: string;
+  location: LocationSuggestion | null;
+  suggestions: LocationSuggestion[];
+  showSuggestions: boolean;
+}
+
 interface MapViewProps {
   onModalOpen?: (modal: "report" | "emergency") => void;
 }
@@ -919,6 +927,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const [showStartSuggestions, setShowStartSuggestions] = useState(false);
   const [showEndSuggestions, setShowEndSuggestions] = useState(false);
 
+  // Waypoints state for multi-stop routes
+  const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
+  const waypointsSnappedRef = useRef(false); // Flag to prevent duplicate marker creation
+
   // Educational pathfinding visualization states
   const [isEducationalMode, setIsEducationalMode] = useState(false);
   const [pathfindingStep, setPathfindingStep] = useState<
@@ -1531,6 +1543,90 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     }
   }, [selectedEndLocation, isMapReady]);
 
+  // Add markers for waypoints
+  useEffect(() => {
+    if (!mapRef.current || !isMapReady || waypoints.length === 0) return;
+    
+    // Skip if waypoints were already snapped and markers manually created
+    if (waypointsSnappedRef.current) {
+      console.log("⏭️ Skipping waypoint marker creation - using snapped markers");
+      return;
+    }
+    
+    // Reset snapped flag when waypoints change (user added/removed waypoint)
+    waypointsSnappedRef.current = false;
+
+    // Remove old waypoint markers (markers with className containing 'waypoint')
+    markersRef.current = markersRef.current.filter((marker) => {
+      const markerElement = marker.getElement();
+      if (markerElement && markerElement.className.includes('waypoint-pin')) {
+        if (mapRef.current && mapRef.current.hasLayer(marker)) {
+          mapRef.current.removeLayer(marker);
+        }
+        return false;
+      }
+      return true;
+    });
+
+    // Add new waypoint markers
+    waypoints.forEach((waypoint, index) => {
+      if (!waypoint.location) return;
+
+      try {
+        const coordinates = {
+          lat: parseFloat(waypoint.location.lat),
+          lng: parseFloat(waypoint.location.lon),
+        };
+
+        // Create orange waypoint marker
+        const waypointMarker = L.divIcon({
+          className: "modern-location-pin waypoint-pin",
+          html: `<div style="
+            width: 32px; 
+            height: 32px; 
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            border-radius: 50% 50% 50% 0;
+            transform: rotate(-45deg);
+            border: 3px solid white;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            position: relative;
+          ">
+            <div style="
+              position: absolute;
+              top: 50%;
+              left: 50%;
+              transform: translate(-50%, -50%) rotate(45deg);
+              font-weight: bold;
+              color: white;
+              font-size: 14px;
+            ">${String.fromCharCode(67 + index)}</div>
+          </div>`,
+          iconSize: [32, 32],
+          iconAnchor: [16, 32],
+          popupAnchor: [0, -32],
+        });
+
+        const marker = L.marker([coordinates.lat, coordinates.lng], {
+          icon: waypointMarker,
+        });
+
+        const mapInstance = mapRef.current;
+        if (mapInstance && mapInstance.getContainer()) {
+          try {
+            marker.addTo(mapInstance);
+            marker.bindPopup(`Point ${String.fromCharCode(67 + index)}: ${waypoint.location.display_name}`);
+            markersRef.current.push(marker);
+            console.log(`📍 Added waypoint marker ${String.fromCharCode(67 + index)} at`, coordinates);
+          } catch (markerError) {
+            console.error("Error adding waypoint marker:", markerError);
+          }
+        }
+      } catch (error) {
+        console.error("Error creating waypoint marker:", error);
+      }
+    });
+  }, [waypoints, isMapReady]);
+
   // Modern CSS-based icons for better consistency and visual appeal
   const startIcon = L.divIcon({
     className: "modern-location-pin start-pin",
@@ -2015,29 +2111,22 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     waypoints: LatLng[] = []
   ): Promise<LatLng[]> => {
     try {
-      // Build waypoints string
-      const allPoints = [start, ...waypoints, end];
-      const coordinatesStr = allPoints
-        .map((point) => `${point.lng},${point.lat}`)
-        .join(";");
-
-      // Use your backend's routing endpoint
-      const localOSRMUrl = `${BACKEND_URL}/route?start=${start.lng},${
-        start.lat
-      }&end=${end.lng},${end.lat}${
+      // *** CRITICAL FIX: Use the /local-route endpoint with segmented A* routing ***
+      // This endpoint uses your flood-aware A* pathfinding logic, NOT OSRM
+      const localRouteUrl = `${BACKEND_URL}/local-route?start=${start.lat},${start.lng}&end=${end.lat},${end.lng}${
         waypoints.length > 0
           ? `&waypoints=${waypoints
-              .map((wp) => `${wp.lng},${wp.lat}`)
+              .map((wp) => `${wp.lng},${wp.lat}`) // Waypoints are lng,lat format
               .join(";")}`
           : ""
-      }&alternatives=true`;
+      }`;
 
-      console.log(`🗺️ Local OSRM URL: ${localOSRMUrl}`);
+      console.log(`� Using FastAPI /local-route (A* flood-aware routing): ${localRouteUrl}`);
       console.log(
-        `🗺️ Coordinates: Start=[${start.lng}, ${start.lat}] End=[${end.lng}, ${end.lat}]`
+        `   Coordinates: Start=[${start.lat}, ${start.lng}] End=[${end.lat}, ${end.lng}]`
       );
 
-      const response = await fetch(localOSRMUrl, {
+      const response = await fetch(localRouteUrl, {
         method: "GET",
         headers: {
           Accept: "application/json",
@@ -2047,88 +2136,64 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
       if (!response.ok) {
         throw new Error(
-          `Local OSRM API returned ${response.status}: ${response.statusText}`
+          `FastAPI /local-route returned ${response.status}: ${response.statusText}`
         );
       }
 
       const data = await response.json();
 
-      console.log("🗺️ Local OSRM Response:", data);
+      console.log("✅ FastAPI /local-route Response:", data);
       console.log("🔍 Response structure check:", {
-        hasRoutes: !!data.routes,
+        success: data.success,
         routesLength: data.routes?.length || 0,
-        firstRoute: data.routes?.[0] ? "present" : "missing",
-        geometry: data.routes?.[0]?.geometry ? "present" : "missing",
-        coordinates: data.routes?.[0]?.geometry?.coordinates
-          ? "present"
-          : "missing",
-        coordinatesLength: data.routes?.[0]?.geometry?.coordinates?.length || 0,
-        osrmCode: data.code,
-        osrmMessage: data.message,
+        message: data.message,
       });
 
-      // Check for OSRM response structure
-      if (data.routes && data.routes[0] && data.routes[0].geometry) {
-        let coordinates = [];
-
-        // Handle different OSRM response formats
-        if (data.routes[0].geometry.coordinates) {
-          // GeoJSON format
-          coordinates = data.routes[0].geometry.coordinates;
-        } else if (data.routes[0].geometry.type === "LineString") {
-          // Alternative GeoJSON format
-          coordinates = data.routes[0].geometry.coordinates;
-        } else {
-          throw new Error("Unsupported geometry format in OSRM response");
-        }
-
-        // Convert coordinates from OSRM format [lng, lat] to LatLng {lat, lng}
-        const route = coordinates.map((coord: number[]) => ({
-          lat: coord[1],
-          lng: coord[0],
-        }));
-
-        // VALIDATION: Check if route is valid and reaches the destination
-        if (route.length < 2) {
-          throw new Error("Route too short - likely invalid");
-        }
-
-        // Check if route actually reaches near the destination
-        const lastPoint = route[route.length - 1];
-        const distanceToEnd = Math.sqrt(
-          Math.pow(lastPoint.lat - end.lat, 2) +
-            Math.pow(lastPoint.lng - end.lng, 2)
-        );
-
-        // If route doesn't get within ~500m of destination, it's likely a dead end
-        if (distanceToEnd > 0.005) {
-          // ~500m in degrees
-          console.warn(
-            `⚠️ Route doesn't reach destination (${distanceToEnd.toFixed(
-              6
-            )} deg away)`
-          );
-          throw new Error("Route does not reach destination - likely dead end");
-        }
-
-        // APPLY ROUTE SIMPLIFICATION to reduce excessive waypoints
-        const simplifiedRoute = simplifyRoute(route, 0.0001);
-
-        console.log(
-          `✅ Local OSRM Success: Got ${route.length} waypoints, simplified to ${simplifiedRoute.length} for Zamboanga route`
-        );
-        return simplifiedRoute;
+      // Check for FastAPI response structure
+      if (!data.success || !data.routes || data.routes.length === 0) {
+        throw new Error(data.message || "No route found from FastAPI");
       }
 
-      // Check for error in response
-      if (data.code && data.code !== "Ok") {
-        const errorMsg = data.message || "No route found";
-        console.warn(`⚠️ OSRM routing issue: ${data.code} - ${errorMsg}`);
-        throw new Error(`OSRM Error: ${data.code} - ${errorMsg}`);
+      // Get the first route (or the one matching current selection)
+      // FastAPI returns routes in format: [{ route_type, coordinates: [[lat, lng], ...], ... }]
+      const selectedRoute = data.routes[0]; // You can select based on route_type if needed
+      
+      // Convert coordinates from [[lat, lng], ...] to LatLng objects
+      const route = selectedRoute.coordinates.map((coord: any) => ({
+        lat: coord.lat,
+        lng: coord.lng,
+      }));
+
+      // VALIDATION: Check if route is valid and reaches the destination
+      if (route.length < 2) {
+        throw new Error("Route too short - likely invalid");
       }
 
-      console.warn("⚠️ Local OSRM response missing expected route structure");
-      throw new Error("No valid route found in local OSRM response");
+      // Check if route actually reaches near the destination
+      const lastPoint = route[route.length - 1];
+      const distanceToEnd = Math.sqrt(
+        Math.pow(lastPoint.lat - end.lat, 2) +
+          Math.pow(lastPoint.lng - end.lng, 2)
+      );
+
+      // If route doesn't get within ~500m of destination, it's likely a dead end
+      if (distanceToEnd > 0.005) {
+        // ~500m in degrees
+        console.warn(
+          `⚠️ Route doesn't reach destination (${distanceToEnd.toFixed(
+            6
+          )} deg away)`
+        );
+        throw new Error("Route does not reach destination - likely dead end");
+      }
+
+      // APPLY ROUTE SIMPLIFICATION to reduce excessive waypoints
+      const simplifiedRoute = simplifyRoute(route, 0.0001);
+
+      console.log(
+        `✅ FastAPI Success: Got ${route.length} waypoints, simplified to ${simplifiedRoute.length} for flood-aware route (${selectedRoute.route_type})`
+      );
+      return simplifiedRoute;
     } catch (error) {
       // Don't spam console with expected routing failures
       if (
@@ -2152,7 +2217,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     end: LatLng
   ): Promise<{ safe: LatLng[]; manageable: LatLng[]; prone: LatLng[] }> => {
     console.log(
-      "🗺️ Getting distinct routes using local OSRM with strategic waypoints..."
+      "🗺️ Getting distinct routes using flood-aware routing endpoint..."
     );
 
     const routes = {
@@ -2162,29 +2227,36 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     };
 
     try {
-      // Strategy 1: Try to get multiple alternatives from OSRM directly first
-      console.log("  Strategy 1: Requesting alternatives from OSRM...");
-      const localOSRMUrl = `${BACKEND_URL}/osrm/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true&alternative.max_paths=3`;
+      // Use the new flood-aware routing endpoint that generates 3 distinct routes
+      console.log("  Calling /api/routing/flood-routes endpoint...");
+      const floodRoutesUrl = `${BACKEND_URL}/api/routing/flood-routes`;
 
-      const response = await fetch(localOSRMUrl, {
-        method: "GET",
+      const response = await fetch(floodRoutesUrl, {
+        method: "POST",
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          start_lat: start.lat,
+          start_lng: start.lng,
+          end_lat: end.lat,
+          end_lng: end.lng,
+        }),
       });
 
       if (response.ok) {
         const data = await response.json();
 
-        if (data.routes && data.routes.length >= 2) {
+        console.log("  📊 Flood-aware routing response:", data);
+
+        if (data.routes && data.routes.length > 0) {
           console.log(
-            `  ✅ Got ${data.routes.length} alternative routes from OSRM`
+            `  ✅ Got ${data.routes.length} flood-aware routes`
           );
 
-          // Use the alternatives as distinct routes
-          for (let i = 0; i < Math.min(3, data.routes.length); i++) {
-            const routeData = data.routes[i];
+          // Map routes by label (safest/balanced/direct)
+          for (const routeData of data.routes) {
             if (routeData.geometry && routeData.geometry.coordinates) {
               const route = routeData.geometry.coordinates.map(
                 (coord: number[]) => ({
@@ -2193,27 +2265,31 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                 })
               );
 
-              // Validate route reaches destination
-              const lastPoint = route[route.length - 1];
-              const distanceToEnd = Math.sqrt(
-                Math.pow(lastPoint.lat - end.lat, 2) +
-                  Math.pow(lastPoint.lng - end.lng, 2)
-              );
+              // Map based on label from backend
+              const label = routeData.label || "";
+              const floodPercentage = routeData.flood_percentage || 0;
+              
+              console.log(`    Route ${label}: ${floodPercentage.toFixed(1)}% flooded, ${route.length} points`);
 
-              if (distanceToEnd <= 0.005 && route.length >= 2) {
-                // Valid route
-                if (i === 0) routes.safe = route;
-                else if (i === 1) routes.manageable = route;
-                else if (i === 2) routes.prone = route;
+              if (label === "safest") {
+                routes.safe = route;
+              } else if (label === "balanced") {
+                routes.manageable = route;
+              } else if (label === "direct") {
+                routes.prone = route;
               }
             }
           }
 
-          // If we got good alternatives, return them
-          if (routes.safe && routes.manageable) {
+          // If we got routes, return them
+          if (routes.safe || routes.manageable || routes.prone) {
             console.log(
-              "  🎉 Successfully got distinct routes from OSRM alternatives!"
+              "  🎉 Successfully got distinct flood-aware routes!"
             );
+            console.log(`    Safe: ${routes.safe ? routes.safe.length : 0} points`);
+            console.log(`    Manageable: ${routes.manageable ? routes.manageable.length : 0} points`);
+            console.log(`    Prone: ${routes.prone ? routes.prone.length : 0} points`);
+            
             return {
               safe: routes.safe || [],
               manageable: routes.manageable || [],
@@ -2224,139 +2300,26 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       }
 
       console.log(
-        "  Strategy 1 failed, falling back to waypoint strategies..."
+        "  ⚠️ Flood-aware routing failed, falling back to direct route..."
       );
 
-      // Strategy 2: Direct route (will be used as safe route)
-      console.log("  Strategy 2: Direct route for safe path...");
-      routes.safe = await getLocalOSRMRoute(start, end, []);
-
-      // Strategy 3: EXTREME Northern arc route for manageable
-      console.log("  Strategy 3: Extreme northern arc for manageable path...");
-      const distance = Math.sqrt(
-        Math.pow(end.lat - start.lat, 2) + Math.pow(end.lng - start.lng, 2)
-      );
-
-      // Create a wide northern arc with multiple waypoints for guaranteed divergence
-      const northWaypoints = [];
-      const arcRadius = distance * 0.8; // Much larger arc - 80% of distance
-
-      // Early divergence point - force route north immediately
-      northWaypoints.push({
-        lat: start.lat + arcRadius * 0.6, // Strong northward push from start
-        lng: start.lng + (end.lng - start.lng) * 0.2, // 20% progress eastward
-      });
-
-      // Mid-route northern peak
-      northWaypoints.push({
-        lat: (start.lat + end.lat) / 2 + arcRadius * 0.7, // Peak of northern arc
-        lng: (start.lng + end.lng) / 2, // Centered longitude
-      });
-
-      // Late northern waypoint before destination
-      northWaypoints.push({
-        lat: end.lat + arcRadius * 0.4, // Still north of destination
-        lng: start.lng + (end.lng - start.lng) * 0.8, // 80% progress eastward
-      });
-
-      routes.manageable = await getLocalOSRMRoute(start, end, northWaypoints);
-
-      // Strategy 4: EXTREME Southern arc route for prone
-      console.log("  Strategy 4: Extreme southern arc for flood-prone path...");
-
-      const southWaypoints = [];
-
-      // Early southern divergence - force route south immediately
-      southWaypoints.push({
-        lat: start.lat - arcRadius * 0.5, // Strong southward push from start
-        lng: start.lng + (end.lng - start.lng) * 0.25, // 25% progress eastward
-      });
-
-      // Mid-route southern dip
-      southWaypoints.push({
-        lat: (start.lat + end.lat) / 2 - arcRadius * 0.6, // Deep southern dip
-        lng: (start.lng + end.lng) / 2 + arcRadius * 0.2, // Slight eastern offset
-      });
-
-      // Late southern waypoint before destination
-      southWaypoints.push({
-        lat: end.lat - arcRadius * 0.3, // Still south of destination
-        lng: start.lng + (end.lng - start.lng) * 0.75, // 75% progress eastward
-      });
-
-      routes.prone = await getLocalOSRMRoute(start, end, southWaypoints);
+      // Fallback: Use direct route for all three if the endpoint fails
+      console.log("  Fallback: Using direct route...");
+      const fallbackRoute = await getLocalOSRMRoute(start, end, []);
+      routes.safe = fallbackRoute;
+      routes.manageable = fallbackRoute;
+      routes.prone = fallbackRoute;
     } catch (error) {
-      console.warn("Some local OSRM routes failed, will use fallbacks:", error);
-    }
-
-    // Fill in any missing routes with EXTREME alternative strategies
-    if (!routes.manageable && routes.safe) {
-      console.log(
-        "  Fallback: Using EXTREME eastern detour for manageable route..."
-      );
+      console.warn("Flood-aware routing error, using fallback:", error);
+      
+      // Final fallback: Use direct route for all three
       try {
-        const distance = Math.sqrt(
-          Math.pow(end.lat - start.lat, 2) + Math.pow(end.lng - start.lng, 2)
-        );
-
-        // Create extreme eastern detour with multiple waypoints
-        const extremeEastWaypoints = [
-          {
-            lat: start.lat + distance * 0.3, // North-east from start
-            lng: start.lng + distance * 1.0, // WAY east - 100% of distance
-          },
-          {
-            lat: (start.lat + end.lat) / 2, // Mid-route
-            lng: Math.max(start.lng, end.lng) + distance * 0.8, // Far eastern detour
-          },
-          {
-            lat: end.lat - distance * 0.2, // Approach from south-east
-            lng: end.lng + distance * 0.6, // Still far east
-          },
-        ];
-
-        routes.manageable = await getLocalOSRMRoute(
-          start,
-          end,
-          extremeEastWaypoints
-        );
-      } catch (error) {
-        console.log("  Extreme eastern fallback failed");
-      }
-    }
-
-    if (!routes.prone && routes.safe) {
-      console.log(
-        "  Fallback: Using EXTREME western coastal detour for flood-prone route..."
-      );
-      try {
-        const distance = Math.sqrt(
-          Math.pow(end.lat - start.lat, 2) + Math.pow(end.lng - start.lng, 2)
-        );
-
-        // Create extreme western coastal detour with multiple waypoints
-        const extremeWestWaypoints = [
-          {
-            lat: start.lat - distance * 0.4, // South-west from start
-            lng: start.lng - distance * 0.9, // WAY west - 90% of distance
-          },
-          {
-            lat: (start.lat + end.lat) / 2 - distance * 0.3, // Deep southern dip
-            lng: Math.min(start.lng, end.lng) - distance * 0.7, // Far western coastal
-          },
-          {
-            lat: end.lat + distance * 0.1, // Approach from north-west
-            lng: end.lng - distance * 0.5, // Still west of destination
-          },
-        ];
-
-        routes.prone = await getLocalOSRMRoute(
-          start,
-          end,
-          extremeWestWaypoints
-        );
-      } catch (error) {
-        console.log("  Extreme western fallback failed");
+        const fallbackRoute = await getLocalOSRMRoute(start, end, []);
+        routes.safe = fallbackRoute;
+        routes.manageable = fallbackRoute;
+        routes.prone = fallbackRoute;
+      } catch (fallbackError) {
+        console.error("All routing strategies failed:", fallbackError);
       }
     }
 
@@ -5505,7 +5468,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
   const generateFloodRoutes = async (
     start: LatLng,
-    end: LatLng
+    end: LatLng,
+    waypointsCoords?: LatLng[]
   ): Promise<RouteDetails> => {
     try {
       console.log(
@@ -5514,6 +5478,12 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       console.log("📍 DEBUG: Input coordinates:");
       console.log(`   Start: lat=${start.lat}, lng=${start.lng}`);
       console.log(`   End: lat=${end.lat}, lng=${end.lng}`);
+      if (waypointsCoords && waypointsCoords.length > 0) {
+        console.log(`   Waypoints: ${waypointsCoords.length} stops`);
+        waypointsCoords.forEach((wp, i) => {
+          console.log(`     Point ${String.fromCharCode(67 + i)}: lat=${wp.lat}, lng=${wp.lng}`);
+        });
+      }
 
       // Validate coordinates are within Zamboanga bounds before routing
       if (
@@ -5540,12 +5510,24 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         );
       }
 
-      // Call backend hybrid endpoint that uses OSRM + flood analysis
+      // Build the URL with waypoints if provided
+      // *** CRITICAL FIX: Use /local-route endpoint with segmented A* routing ***
+      let routeUrl = `${BACKEND_URL}/local-route?start=${start.lat},${start.lng}&end=${end.lat},${end.lng}`;
+      
+      // Add waypoints to the request if available (waypoints use lng,lat format)
+      if (waypointsCoords && waypointsCoords.length > 0) {
+        const waypointsParam = waypointsCoords
+          .map(wp => `${wp.lng},${wp.lat}`)
+          .join(';');
+        routeUrl += `&waypoints=${waypointsParam}`;
+        console.log("🗺️ Including waypoints in route request:", waypointsParam);
+      }
+
+      // Call backend /local-route endpoint that uses segmented A* + flood analysis
       try {
-        console.log("🌐 Fetching hybrid routes from backend...");
-        const response = await fetch(
-          `${BACKEND_URL}/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`
-        );
+        console.log("🌐 Fetching flood-aware routes from FastAPI /local-route...");
+        console.log("📡 Request URL:", routeUrl);
+        const response = await fetch(routeUrl);
 
         if (!response.ok) {
           throw new Error(
@@ -5556,12 +5538,95 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         const data = await response.json();
         console.log("✅ Got hybrid routing response:", data);
 
+        // Check for backend error responses
+        if (data.success === false) {
+          throw new Error(`Backend routing failed: ${data.message || 'Unknown error'}`);
+        }
+
         if (!data.routes || data.routes.length === 0) {
           throw new Error("Backend returned no routes");
         }
 
         if (!data.analyses || data.analyses.length === 0) {
           throw new Error("Backend returned no flood analyses");
+        }
+        
+        // Update waypoint markers with OSRM-snapped coordinates
+        if (data.snapped_waypoints && data.snapped_waypoints.length > 0) {
+          console.log("📍 Updating waypoint markers with OSRM-snapped coordinates...");
+          const updatedWaypoints = [...waypoints];
+          
+          // Set flag to prevent useEffect from recreating markers
+          waypointsSnappedRef.current = true;
+          
+          // First, remove all existing waypoint markers
+          markersRef.current = markersRef.current.filter((marker) => {
+            const markerElement = marker.getElement();
+            if (markerElement && markerElement.className.includes('waypoint-pin')) {
+              if (mapRef.current && mapRef.current.hasLayer(marker)) {
+                mapRef.current.removeLayer(marker);
+              }
+              return false;
+            }
+            return true;
+          });
+          
+          data.snapped_waypoints.forEach((snappedWp: any, index: number) => {
+            if (index < updatedWaypoints.length && updatedWaypoints[index].location) {
+              const oldLat = updatedWaypoints[index].location.lat;
+              const oldLng = updatedWaypoints[index].location.lon;
+              
+              // Update to snapped coordinates
+              updatedWaypoints[index].location = {
+                ...updatedWaypoints[index].location,
+                lat: snappedWp.lat.toString(),
+                lon: snappedWp.lng.toString(),
+              };
+              
+              console.log(`   Point ${snappedWp.letter}: [${oldLng}, ${oldLat}] → [${snappedWp.lng}, ${snappedWp.lat}] (${snappedWp.name || 'unnamed road'})`);
+              
+              // Immediately create new marker at snapped location
+              if (mapRef.current) {
+                const waypointMarker = L.divIcon({
+                  className: "modern-location-pin waypoint-pin",
+                  html: `<div style="
+                    width: 32px; 
+                    height: 32px; 
+                    background: linear-gradient(135deg, #f59e0b, #d97706);
+                    border-radius: 50% 50% 50% 0;
+                    transform: rotate(-45deg);
+                    border: 3px solid white;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                    position: relative;
+                  ">
+                    <div style="
+                      position: absolute;
+                      top: 50%;
+                      left: 50%;
+                      transform: translate(-50%, -50%) rotate(45deg);
+                      font-weight: bold;
+                      color: white;
+                      font-size: 14px;
+                    ">${snappedWp.letter}</div>
+                  </div>`,
+                  iconSize: [32, 32],
+                  iconAnchor: [16, 32],
+                  popupAnchor: [0, -32],
+                });
+
+                const marker = L.marker([snappedWp.lat, snappedWp.lng], {
+                  icon: waypointMarker,
+                });
+
+                marker.addTo(mapRef.current);
+                marker.bindPopup(`Point ${snappedWp.letter}: ${snappedWp.name || 'Waypoint'} (snapped to road)`);
+                markersRef.current.push(marker);
+                console.log(`   ✅ Created marker at snapped location: [${snappedWp.lng}, ${snappedWp.lat}]`);
+              }
+            }
+          });
+          
+          setWaypoints(updatedWaypoints);
         }
 
         // Extract routes and analyses
@@ -5661,124 +5726,14 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           endName: selectedEndLocation?.display_name || "End Point",
         };
       } catch (error) {
-        console.error("❌ Hybrid routing failed:", error);
-
-        // Try to get at least one basic route from local OSRM directly as fallback
-        try {
-          console.log("Attempting fallback to direct local OSRM route...");
-          const basicRoute = await getLocalOSRMRoute(start, end);
-
-          if (basicRoute && basicRoute.length > 2) {
-            const distance = calculateRouteDistance(basicRoute);
-
-            return {
-              safeRoute: {
-                waypoints: basicRoute,
-                distance: distance.toFixed(1) + " km",
-                time: Math.round((distance / 40) * 60) + " min",
-                floodRisk: "safe",
-                riskLevel: "Low Risk",
-                description: `Basic safe route - Fallback mode`,
-                color: "#27ae60",
-              },
-              manageableRoute: {
-                waypoints: basicRoute,
-                distance: distance.toFixed(1) + " km",
-                time: Math.round((distance / 35) * 60) + " min",
-                floodRisk: "manageable",
-                riskLevel: "Medium Risk",
-                description: "Same route - API unavailable",
-                color: "#f39c12",
-              },
-              proneRoute: {
-                waypoints: basicRoute,
-                distance: distance.toFixed(1) + " km",
-                time: Math.round((distance / 30) * 60) + " min",
-                floodRisk: "prone",
-                riskLevel: "High Risk",
-                description: "Same route - API unavailable",
-                color: "#e74c3c",
-              },
-              startName: selectedStartLocation?.display_name || "Start Point",
-              endName: selectedEndLocation?.display_name || "End Point",
-            };
-          }
-        } catch (fallbackError) {
-          console.error("Fallback OSRM route also failed:", fallbackError);
-        }
-
-        // Last resort: Create fallback direct route (straight line)
-        const directRoute = [start, end];
-        const directDistance = calculateRouteDistance(directRoute);
-
-        return {
-          safeRoute: {
-            waypoints: directRoute,
-            distance: directDistance.toFixed(1) + " km",
-            time: Math.round((directDistance / 40) * 60) + " min",
-            floodRisk: "safe",
-            riskLevel: "Low Risk",
-            description: `Direct route - All APIs unavailable`,
-            color: "#27ae60",
-          },
-          manageableRoute: {
-            waypoints: directRoute,
-            distance: (directDistance * 1.1).toFixed(1) + " km",
-            time: Math.round(((directDistance * 1.1) / 35) * 60) + " min",
-            floodRisk: "manageable",
-            riskLevel: "Medium Risk",
-            description: "Direct route - All APIs unavailable",
-            color: "#f39c12",
-          },
-          proneRoute: {
-            waypoints: directRoute,
-            distance: (directDistance * 1.2).toFixed(1) + " km",
-            time: Math.round(((directDistance * 1.2) / 30) * 60) + " min",
-            floodRisk: "prone",
-            riskLevel: "High Risk",
-            description: "Direct route - All APIs unavailable",
-            color: "#e74c3c",
-          },
-          startName: selectedStartLocation?.display_name || "Start Point",
-          endName: selectedEndLocation?.display_name || "End Point",
-        };
+        console.error("❌ Backend routing failed:", error);
+        // Re-throw the error to be handled by the UI
+        throw new Error(`Route calculation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     } catch (outerError) {
       console.error("Fatal error in generateFloodRoutes:", outerError);
-      // Return a basic fallback if everything fails
-      const directRoute = [start, end];
-      const directDistance = calculateRouteDistance(directRoute);
-      return {
-        safeRoute: {
-          waypoints: directRoute,
-          distance: directDistance.toFixed(1) + " km",
-          time: Math.round((directDistance / 30) * 60) + " min",
-          floodRisk: "safe",
-          riskLevel: "Safe Route",
-          description: "Direct route - routing failed",
-          color: "#27ae60",
-        },
-        manageableRoute: {
-          waypoints: directRoute,
-          distance: directDistance.toFixed(1) + " km",
-          time: Math.round((directDistance / 30) * 60) + " min",
-          floodRisk: "manageable",
-          riskLevel: "Manageable Risk",
-          description: "Direct route - routing failed",
-          color: "#f39c12",
-        },
-        proneRoute: {
-          waypoints: directRoute,
-          distance: directDistance.toFixed(1) + " km",
-          time: Math.round((directDistance / 30) * 60) + " min",
-          floodRisk: "prone",
-          riskLevel: "High Risk",
-          description: "Direct route - routing failed",
-          color: "#e74c3c",
-        },
-        startName: selectedStartLocation?.display_name || "Start Point",
-        endName: selectedEndLocation?.display_name || "End Point",
-      };
+      // Re-throw to let the UI handle it properly
+      throw outerError;
     }
   };
 
@@ -6359,6 +6314,29 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       console.log("📍 End location data:", selectedEndLocation);
       console.log("📍 Start point:", startPoint);
       console.log("📍 End point:", endPoint);
+      
+      // Extract waypoint coordinates
+      const waypointsCoords: LatLng[] = waypoints
+        .filter(wp => wp.location !== null)
+        .map(wp => ({
+          lat: parseFloat(wp.location!.lat),
+          lng: parseFloat(wp.location!.lon)
+        }));
+      
+      console.log("🗺️ WAYPOINTS DEBUG:");
+      console.log("  Total waypoints in state:", waypoints.length);
+      console.log("  Waypoints with location:", waypoints.filter(wp => wp.location !== null).length);
+      console.log("  Waypoints array:", waypoints);
+      console.log("  Extracted coordinates:", waypointsCoords);
+      
+      if (waypointsCoords.length > 0) {
+        console.log(`✅ Route will include ${waypointsCoords.length} waypoint(s)`);
+        waypointsCoords.forEach((wp, i) => {
+          console.log(`   Point ${String.fromCharCode(67 + i)}: ${wp.lat}, ${wp.lng}`);
+        });
+      } else {
+        console.log("⚠️ No waypoints will be included in route");
+      }
 
       // Validate coordinates are within Zamboanga bounds
       if (
@@ -6426,8 +6404,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         setIsCalculatingRoutes(true);
         setPathfindingStep("calculating");
 
-        // Generate routes using OSRM
-        const routes = await generateFloodRoutes(startPoint!, endPoint!);
+        // Generate routes using OSRM with waypoints
+        const routes = await generateFloodRoutes(startPoint!, endPoint!, waypointsCoords);
 
         // Pre-cache elevation data for route points
         const elevationCache = new Map<string, TerrainData>();
@@ -8309,6 +8287,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     setEndSuggestions([]);
     setShowStartSuggestions(false);
     setShowEndSuggestions(false);
+    
+    // Clear waypoints
+    setWaypoints([]);
+    console.log("🗑️ Cleared all waypoints");
 
     // Clear localStorage
     localStorage.removeItem("safepath_start_location");
@@ -8997,6 +8979,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           selectedEndLocation={selectedEndLocation}
           handleFindRoute={handleFindRoute}
           clearDestinations={clearDestinations}
+          searchLocations={searchLocations}
+          waypoints={waypoints}
+          setWaypoints={setWaypoints}
           // Add these back temporarily to prevent crashes:
           routeOptions={{
             avoidFloods: false,
