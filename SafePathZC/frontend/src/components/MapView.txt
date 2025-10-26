@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+﻿import { useState, useEffect, useRef, useCallback } from "react";
 
 declare global {
   interface Window {
@@ -2217,7 +2217,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     end: LatLng
   ): Promise<{ safe: LatLng[]; manageable: LatLng[]; prone: LatLng[] }> => {
     console.log(
-      "🗺️ Getting distinct routes using local OSRM with strategic waypoints..."
+      "🗺️ Getting distinct routes using flood-aware routing endpoint..."
     );
 
     const routes = {
@@ -2227,29 +2227,36 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     };
 
     try {
-      // Strategy 1: Try to get multiple alternatives from OSRM directly first
-      console.log("  Strategy 1: Requesting alternatives from OSRM...");
-      const localOSRMUrl = `${BACKEND_URL}/osrm/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true&alternative.max_paths=3`;
+      // Use the new flood-aware routing endpoint that generates 3 distinct routes
+      console.log("  Calling /api/routing/flood-routes endpoint...");
+      const floodRoutesUrl = `${BACKEND_URL}/api/routing/flood-routes`;
 
-      const response = await fetch(localOSRMUrl, {
-        method: "GET",
+      const response = await fetch(floodRoutesUrl, {
+        method: "POST",
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          start_lat: start.lat,
+          start_lng: start.lng,
+          end_lat: end.lat,
+          end_lng: end.lng,
+        }),
       });
 
       if (response.ok) {
         const data = await response.json();
 
-        if (data.routes && data.routes.length >= 2) {
+        console.log("  📊 Flood-aware routing response:", data);
+
+        if (data.routes && data.routes.length > 0) {
           console.log(
-            `  ✅ Got ${data.routes.length} alternative routes from OSRM`
+            `  ✅ Got ${data.routes.length} flood-aware routes`
           );
 
-          // Use the alternatives as distinct routes
-          for (let i = 0; i < Math.min(3, data.routes.length); i++) {
-            const routeData = data.routes[i];
+          // Map routes by label (safest/balanced/direct)
+          for (const routeData of data.routes) {
             if (routeData.geometry && routeData.geometry.coordinates) {
               const route = routeData.geometry.coordinates.map(
                 (coord: number[]) => ({
@@ -2258,27 +2265,31 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                 })
               );
 
-              // Validate route reaches destination
-              const lastPoint = route[route.length - 1];
-              const distanceToEnd = Math.sqrt(
-                Math.pow(lastPoint.lat - end.lat, 2) +
-                  Math.pow(lastPoint.lng - end.lng, 2)
-              );
+              // Map based on label from backend
+              const label = routeData.label || "";
+              const floodPercentage = routeData.flood_percentage || 0;
+              
+              console.log(`    Route ${label}: ${floodPercentage.toFixed(1)}% flooded, ${route.length} points`);
 
-              if (distanceToEnd <= 0.005 && route.length >= 2) {
-                // Valid route
-                if (i === 0) routes.safe = route;
-                else if (i === 1) routes.manageable = route;
-                else if (i === 2) routes.prone = route;
+              if (label === "safest") {
+                routes.safe = route;
+              } else if (label === "balanced") {
+                routes.manageable = route;
+              } else if (label === "direct") {
+                routes.prone = route;
               }
             }
           }
 
-          // If we got good alternatives, return them
-          if (routes.safe && routes.manageable) {
+          // If we got routes, return them
+          if (routes.safe || routes.manageable || routes.prone) {
             console.log(
-              "  🎉 Successfully got distinct routes from OSRM alternatives!"
+              "  🎉 Successfully got distinct flood-aware routes!"
             );
+            console.log(`    Safe: ${routes.safe ? routes.safe.length : 0} points`);
+            console.log(`    Manageable: ${routes.manageable ? routes.manageable.length : 0} points`);
+            console.log(`    Prone: ${routes.prone ? routes.prone.length : 0} points`);
+            
             return {
               safe: routes.safe || [],
               manageable: routes.manageable || [],
@@ -2289,139 +2300,26 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       }
 
       console.log(
-        "  Strategy 1 failed, falling back to waypoint strategies..."
+        "  ⚠️ Flood-aware routing failed, falling back to direct route..."
       );
 
-      // Strategy 2: Direct route (will be used as safe route)
-      console.log("  Strategy 2: Direct route for safe path...");
-      routes.safe = await getLocalOSRMRoute(start, end, []);
-
-      // Strategy 3: EXTREME Northern arc route for manageable
-      console.log("  Strategy 3: Extreme northern arc for manageable path...");
-      const distance = Math.sqrt(
-        Math.pow(end.lat - start.lat, 2) + Math.pow(end.lng - start.lng, 2)
-      );
-
-      // Create a wide northern arc with multiple waypoints for guaranteed divergence
-      const northWaypoints = [];
-      const arcRadius = distance * 0.8; // Much larger arc - 80% of distance
-
-      // Early divergence point - force route north immediately
-      northWaypoints.push({
-        lat: start.lat + arcRadius * 0.6, // Strong northward push from start
-        lng: start.lng + (end.lng - start.lng) * 0.2, // 20% progress eastward
-      });
-
-      // Mid-route northern peak
-      northWaypoints.push({
-        lat: (start.lat + end.lat) / 2 + arcRadius * 0.7, // Peak of northern arc
-        lng: (start.lng + end.lng) / 2, // Centered longitude
-      });
-
-      // Late northern waypoint before destination
-      northWaypoints.push({
-        lat: end.lat + arcRadius * 0.4, // Still north of destination
-        lng: start.lng + (end.lng - start.lng) * 0.8, // 80% progress eastward
-      });
-
-      routes.manageable = await getLocalOSRMRoute(start, end, northWaypoints);
-
-      // Strategy 4: EXTREME Southern arc route for prone
-      console.log("  Strategy 4: Extreme southern arc for flood-prone path...");
-
-      const southWaypoints = [];
-
-      // Early southern divergence - force route south immediately
-      southWaypoints.push({
-        lat: start.lat - arcRadius * 0.5, // Strong southward push from start
-        lng: start.lng + (end.lng - start.lng) * 0.25, // 25% progress eastward
-      });
-
-      // Mid-route southern dip
-      southWaypoints.push({
-        lat: (start.lat + end.lat) / 2 - arcRadius * 0.6, // Deep southern dip
-        lng: (start.lng + end.lng) / 2 + arcRadius * 0.2, // Slight eastern offset
-      });
-
-      // Late southern waypoint before destination
-      southWaypoints.push({
-        lat: end.lat - arcRadius * 0.3, // Still south of destination
-        lng: start.lng + (end.lng - start.lng) * 0.75, // 75% progress eastward
-      });
-
-      routes.prone = await getLocalOSRMRoute(start, end, southWaypoints);
+      // Fallback: Use direct route for all three if the endpoint fails
+      console.log("  Fallback: Using direct route...");
+      const fallbackRoute = await getLocalOSRMRoute(start, end, []);
+      routes.safe = fallbackRoute;
+      routes.manageable = fallbackRoute;
+      routes.prone = fallbackRoute;
     } catch (error) {
-      console.warn("Some local OSRM routes failed, will use fallbacks:", error);
-    }
-
-    // Fill in any missing routes with EXTREME alternative strategies
-    if (!routes.manageable && routes.safe) {
-      console.log(
-        "  Fallback: Using EXTREME eastern detour for manageable route..."
-      );
+      console.warn("Flood-aware routing error, using fallback:", error);
+      
+      // Final fallback: Use direct route for all three
       try {
-        const distance = Math.sqrt(
-          Math.pow(end.lat - start.lat, 2) + Math.pow(end.lng - start.lng, 2)
-        );
-
-        // Create extreme eastern detour with multiple waypoints
-        const extremeEastWaypoints = [
-          {
-            lat: start.lat + distance * 0.3, // North-east from start
-            lng: start.lng + distance * 1.0, // WAY east - 100% of distance
-          },
-          {
-            lat: (start.lat + end.lat) / 2, // Mid-route
-            lng: Math.max(start.lng, end.lng) + distance * 0.8, // Far eastern detour
-          },
-          {
-            lat: end.lat - distance * 0.2, // Approach from south-east
-            lng: end.lng + distance * 0.6, // Still far east
-          },
-        ];
-
-        routes.manageable = await getLocalOSRMRoute(
-          start,
-          end,
-          extremeEastWaypoints
-        );
-      } catch (error) {
-        console.log("  Extreme eastern fallback failed");
-      }
-    }
-
-    if (!routes.prone && routes.safe) {
-      console.log(
-        "  Fallback: Using EXTREME western coastal detour for flood-prone route..."
-      );
-      try {
-        const distance = Math.sqrt(
-          Math.pow(end.lat - start.lat, 2) + Math.pow(end.lng - start.lng, 2)
-        );
-
-        // Create extreme western coastal detour with multiple waypoints
-        const extremeWestWaypoints = [
-          {
-            lat: start.lat - distance * 0.4, // South-west from start
-            lng: start.lng - distance * 0.9, // WAY west - 90% of distance
-          },
-          {
-            lat: (start.lat + end.lat) / 2 - distance * 0.3, // Deep southern dip
-            lng: Math.min(start.lng, end.lng) - distance * 0.7, // Far western coastal
-          },
-          {
-            lat: end.lat + distance * 0.1, // Approach from north-west
-            lng: end.lng - distance * 0.5, // Still west of destination
-          },
-        ];
-
-        routes.prone = await getLocalOSRMRoute(
-          start,
-          end,
-          extremeWestWaypoints
-        );
-      } catch (error) {
-        console.log("  Extreme western fallback failed");
+        const fallbackRoute = await getLocalOSRMRoute(start, end, []);
+        routes.safe = fallbackRoute;
+        routes.manageable = fallbackRoute;
+        routes.prone = fallbackRoute;
+      } catch (fallbackError) {
+        console.error("All routing strategies failed:", fallbackError);
       }
     }
 

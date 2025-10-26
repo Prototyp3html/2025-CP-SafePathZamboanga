@@ -1,6 +1,15 @@
 """
 Flood-aware routing endpoint that generates 3 distinct routes based on flood risk analysis.
-Uses OSRM for routing + terrain_roads.geojson for flood data.
+
+DATA SOURCES:
+- OSRM (localhost:5000): Uses zcroadmap.geojson for accurate road routing with proper hierarchy
+- terrain_roads.geojson: Provides flood risk data for each road segment
+- Weather data: Real-time precipitation and wind for dynamic risk assessment
+
+ROUTE CATEGORIES:
+- Safe (Green): Lowest flood percentage - prioritizes flood-free roads
+- Manageable (Orange): Moderate flood percentage - balanced approach
+- Flood-Prone (Red): Higher flood percentage - typically shortest/fastest route
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -13,136 +22,6 @@ import math
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/routing", tags=["flood-routing"])
-
-def remove_dead_end_branches(coordinates: List[List[float]], start_coord: Tuple[float, float], end_coord: Tuple[float, float]) -> List[List[float]]:
-    """
-    Remove spurious dead-end branches from route coordinates.
-    These appear as "antennas" sticking out from the main path.
-    
-    Strategy: 
-    1. Use sliding window to detect local detours that don't contribute to progress
-    2. Apply Douglas-Peucker simplification to reduce coordinate density
-    3. Detect and remove U-turns and backtracking
-    """
-    if len(coordinates) < 5:  # Need at least 5 points to detect patterns
-        return coordinates
-    
-    start_lng, start_lat = start_coord
-    end_lng, end_lat = end_coord
-    
-    def distance_to_end(coord):
-        """Calculate straight-line distance to end point"""
-        return math.sqrt((coord[0] - end_lng)**2 + (coord[1] - end_lat)**2)
-    
-    def point_distance(p1, p2):
-        """Calculate distance between two points"""
-        return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
-    
-    # Step 1: Remove obvious spikes and U-turns
-    cleaned = [coordinates[0]]  # Always keep start
-    i = 1
-    
-    while i < len(coordinates) - 1:
-        current = coordinates[i]
-        prev = cleaned[-1]
-        
-        # Look ahead window
-        window_size = min(7, len(coordinates) - i - 1)
-        
-        if window_size >= 3:
-            # Calculate distances for sliding window
-            distances = [distance_to_end(coordinates[i + j]) for j in range(window_size + 1)]
-            current_dist = distances[0]
-            
-            # Pattern 1: Spike detection - current point farther than neighbors
-            if i + 2 < len(coordinates):
-                prev_dist = distance_to_end(prev)
-                next_dist = distance_to_end(coordinates[i + 1])
-                next_next_dist = distance_to_end(coordinates[i + 2])
-                
-                # Spike: prev < current > next AND next continues forward
-                if current_dist > prev_dist and current_dist > next_dist and next_next_dist < current_dist:
-                    i += 1
-                    continue
-            
-            # Pattern 2: U-turn detection - goes away then comes back
-            moving_away = current_dist > distance_to_end(prev)
-            if moving_away and window_size >= 3:
-                # Check if route corrects course within next 3 points
-                future_closer = all(distances[j+1] < distances[j] for j in range(min(3, len(distances)-1)))
-                if future_closer:
-                    i += 1
-                    continue
-            
-            # Pattern 3: Backtracking - if current point is very close to a previous point
-            if len(cleaned) >= 3:
-                for prev_idx in range(max(0, len(cleaned) - 10), len(cleaned) - 2):
-                    if point_distance(current, cleaned[prev_idx]) < 0.0001:  # ~11m
-                        # Skip all points between prev_idx and current (it's a loop)
-                        i += 1
-                        continue
-        
-        # Keep this point
-        cleaned.append(current)
-        i += 1
-    
-    cleaned.append(coordinates[-1])  # Always keep end
-    
-    # Step 2: MORE AGGRESSIVE simplification using Douglas-Peucker
-    def simplify_path(points, tolerance=0.001):  # ~110m tolerance - more aggressive!
-        """Douglas-Peucker line simplification"""
-        if len(points) <= 2:
-            return points
-        
-        # Find the point with maximum distance from line segment
-        dmax = 0
-        index = 0
-        end_idx = len(points) - 1
-        
-        for i in range(1, end_idx):
-            d = perpendicular_distance(points[i], points[0], points[end_idx])
-            if d > dmax:
-                index = i
-                dmax = d
-        
-        # If max distance is greater than tolerance, recursively simplify
-        if dmax > tolerance:
-            # Recursive call
-            left = simplify_path(points[:index+1], tolerance)
-            right = simplify_path(points[index:], tolerance)
-            
-            # Combine results
-            return left[:-1] + right
-        else:
-            return [points[0], points[end_idx]]
-    
-    def perpendicular_distance(point, line_start, line_end):
-        """Calculate perpendicular distance from point to line segment"""
-        x0, y0 = point[0], point[1]
-        x1, y1 = line_start[0], line_start[1]
-        x2, y2 = line_end[0], line_end[1]
-        
-        numerator = abs((y2 - y1) * x0 - (x2 - x1) * y0 + x2 * y1 - y2 * x1)
-        denominator = math.sqrt((y2 - y1)**2 + (x2 - x1)**2)
-        
-        if denominator == 0:
-            return 0
-        
-        return numerator / denominator
-    
-    # Apply aggressive simplification to remove dead-ends
-    simplified = simplify_path(cleaned, tolerance=0.0012)  # ~133m - very aggressive
-    
-    # Stats
-    removal_ratio = 1 - (len(simplified) / len(coordinates))
-    if removal_ratio > 0.85:  # If removed more than 85%, might be TOO aggressive
-        logger.warning(f"Dead-end removal too aggressive ({len(simplified)}/{len(coordinates)} points, {removal_ratio:.1%} removed), using moderate cleaning")
-        simplified = simplify_path(cleaned, tolerance=0.0008)  # ~89m tolerance
-    
-    if len(simplified) < len(coordinates):
-        logger.info(f"Cleaned route: {len(coordinates)} → {len(simplified)} points ({removal_ratio:.1%} removed)")
-    
-    return simplified
 
 class FloodRouteRequest(BaseModel):
     start_lat: float
@@ -183,66 +62,86 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
         
         all_routes = []
         
-        # Build OSRM waypoint URL if waypoints provided
+        # Build OSRM waypoint coordinates if waypoints provided
         waypoint_coords = []
         if request.waypoints and len(request.waypoints) > 0:
             logger.info(f"Including {len(request.waypoints)} waypoints in routing")
             waypoint_coords = [(wp['lng'], wp['lat']) for wp in request.waypoints]
         
-        # Strategy 1: Generate routes through waypoints with variations between segments
-        # If waypoints exist: Generate 3 routes by adding intermediate waypoints between user waypoints
-        # These intermediate waypoints are offset perpendicular to create different paths
-        # If no waypoints: Use OSRM alternatives
-        if waypoint_coords:
-            logger.info("Strategy 1: Generating 3 routes through user waypoints with path variations...")
+        # Strategy 1: Try to get OSRM alternatives (or route through waypoints)
+        logger.info("Strategy 1: Requesting OSRM routing...")
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # Build coordinate string: start;waypoint1;waypoint2;...;end
+                coords_list = [(request.start_lng, request.start_lat)]
+                coords_list.extend(waypoint_coords)  # Add user waypoints
+                coords_list.append((request.end_lng, request.end_lat))
+                
+                coords_str = ";".join([f"{lng},{lat}" for lng, lat in coords_list])
+                
+                osrm_url = f"http://localhost:5000/route/v1/driving/{coords_str}"
+                params = {
+                    "overview": "full",
+                    "geometries": "geojson",
+                    "alternatives": "true" if not waypoint_coords else "false",  # OSRM doesn't support alternatives with waypoints
+                    "steps": "false"
+                }
+                
+                response = await client.get(osrm_url, params=params)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    
+                    if "routes" in data and len(data["routes"]) > 0:
+                        logger.info(f"Got {len(data['routes'])} routes from OSRM")
+                        
+                        for route_data in data["routes"]:
+                            geometry = route_data.get("geometry", {})
+                            coordinates = geometry.get("coordinates", [])
+                            
+                            if coordinates:
+                                # Analyze flood risk
+                                flood_analysis = analyze_route_flood_risk(
+                                    coordinates,
+                                    buffer_meters=50.0,
+                                    weather_data=request.weather_data
+                                )
+                                
+                                all_routes.append({
+                                    "geometry": geometry,
+                                    "distance": route_data.get("distance", 0),
+                                    "duration": route_data.get("duration", 0),
+                                    "flood_percentage": flood_analysis["flooded_percentage"],
+                                    "flooded_distance": flood_analysis["flooded_distance_m"],
+                                    "risk_level": flood_analysis["risk_level"],
+                                    "weather_impact": flood_analysis.get("weather_impact", "none")
+                                })
+        except Exception as e:
+            logger.warning(f"OSRM alternatives failed: {e}")
+        
+        # Strategy 2: Generate waypoint routes with perpendicular offsets
+        if len(all_routes) < 3:
+            logger.info("Strategy 2: Generating waypoint routes...")
             
-            # Generate 3 DISTINCT variations by adding offset waypoints between segments
-            # Use MUCH LARGER offsets to force completely different paths
-            # Safe route: Large LEFT offset (forces alternative roads)
-            # Balanced route: Small offset (slightly different path)
-            # Risky route: Large RIGHT offset (completely different path, may be flood-prone)
-            offset_variations = [
-                ("safe", 0.006),          # Left offset (~660m) - VERY different safer path
-                ("balanced", 0.0015),     # Small offset (~165m) - slightly different
-                ("risky", -0.006)         # Right offset (~660m) - VERY different riskier path
-            ]
+            offset_factors = [0.08, -0.08, 0.15, -0.15]  # 8%, -8%, 15%, -15% offsets
             
-            for label, base_offset in offset_variations:
+            for offset_factor in offset_factors:
+                if len(all_routes) >= 5:  # Limit total routes
+                    break
+                
                 try:
+                    # Create waypoint with perpendicular offset
+                    mid_lat = (request.start_lat + request.end_lat) / 2
+                    mid_lng = (request.start_lng + request.end_lng) / 2
+                    
+                    waypoint_lat = mid_lat + perp_y * distance * offset_factor
+                    waypoint_lng = mid_lng + perp_x * distance * offset_factor
+                    
                     async with httpx.AsyncClient(timeout=30.0) as client:
-                        # Build waypoint list with intermediate offset points between user waypoints
+                        # Build coordinate list: start;offset_waypoint;user_waypoints;end
                         coords_list = [(request.start_lng, request.start_lat)]
-                        
-                        # For each segment between waypoints, add an intermediate offset point
-                        for i, (wp_lng, wp_lat) in enumerate(waypoint_coords):
-                            # Add intermediate offset waypoint at midpoint of segment
-                            if i == 0:
-                                # First segment: between start and first waypoint
-                                mid_lng = (request.start_lng + wp_lng) / 2
-                                mid_lat = (request.start_lat + wp_lat) / 2
-                            else:
-                                # Between previous waypoint and current
-                                prev_wp_lng, prev_wp_lat = waypoint_coords[i-1]
-                                mid_lng = (prev_wp_lng + wp_lng) / 2
-                                mid_lat = (prev_wp_lat + wp_lat) / 2
-                            
-                            # Apply perpendicular offset to intermediate point
-                            offset_mid_lng = mid_lng + perp_x * base_offset
-                            offset_mid_lat = mid_lat + perp_y * base_offset
-                            
-                            # Add intermediate point, then user waypoint
-                            coords_list.append((offset_mid_lng, offset_mid_lat))
-                            coords_list.append((wp_lng, wp_lat))
-                        
-                        # Add intermediate point between last waypoint and end
-                        if waypoint_coords:
-                            last_wp_lng, last_wp_lat = waypoint_coords[-1]
-                            mid_lng = (last_wp_lng + request.end_lng) / 2
-                            mid_lat = (last_wp_lat + request.end_lat) / 2
-                            offset_mid_lng = mid_lng + perp_x * base_offset
-                            offset_mid_lat = mid_lat + perp_y * base_offset
-                            coords_list.append((offset_mid_lng, offset_mid_lat))
-                        
+                        coords_list.append((waypoint_lng, waypoint_lat))  # Add offset waypoint
+                        coords_list.extend(waypoint_coords)  # Add user waypoints
                         coords_list.append((request.end_lng, request.end_lat))
                         
                         coords_str = ";".join([f"{lng},{lat}" for lng, lat in coords_list])
@@ -265,139 +164,9 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                 coordinates = geometry.get("coordinates", [])
                                 
                                 if coordinates:
-                                    # Clean up dead-end branches
-                                    cleaned_coords = remove_dead_end_branches(
-                                        coordinates,
-                                        (request.start_lng, request.start_lat),
-                                        (request.end_lng, request.end_lat)
-                                    )
-                                    
-                                    geometry["coordinates"] = cleaned_coords
-                                    
                                     # Analyze flood risk
                                     flood_analysis = analyze_route_flood_risk(
-                                        cleaned_coords,
-                                        buffer_meters=50.0,
-                                        weather_data=request.weather_data
-                                    )
-                                    
-                                    all_routes.append({
-                                        "geometry": geometry,
-                                        "distance": route_data.get("distance", 0),
-                                        "duration": route_data.get("duration", 0),
-                                        "flood_percentage": flood_analysis["flooded_percentage"],
-                                        "flooded_distance": flood_analysis["flooded_distance_m"],
-                                        "risk_level": flood_analysis["risk_level"],
-                                        "weather_impact": flood_analysis.get("weather_impact", "none"),
-                                        "variation": label
-                                    })
-                                    
-                                    logger.info(f"Generated {label} route: {flood_analysis['flooded_percentage']:.1f}% flooded, {route_data.get('distance', 0)/1000:.2f}km")
-                except Exception as e:
-                    logger.warning(f"Route with {label} variation failed: {e}")
-        
-        else:
-            # No waypoints - use OSRM alternatives
-            logger.info("Strategy 1: Requesting OSRM alternatives (no waypoints)...")
-            try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    osrm_url = f"http://localhost:5000/route/v1/driving/{request.start_lng},{request.start_lat};{request.end_lng},{request.end_lat}"
-                    params = {
-                        "overview": "full",
-                        "geometries": "geojson",
-                        "alternatives": "true",
-                        "steps": "false"
-                    }
-                    
-                    response = await client.get(osrm_url, params=params)
-                    
-                    if response.status_code == 200:
-                        data = response.json()
-                        
-                        if "routes" in data and len(data["routes"]) > 0:
-                            logger.info(f"Got {len(data['routes'])} routes from OSRM")
-                            
-                            for route_data in data["routes"]:
-                                geometry = route_data.get("geometry", {})
-                                coordinates = geometry.get("coordinates", [])
-                                
-                                if coordinates:
-                                    cleaned_coords = remove_dead_end_branches(
                                         coordinates,
-                                        (request.start_lng, request.start_lat),
-                                        (request.end_lng, request.end_lat)
-                                    )
-                                    
-                                    geometry["coordinates"] = cleaned_coords
-                                    
-                                    flood_analysis = analyze_route_flood_risk(
-                                        cleaned_coords,
-                                        buffer_meters=50.0,
-                                        weather_data=request.weather_data
-                                    )
-                                    
-                                    all_routes.append({
-                                        "geometry": geometry,
-                                        "distance": route_data.get("distance", 0),
-                                        "duration": route_data.get("duration", 0),
-                                        "flood_percentage": flood_analysis["flooded_percentage"],
-                                        "flooded_distance": flood_analysis["flooded_distance_m"],
-                                        "risk_level": flood_analysis["risk_level"],
-                                        "weather_impact": flood_analysis.get("weather_impact", "none")
-                                    })
-            except Exception as e:
-                logger.warning(f"OSRM alternatives failed: {e}")
-        
-        # Strategy 2: Generate waypoint routes with perpendicular offsets
-        if len(all_routes) < 3:
-            logger.info("Strategy 2: Generating waypoint routes...")
-            
-            offset_factors = [0.08, -0.08, 0.15, -0.15]  # 8%, -8%, 15%, -15% offsets
-            
-            for offset_factor in offset_factors:
-                if len(all_routes) >= 5:  # Limit total routes
-                    break
-                
-                try:
-                    # Create waypoint with perpendicular offset
-                    mid_lat = (request.start_lat + request.end_lat) / 2
-                    mid_lng = (request.start_lng + request.end_lng) / 2
-                    
-                    waypoint_lat = mid_lat + perp_y * distance * offset_factor
-                    waypoint_lng = mid_lng + perp_x * distance * offset_factor
-                    
-                    async with httpx.AsyncClient(timeout=30.0) as client:
-                        osrm_url = f"http://localhost:5000/route/v1/driving/{request.start_lng},{request.start_lat};{waypoint_lng},{waypoint_lat};{request.end_lng},{request.end_lat}"
-                        params = {
-                            "overview": "full",
-                            "geometries": "geojson",
-                            "steps": "false"
-                        }
-                        
-                        response = await client.get(osrm_url, params=params)
-                        
-                        if response.status_code == 200:
-                            data = response.json()
-                            
-                            if "routes" in data and len(data["routes"]) > 0:
-                                route_data = data["routes"][0]
-                                geometry = route_data.get("geometry", {})
-                                coordinates = geometry.get("coordinates", [])
-                                
-                                if coordinates:
-                                    # Clean up dead-end branches before analysis
-                                    cleaned_coords = remove_dead_end_branches(
-                                        coordinates,
-                                        (request.start_lng, request.start_lat),
-                                        (request.end_lng, request.end_lat)
-                                    )
-                                    
-                                    # Update geometry with cleaned coordinates
-                                    geometry["coordinates"] = cleaned_coords
-                                    
-                                    # Analyze flood risk
-                                    flood_analysis = analyze_route_flood_risk(
-                                        cleaned_coords,
                                         buffer_meters=50.0,
                                         weather_data=request.weather_data
                                     )
@@ -414,71 +183,130 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                 except Exception as e:
                     logger.warning(f"Waypoint route with offset {offset_factor} failed: {e}")
         
-        # Strategy 3: Sort by flood percentage and select diverse routes
+        # Check if we have enough routes
         if len(all_routes) == 0:
             raise HTTPException(status_code=500, detail="Could not generate any routes")
         
-        # Sort by flood percentage (ascending - safest first)
+        logger.info(f"Generated {len(all_routes)} candidate routes. Selecting 3 distinct routes based on flood risk...")
+        
+        # Sort all routes by flood percentage (ascending - safest first)
         all_routes.sort(key=lambda r: r["flood_percentage"])
         
-        logger.info(f"Generated {len(all_routes)} candidate routes, selecting 3 distinct ones...")
+        # Log all candidate routes for debugging
+        for i, route in enumerate(all_routes):
+            logger.info(f"  Candidate {i+1}: {route['flood_percentage']:.1f}% flooded, {route['distance']:.0f}m, {route['duration']:.0f}s, risk={route['risk_level']}")
         
-        # Select 3 distinct routes:
-        # 1. Safest (lowest flood %)
-        # 2. Balanced (middle route)
-        # 3. Direct (shortest distance OR highest flood % if distinct)
+        # Strategy 3: Select 3 DISTINCT routes based on flood risk categories
+        # Goal: Ensure green=safe, orange=moderate, red=high risk
         
         selected_routes = []
+        used_indices = set()
         
-        # Safest route (lowest flood %)
-        safest = all_routes[0]
+        # SAFE ROUTE (Green): Find the route with LOWEST flood percentage
+        safe_idx = 0
+        safe_route = all_routes[safe_idx]
         selected_routes.append({
-            **safest,
-            "label": "safest",
+            **safe_route,
+            "label": "safe",
             "color": "#22c55e",  # Green
-            "description": f"Safest route: {safest['flood_percentage']:.1f}% flooded"
+            "description": f"Safe route: {safe_route['flood_percentage']:.1f}% flood risk"
         })
+        used_indices.add(safe_idx)
+        logger.info(f"✓ Selected SAFE route (index {safe_idx}): {safe_route['flood_percentage']:.1f}% flooded, {safe_route['distance']:.0f}m")
         
-        # Balanced route (middle)
-        if len(all_routes) >= 2:
-            mid_idx = len(all_routes) // 2
-            balanced = all_routes[mid_idx]
-            selected_routes.append({
-                **balanced,
-                "label": "balanced",
-                "color": "#f97316",  # Orange
-                "description": f"Balanced route: {balanced['flood_percentage']:.1f}% flooded"
-            })
+        # FLOOD-PRONE ROUTE (Red): Find the route with HIGHEST flood percentage OR shortest distance
+        # Priority 1: Route with highest flood % that's significantly different from safe route
+        flood_prone_idx = len(all_routes) - 1
+        flood_prone_route = all_routes[flood_prone_idx]
         
-        # Direct route (shortest distance OR last in flood-sorted list)
+        # Check if there's meaningful difference in flood risk
+        flood_diff = flood_prone_route['flood_percentage'] - safe_route['flood_percentage']
+        
+        if flood_diff < 5.0 and len(all_routes) > 1:
+            # All routes have similar flood %, so pick the shortest distance route as flood-prone
+            shortest_idx = min(
+                range(len(all_routes)), 
+                key=lambda i: all_routes[i]["distance"] if i not in used_indices else float('inf')
+            )
+            if shortest_idx != safe_idx:
+                flood_prone_idx = shortest_idx
+                flood_prone_route = all_routes[flood_prone_idx]
+        
+        selected_routes.append({
+            **flood_prone_route,
+            "label": "flood-prone",
+            "color": "#ef4444",  # Red
+            "description": f"Flood-prone route: {flood_prone_route['flood_percentage']:.1f}% flood risk"
+        })
+        used_indices.add(flood_prone_idx)
+        logger.info(f"✓ Selected FLOOD-PRONE route (index {flood_prone_idx}): {flood_prone_route['flood_percentage']:.1f}% flooded, {flood_prone_route['distance']:.0f}m")
+        
+        # MANAGEABLE ROUTE (Orange): Find a route in the MIDDLE range
+        # Look for a route with moderate flood risk between safe and flood-prone
+        manageable_route = None
+        manageable_idx = None
+        
         if len(all_routes) >= 3:
-            # Find shortest distance route
-            shortest = min(all_routes, key=lambda r: r["distance"])
+            # Calculate target flood percentage (midpoint between safe and flood-prone)
+            target_flood_pct = (safe_route['flood_percentage'] + flood_prone_route['flood_percentage']) / 2
             
-            # Check if shortest is different from safest
-            if abs(shortest["distance"] - safest["distance"]) > 100:  # At least 100m difference
-                direct = shortest
-            else:
-                # Use highest flood % route instead
-                direct = all_routes[-1]
-            
-            selected_routes.append({
-                **direct,
-                "label": "direct",
-                "color": "#ef4444",  # Red
-                "description": f"Direct route: {direct['flood_percentage']:.1f}% flooded"
-            })
+            # Find the route closest to the target percentage that hasn't been used
+            best_diff = float('inf')
+            for i, route in enumerate(all_routes):
+                if i in used_indices:
+                    continue
+                
+                diff = abs(route['flood_percentage'] - target_flood_pct)
+                if diff < best_diff:
+                    best_diff = diff
+                    manageable_route = route
+                    manageable_idx = i
         
-        # If only 1-2 routes, duplicate the safest route
-        while len(selected_routes) < 3:
-            selected_routes.append({
-                **safest,
-                "label": ["balanced", "direct"][len(selected_routes) - 1],
-                "color": ["#f97316", "#ef4444"][len(selected_routes) - 1],
-                "description": f"Route: {safest['flood_percentage']:.1f}% flooded"
-            })
+        # Fallback: use middle index if no good candidate found
+        if manageable_route is None:
+            mid_idx = len(all_routes) // 2
+            if mid_idx not in used_indices:
+                manageable_idx = mid_idx
+                manageable_route = all_routes[mid_idx]
+            elif len(all_routes) > 1:
+                # Find any unused route
+                for i, route in enumerate(all_routes):
+                    if i not in used_indices:
+                        manageable_idx = i
+                        manageable_route = route
+                        break
         
-        logger.info(f"Selected routes - Safe: {selected_routes[0]['flood_percentage']:.1f}%, Balanced: {selected_routes[1]['flood_percentage']:.1f}%, Direct: {selected_routes[2]['flood_percentage']:.1f}%")
+        # Final fallback: duplicate safe route if still no manageable found
+        if manageable_route is None:
+            manageable_route = safe_route
+            manageable_idx = safe_idx
+        
+        selected_routes.insert(1, {  # Insert in middle position (safe, manageable, flood-prone)
+            **manageable_route,
+            "label": "manageable",
+            "color": "#f97316",  # Orange
+            "description": f"Manageable route: {manageable_route['flood_percentage']:.1f}% flood risk"
+        })
+        logger.info(f"✓ Selected MANAGEABLE route (index {manageable_idx}): {manageable_route['flood_percentage']:.1f}% flooded, {manageable_route['distance']:.0f}m")
+        
+        # If we only have 1 or 2 unique routes, the duplicates will be marked but still shown
+        if len(all_routes) == 1:
+            logger.warning("⚠ Only 1 unique route generated - showing same route 3 times with different risk labels")
+        elif len(all_routes) == 2:
+            logger.warning("⚠ Only 2 unique routes generated - duplicating one route")
+        
+        # Reorder to ensure: [safe=green, manageable=orange, flood-prone=red]
+        final_routes = [
+            selected_routes[0],  # Safe (green)
+            selected_routes[1],  # Manageable (orange)
+            selected_routes[2],  # Flood-prone (red)
+        ]
+        
+        # Summary log with colored indicators
+        logger.info(f"✓ Final routes selected from {len(all_routes)} candidates:")
+        logger.info(f"  🟢 Safe:        {final_routes[0]['flood_percentage']:5.1f}% flooded, {final_routes[0]['distance']:7.0f}m, {final_routes[0]['duration']:5.0f}s")
+        logger.info(f"  🟠 Manageable:  {final_routes[1]['flood_percentage']:5.1f}% flooded, {final_routes[1]['distance']:7.0f}m, {final_routes[1]['duration']:5.0f}s")
+        logger.info(f"  🔴 Flood-prone: {final_routes[2]['flood_percentage']:5.1f}% flooded, {final_routes[2]['distance']:7.0f}m, {final_routes[2]['duration']:5.0f}s")
         
         return FloodRouteResponse(
             routes=selected_routes,

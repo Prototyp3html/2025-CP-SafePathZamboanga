@@ -1,6 +1,18 @@
 """
 Rebuild OSRM with zcroadmap.geojson data
-This ensures OSRM uses the same roads as our GeoJSON files
+This ensures OSRM uses the same roads as our GeoJSON files with proper road hierarchy
+
+IMPORTANT: Run this script when:
+1. You've updated zcroadmap.geojson with new roads
+2. OSRM is producing weird routes (dead ends, unnecessary detours)
+3. After initial setup
+
+This script will:
+- Convert zcroadmap.geojson to OSM format (preserving road types, speeds, lanes, etc.)
+- Build OSRM routing data with proper road hierarchy
+- This takes 2-5 minutes to complete
+
+After running this, restart the OSRM container: docker-compose restart osrm-driving
 """
 import json
 import subprocess
@@ -9,6 +21,7 @@ from pathlib import Path
 
 print("=" * 70)
 print("REBUILDING OSRM WITH ZCROADMAP.GEOJSON")
+print("This will create high-quality routing data with proper road hierarchy")
 print("=" * 70)
 
 # Paths
@@ -60,16 +73,54 @@ for feature in geojson['features']:
     for node in way_nodes:
         osm_xml.append(f'    <nd ref="{node}"/>')
     
-    # Add tags
+    # Add tags - preserve as many OSM tags as possible for better routing
     highway = properties.get('highway', 'unclassified')
     osm_xml.append(f'    <tag k="highway" v="{highway}"/>')
     
+    # Name
     if properties.get('name'):
-        name = properties['name'].replace('"', '&quot;').replace('&', '&amp;')
+        name = properties['name'].replace('"', '&quot;').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
         osm_xml.append(f'    <tag k="name" v="{name}"/>')
     
+    # Oneway
     if properties.get('oneway'):
         osm_xml.append(f'    <tag k="oneway" v="yes"/>')
+    
+    # Parse other_tags string to extract important routing properties
+    other_tags = properties.get('other_tags', '')
+    tags_parsed = {}
+    
+    if other_tags:
+        # other_tags format: "key1"=>"value1","key2"=>"value2"
+        # Extract: maxspeed, lanes, surface, ref (road number)
+        try:
+            # Simple parsing of other_tags
+            import re
+            tag_pattern = r'"([^"]+)"=>"([^"]+)"'
+            tag_matches = re.findall(tag_pattern, other_tags)
+            
+            for key, value in tag_matches:
+                # Include important tags for routing quality
+                if key in ['maxspeed', 'lanes', 'surface', 'ref', 'junction', 'designation']:
+                    value_escaped = value.replace('"', '&quot;').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                    osm_xml.append(f'    <tag k="{key}" v="{value_escaped}"/>')
+                    tags_parsed[key] = value
+        except:
+            pass  # If parsing fails, skip other_tags
+    
+    # Set default maxspeed based on highway type if not specified
+    if 'maxspeed' not in tags_parsed:
+        speed_defaults = {
+            'motorway': '100',
+            'trunk': '80',
+            'primary': '60',
+            'secondary': '50',
+            'tertiary': '40',
+            'unclassified': '30',
+            'residential': '25'
+        }
+        if highway in speed_defaults:
+            osm_xml.append(f'    <tag k="maxspeed" v="{speed_defaults[highway]}"/>')
     
     osm_xml.append(f'  </way>')
     way_id += 1
@@ -149,11 +200,20 @@ else:
 print(f"\n" + "=" * 70)
 print(f"✅ SUCCESS! OSRM rebuilt with zcroadmap.geojson")
 print(f"=" * 70)
-print(f"\nNext steps:")
-print(f"1. Stop the current OSRM container:")
-print(f"   docker stop <container_id>")
-print(f"2. Start OSRM with new data:")
-print(f"   cd osrm-data")
-print(f"   docker run -d -p 5000:5000 -v \"$PWD:/data\" osrm/osrm-backend osrm-routed --algorithm ch /data/zamboanga_roads.osrm")
-print(f"3. Restart your backend")
-print(f"\nNow OSRM will use the same roads as your GeoJSON! 🎉")
+print(f"\n📊 Data created:")
+print(f"  • {len(node_coords)} road nodes")
+print(f"  • {way_id-1} road segments")
+print(f"  • Road hierarchy preserved (primary > secondary > tertiary > residential)")
+print(f"  • Speed limits, lanes, and surfaces included")
+print(f"\n🔄 Next step: Restart OSRM container")
+print(f"\n   Run in PowerShell:")
+print(f"   cd SafePathZC")
+print(f"   docker-compose restart osrm-driving")
+print(f"\n   This will reload OSRM with the new road data.")
+print(f"   Wait ~30 seconds for OSRM to start, then test routing!")
+print(f"\n✨ Benefits of rebuilt OSRM:")
+print(f"  • Prefers major roads (highways, primary roads)")
+print(f"  • Avoids dead-end streets")
+print(f"  • Better route quality overall")
+print(f"  • Matches your GeoJSON data exactly")
+print(f"\n" + "=" * 70)
