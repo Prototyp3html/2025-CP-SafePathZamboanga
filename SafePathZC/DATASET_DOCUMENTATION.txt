@@ -151,9 +151,15 @@ Status:             UNUSED - Sample OSRM response for testing
 --------------------------------------------------------------------------------
 File Name:          Zamboanga_DEM.tiff
 File Size:          77.6 KB (79,475 bytes)
-Format:             GeoTIFF
+Format:             GeoTIFF Raster (NOT a photo - contains elevation data)
 Coordinate System:  WGS 84 (EPSG:4326)
 Last Modified:      September 19, 2025 (9:23 PM)
+
+WHAT IS A DEM?
+  A Digital Elevation Model (DEM) is a raster dataset where each pixel stores
+  an elevation value (height above sea level) rather than color information.
+  
+  Example: Pixel at [122.05°E, 6.95°N] = 45.3 meters above sea level
 
 SPECIFICATIONS:
   - Dimensions: 2,500 x 1,351 pixels
@@ -163,12 +169,14 @@ SPECIFICATIONS:
       East:  122.224201°E
       South: 6.885238°N
       North: 7.057308°N
-  - Data Type: Single band elevation data
+  - Data Type: Single band - each pixel contains elevation in meters
   - Compression: DEFLATE
+  - Pixel Values: Continuous elevation data (0-500m range estimated)
 
 ELEVATION STATISTICS:
   - Coverage: Zamboanga City and surrounding areas
   - Vertical Accuracy: ±10-15 meters (typical SRTM accuracy)
+  - Use Case: Identify low-lying flood-prone areas vs elevated safe zones
 
 DATA SOURCE:
   - Original Source: UNKNOWN (needs verification)
@@ -181,13 +189,38 @@ DATA SOURCE:
 
 USAGE IN APPLICATION:
   ❌ NOT USED AT RUNTIME - No rasterio/gdal code in active Python files
-  ✓ Was used ONCE to extract elevation data for terrain_roads.geojson
-  ✓ Kept as source data for thesis documentation and potential regeneration
-  ✓ File is NOT loaded when application runs
+  ❌ NOT displayed as visual layer on map
+  ✓ Was used ONCE (September 2025) during data preprocessing
+  
+HOW IT WAS USED:
+  The DEM was processed to extract elevation values along each road segment:
+  
+  Step 1: For each road in zcroadmap.geojson
+  Step 2: Sample elevation values from DEM at road coordinates
+  Step 3: Calculate statistics (mean, min, max elevation)
+  Step 4: Compute slope gradient
+  Step 5: Add elevation properties to terrain_roads.geojson
+  
+  Result: All roads now have elevation data without needing the DEM at runtime
+  
+PROPERTIES EXTRACTED:
+  - elev_mean: Average elevation along road segment (e.g., 45.3m)
+  - elev_min: Lowest point on segment (e.g., 12.5m)  
+  - elev_max: Highest point on segment (e.g., 78.9m)
+  - slope_gradient: Road steepness calculated from elevation change
 
-IMPORTANT: This file was used during data preparation (September 2025) to 
-enrich the terrain_roads.geojson file with elevation data. The application 
-now uses the pre-processed terrain_roads.geojson and does NOT read TIFF files.
+CURRENT STATUS:
+  ✓ Source file kept for thesis documentation
+  ✓ Could be used to regenerate terrain_roads.geojson if needed
+  ✓ Could potentially be displayed as colored elevation map layer
+  ✗ Application does NOT load this file during normal operation
+  
+POTENTIAL VISUALIZATION (Not Implemented):
+  If rendered on map, DEM would show:
+    - Blue areas: Low elevation (0-10m) - Flood-prone coastal zones
+    - Green areas: Moderate elevation (10-50m) - Safer residential areas
+    - Yellow areas: Hills (50-100m)
+    - Red areas: High elevation (100m+) - Mountains/safe zones
 
 NOTE: Original source documentation needed for proper attribution in thesis.
 Recommend checking download history from September 19, 2025.
