@@ -17,6 +17,12 @@ from typing import List, Dict, Any, Optional, Tuple
 import httpx
 import logging
 from services.local_routing import analyze_route_flood_risk, get_routing_service, Coordinate
+from services.transportation_modes import (
+    TRANSPORTATION_MODES, 
+    get_osrm_endpoint_for_mode, 
+    adjust_route_for_transportation_mode,
+    get_flood_safety_for_mode
+)
 import math
 
 logger = logging.getLogger(__name__)
@@ -30,6 +36,7 @@ class FloodRouteRequest(BaseModel):
     end_lng: float
     waypoints: Optional[List[Dict[str, float]]] = None  # List of {lat, lng} dicts
     weather_data: Optional[Dict[str, Any]] = None
+    transport_mode: str = "car"  # car, motorcycle, walking, public_transport, bicycle, truck
 
 class FloodRouteResponse(BaseModel):
     routes: List[Dict[str, Any]]
@@ -79,7 +86,9 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                 
                 coords_str = ";".join([f"{lng},{lat}" for lng, lat in coords_list])
                 
-                osrm_url = f"http://localhost:5000/route/v1/driving/{coords_str}"
+                # Use transportation mode-specific OSRM endpoint
+                osrm_base = get_osrm_endpoint_for_mode(request.transport_mode)
+                osrm_url = f"{osrm_base}/{coords_str}"
                 params = {
                     "overview": "full",
                     "geometries": "geojson",
@@ -107,7 +116,8 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                     weather_data=request.weather_data
                                 )
                                 
-                                all_routes.append({
+                                # Apply transportation mode adjustments
+                                route_info = {
                                     "geometry": geometry,
                                     "distance": route_data.get("distance", 0),
                                     "duration": route_data.get("duration", 0),
@@ -115,7 +125,12 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                     "flooded_distance": flood_analysis["flooded_distance_m"],
                                     "risk_level": flood_analysis["risk_level"],
                                     "weather_impact": flood_analysis.get("weather_impact", "none")
-                                })
+                                }
+                                
+                                # Adjust for transportation mode
+                                route_info = adjust_route_for_transportation_mode(route_info, request.transport_mode)
+                                
+                                all_routes.append(route_info)
         except Exception as e:
             logger.warning(f"OSRM alternatives failed: {e}")
         
@@ -146,7 +161,9 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                         
                         coords_str = ";".join([f"{lng},{lat}" for lng, lat in coords_list])
                         
-                        osrm_url = f"http://localhost:5000/route/v1/driving/{coords_str}"
+                        # Use transportation mode-specific OSRM endpoint
+                        osrm_base = get_osrm_endpoint_for_mode(request.transport_mode)
+                        osrm_url = f"{osrm_base}/{coords_str}"
                         params = {
                             "overview": "full",
                             "geometries": "geojson",
@@ -171,7 +188,8 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                         weather_data=request.weather_data
                                     )
                                     
-                                    all_routes.append({
+                                    # Apply transportation mode adjustments
+                                    route_info = {
                                         "geometry": geometry,
                                         "distance": route_data.get("distance", 0),
                                         "duration": route_data.get("duration", 0),
@@ -179,7 +197,12 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                         "flooded_distance": flood_analysis["flooded_distance_m"],
                                         "risk_level": flood_analysis["risk_level"],
                                         "weather_impact": flood_analysis.get("weather_impact", "none")
-                                    })
+                                    }
+                                    
+                                    # Adjust for transportation mode
+                                    route_info = adjust_route_for_transportation_mode(route_info, request.transport_mode)
+                                    
+                                    all_routes.append(route_info)
                 except Exception as e:
                     logger.warning(f"Waypoint route with offset {offset_factor} failed: {e}")
         

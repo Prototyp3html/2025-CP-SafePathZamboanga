@@ -10,7 +10,24 @@ import {
   MapPin,
   Clock,
   Flag,
+  Trash2,
+  UserX,
+  Shield,
+  BarChart3,
+  TrendingUp,
+  Activity,
+  Calendar,
+  ChevronRight,
+  Settings,
+  Bell,
+  Star,
+  Award,
+  Globe,
+  Zap,
+  Target,
 } from "lucide-react";
+import { notification } from "@/utils/notifications";
+import { useConfirmation } from "@/components/ui/confirmation-dialog";
 
 interface Report {
   id: string;
@@ -55,6 +72,8 @@ interface User {
 }
 
 export const AdminDashboard: React.FC = () => {
+  const { confirm } = useConfirmation();
+
   const [activeTab, setActiveTab] = useState<"reports" | "users" | "analytics">(
     "reports"
   );
@@ -66,6 +85,15 @@ export const AdminDashboard: React.FC = () => {
     "all" | "pending" | "approved" | "rejected"
   >("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    userId: number | null;
+    userName: string;
+  }>({
+    isOpen: false,
+    userId: null,
+    userName: "",
+  });
 
   const BACKEND_URL =
     import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
@@ -169,6 +197,145 @@ export const AdminDashboard: React.FC = () => {
     } catch (error) {
       console.error("Error loading users:", error);
       setUsers([]);
+    }
+  };
+
+  const deleteUser = async (userId: number) => {
+    try {
+      const token = localStorage.getItem("admin_token");
+      if (!token) {
+        console.error("No admin token found");
+        return;
+      }
+
+      const response = await fetch(`${BACKEND_URL}/admin/users/${userId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        console.log("User deleted successfully");
+        // Reload users to refresh the list
+        loadUsers();
+        // Close the confirmation dialog
+        setDeleteConfirm({ isOpen: false, userId: null, userName: "" });
+      } else {
+        const errorData = await response.json();
+        console.error("Failed to delete user:", response.status, errorData);
+        notification.error(
+          "Delete Failed",
+          "Failed to delete user. Please try again."
+        );
+      }
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      notification.error(
+        "Delete Error",
+        "Error deleting user. Please try again."
+      );
+    }
+  };
+
+  const toggleUserStatus = async (userId: number, currentStatus: boolean) => {
+    try {
+      const token = localStorage.getItem("admin_token");
+      if (!token) {
+        console.error("No admin token found");
+        return;
+      }
+
+      const response = await fetch(
+        `${BACKEND_URL}/admin/users/${userId}/status`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            is_active: !currentStatus,
+          }),
+        }
+      );
+
+      if (response.ok) {
+        console.log("User status updated successfully");
+        // Reload users to refresh the list
+        loadUsers();
+      } else {
+        const errorData = await response.json();
+        console.error(
+          "Failed to update user status:",
+          response.status,
+          errorData
+        );
+        notification.error(
+          "Update Failed",
+          "Failed to update user status. Please try again."
+        );
+      }
+    } catch (error) {
+      console.error("Error updating user status:", error);
+      notification.error(
+        "Update Error",
+        "Error updating user status. Please try again."
+      );
+    }
+  };
+
+  const openDeleteConfirm = (userId: number, userName: string) => {
+    setDeleteConfirm({
+      isOpen: true,
+      userId: userId,
+      userName: userName,
+    });
+  };
+
+  const closeDeleteConfirm = () => {
+    setDeleteConfirm({
+      isOpen: false,
+      userId: null,
+      userName: "",
+    });
+  };
+
+  const syncForumPosts = async () => {
+    const token = localStorage.getItem("admin_token");
+    if (!token) {
+      notification.auth.unauthorized();
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `${BACKEND_URL}/admin/reports/sync-forum-posts`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        notification.success(
+          "Forum Posts Synced Successfully!",
+          `Successfully synced ${result.synced_count} forum posts with approved reports. Check the community forum to see the updates!`
+        );
+      } else {
+        throw new Error(`Failed to sync: ${response.status}`);
+      }
+    } catch (error) {
+      console.error("Sync error:", error);
+      notification.error(
+        "Sync Failed",
+        "Failed to sync forum posts. Please try again."
+      );
     }
   };
 
@@ -295,100 +462,221 @@ export const AdminDashboard: React.FC = () => {
   };
 
   return (
-    <div className="w-full">
-      {/* Tab Navigation */}
-      <div className="flex space-x-1 mb-6">
-        <button
-          onClick={() => setActiveTab("reports")}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            activeTab === "reports"
-              ? "bg-blue-600 text-white"
-              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-          }`}
-        >
-          <Flag className="inline-block w-4 h-4 mr-2" />
-          Reports ({Array.isArray(reports) ? reports.length : 0})
-        </button>
-        <button
-          onClick={() => setActiveTab("users")}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            activeTab === "users"
-              ? "bg-blue-600 text-white"
-              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-          }`}
-        >
-          <Users className="inline-block w-4 h-4 mr-2" />
-          Users ({Array.isArray(users) ? users.length : 0})
-        </button>
-        <button
-          onClick={() => setActiveTab("analytics")}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            activeTab === "analytics"
-              ? "bg-blue-600 text-white"
-              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-          }`}
-        >
-          <AlertTriangle className="inline-block w-4 h-4 mr-2" />
-          Analytics
-        </button>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header Section */}
+      <div className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="bg-blue-600 p-2 rounded-lg">
+                <Settings className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">
+                  Admin Dashboard
+                </h1>
+                <p className="text-gray-600 text-sm">
+                  Manage your SafePath system
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        {/* Tab Navigation */}
+        <div className="flex space-x-1 mb-8 bg-white p-1 rounded-lg shadow-sm border border-gray-200">
+          <button
+            onClick={() => setActiveTab("reports")}
+            className={`flex items-center px-4 py-2 rounded-md font-medium transition-all duration-200 ${
+              activeTab === "reports"
+                ? "bg-blue-600 text-white"
+                : "text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            <Flag className="w-4 h-4 mr-2" />
+            Reports
+            <span
+              className={`ml-2 px-2 py-0.5 rounded-full text-xs font-medium ${
+                activeTab === "reports"
+                  ? "bg-white/20 text-white"
+                  : "bg-gray-200 text-gray-600"
+              }`}
+            >
+              {Array.isArray(reports) ? reports.length : 0}
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab("users")}
+            className={`flex items-center px-4 py-2 rounded-md font-medium transition-all duration-200 ${
+              activeTab === "users"
+                ? "bg-blue-600 text-white"
+                : "text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            <Users className="w-4 h-4 mr-2" />
+            Users
+            <span
+              className={`ml-2 px-2 py-0.5 rounded-full text-xs font-medium ${
+                activeTab === "users"
+                  ? "bg-white/20 text-white"
+                  : "bg-gray-200 text-gray-600"
+              }`}
+            >
+              {Array.isArray(users) ? users.length : 0}
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab("analytics")}
+            className={`flex items-center px-4 py-2 rounded-md font-medium transition-all duration-200 ${
+              activeTab === "analytics"
+                ? "bg-blue-600 text-white"
+                : "text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            <BarChart3 className="w-4 h-4 mr-2" />
+            Analytics
+          </button>
+        </div>
       </div>
 
       {/* Reports Tab */}
       {activeTab === "reports" && (
-        <div>
-          {/* Filters and Search */}
-          <div className="flex flex-col sm:flex-row gap-4 mb-6">
-            <div className="flex gap-2">
-              <button
-                onClick={() => setFilter("all")}
-                className={`px-3 py-1 rounded-full text-sm ${
-                  filter === "all"
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-200 text-gray-700"
-                }`}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setFilter("pending")}
-                className={`px-3 py-1 rounded-full text-sm ${
-                  filter === "pending"
-                    ? "bg-yellow-600 text-white"
-                    : "bg-gray-200 text-gray-700"
-                }`}
-              >
-                Pending
-              </button>
-              <button
-                onClick={() => setFilter("approved")}
-                className={`px-3 py-1 rounded-full text-sm ${
-                  filter === "approved"
-                    ? "bg-green-600 text-white"
-                    : "bg-gray-200 text-gray-700"
-                }`}
-              >
-                Approved
-              </button>
-              <button
-                onClick={() => setFilter("rejected")}
-                className={`px-3 py-1 rounded-full text-sm ${
-                  filter === "rejected"
-                    ? "bg-red-600 text-white"
-                    : "bg-gray-200 text-gray-700"
-                }`}
-              >
-                Rejected
-              </button>
+        <div className="space-y-6">
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-gray-600 text-sm font-medium">
+                    Total Reports
+                  </p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {Array.isArray(reports) ? reports.length : 0}
+                  </p>
+                </div>
+                <div className="bg-blue-50 p-3 rounded-lg">
+                  <Flag className="w-5 h-5 text-blue-600" />
+                </div>
+              </div>
             </div>
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <input
-                type="text"
-                placeholder="Search reports..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-gray-600 text-sm font-medium">Pending</p>
+                  <p className="text-2xl font-bold text-orange-600">
+                    {Array.isArray(reports)
+                      ? reports.filter((r) => r.status === "pending").length
+                      : 0}
+                  </p>
+                </div>
+                <div className="bg-orange-50 p-3 rounded-lg">
+                  <Clock className="w-5 h-5 text-orange-600" />
+                </div>
+              </div>
+            </div>
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-gray-600 text-sm font-medium">Approved</p>
+                  <p className="text-2xl font-bold text-green-600">
+                    {Array.isArray(reports)
+                      ? reports.filter((r) => r.status === "approved").length
+                      : 0}
+                  </p>
+                </div>
+                <div className="bg-green-50 p-3 rounded-lg">
+                  <Check className="w-5 h-5 text-green-600" />
+                </div>
+              </div>
+            </div>
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-gray-600 text-sm font-medium">Critical</p>
+                  <p className="text-2xl font-bold text-red-600">
+                    {Array.isArray(reports)
+                      ? reports.filter((r) => r.urgency === "critical").length
+                      : 0}
+                  </p>
+                </div>
+                <div className="bg-red-50 p-3 rounded-lg">
+                  <AlertTriangle className="w-5 h-5 text-red-600" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Filters and Search */}
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => setFilter("all")}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors duration-200 ${
+                    filter === "all"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  All Reports
+                </button>
+                <button
+                  onClick={() => setFilter("pending")}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors duration-200 ${
+                    filter === "pending"
+                      ? "bg-orange-600 text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  Pending
+                </button>
+                <button
+                  onClick={() => setFilter("approved")}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors duration-200 ${
+                    filter === "approved"
+                      ? "bg-green-600 text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  Approved
+                </button>
+                <button
+                  onClick={() => setFilter("rejected")}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors duration-200 ${
+                    filter === "rejected"
+                      ? "bg-red-600 text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  Rejected
+                </button>
+              </div>
+
+              {/* Admin Actions */}
+              <div className="flex gap-2">
+                <button
+                  onClick={syncForumPosts}
+                  className="px-3 py-2 bg-gray-100 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-200 transition-colors duration-200 flex items-center gap-2 border border-gray-300"
+                  title="Sync approved reports with community forum posts"
+                >
+                  <i className="fas fa-sync-alt text-sm"></i>
+                  Sync Forum
+                </button>
+              </div>
+
+              {/* Search Bar */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <input
+                  type="text"
+                  placeholder="Search reports..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent w-64"
+                />
+              </div>
             </div>
           </div>
 
@@ -408,35 +696,37 @@ export const AdminDashboard: React.FC = () => {
                 filteredReports.map((report) => (
                   <div
                     key={report.id}
-                    className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                    className="bg-white border border-gray-100 rounded-2xl p-6 hover:shadow-xl transition-all duration-300 hover:transform hover:scale-[1.02] group"
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <h3 className="font-semibold text-gray-900">
+                        <div className="flex items-center gap-3 mb-3">
+                          <h3 className="font-bold text-gray-900 text-lg group-hover:text-blue-600 transition-colors">
                             {report.title}
                           </h3>
-                          <span
-                            className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                              report.status
-                            )}`}
-                          >
-                            {report.status}
-                          </span>
-                          <span
-                            className={`px-2 py-1 rounded-full text-xs font-medium ${getUrgencyColor(
-                              report.urgency
-                            )}`}
-                          >
-                            {report.urgency}
-                          </span>
+                          <div className="flex gap-2">
+                            <span
+                              className={`px-3 py-1 rounded-full text-xs font-bold shadow-sm ${getStatusColor(
+                                report.status
+                              )}`}
+                            >
+                              {report.status}
+                            </span>
+                            <span
+                              className={`px-3 py-1 rounded-full text-xs font-bold shadow-sm ${getUrgencyColor(
+                                report.urgency
+                              )}`}
+                            >
+                              {report.urgency}
+                            </span>
+                          </div>
                         </div>
-                        <p className="text-gray-600 text-sm mb-2">
+                        <p className="text-gray-600 text-sm mb-4 leading-relaxed">
                           {report.description}
                         </p>
-                        <div className="flex items-center gap-4 text-xs text-gray-500">
-                          <span className="flex items-center gap-1">
-                            <MapPin className="w-3 h-3" />
+                        <div className="flex items-center gap-6 text-sm text-gray-500">
+                          <span className="flex items-center gap-2 bg-gray-50 px-3 py-1 rounded-lg">
+                            <MapPin className="w-4 h-4 text-blue-500" />
                             {report.location.address}
                           </span>
                           <span className="flex items-center gap-1">
@@ -502,74 +792,201 @@ export const AdminDashboard: React.FC = () => {
 
       {/* Users Tab */}
       {activeTab === "users" && (
-        <div>
-          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">
-                User Management
-              </h3>
+        <div className="space-y-6">
+          {/* User Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-gradient-to-r from-emerald-500 to-green-600 p-6 rounded-2xl shadow-xl text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-emerald-100 text-sm font-medium">
+                    Total Users
+                  </p>
+                  <p className="text-3xl font-bold">
+                    {Array.isArray(users) ? users.length : 0}
+                  </p>
+                </div>
+                <Users className="w-8 h-8 text-emerald-200" />
+              </div>
+            </div>
+            <div className="bg-gradient-to-r from-blue-500 to-cyan-600 p-6 rounded-2xl shadow-xl text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-blue-100 text-sm font-medium">
+                    Active Users
+                  </p>
+                  <p className="text-3xl font-bold">
+                    {Array.isArray(users)
+                      ? users.filter((u) => u.isActive).length
+                      : 0}
+                  </p>
+                </div>
+                <Activity className="w-8 h-8 text-blue-200" />
+              </div>
+            </div>
+            <div className="bg-gradient-to-r from-purple-500 to-indigo-600 p-6 rounded-2xl shadow-xl text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-purple-100 text-sm font-medium">Admins</p>
+                  <p className="text-3xl font-bold">
+                    {Array.isArray(users)
+                      ? users.filter((u) => u.role === "admin").length
+                      : 0}
+                  </p>
+                </div>
+                <Shield className="w-8 h-8 text-purple-200" />
+              </div>
+            </div>
+          </div>
+
+          {/* User Management Table */}
+          <div className="bg-white border border-gray-100 rounded-2xl shadow-xl overflow-hidden">
+            <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="bg-blue-600 p-2 rounded-lg">
+                    <Users className="w-5 h-5 text-white" />
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-900">
+                    User Management
+                  </h3>
+                </div>
+                <div className="text-sm text-gray-600 bg-white px-3 py-1 rounded-full">
+                  {Array.isArray(users) ? users.length : 0} users total
+                </div>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gray-50">
+                <thead className="bg-gradient-to-r from-gray-50 to-slate-100">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                       User
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                       Role
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                       Reports
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                       Joined
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                       Status
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                      Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {users.map((user) => (
-                    <tr key={user.id}>
+                <tbody className="bg-white divide-y divide-gray-100">
+                  {users.map((user, index) => (
+                    <tr
+                      key={user.id}
+                      className={`hover:bg-gray-50 transition-colors ${
+                        index % 2 === 0 ? "bg-white" : "bg-gray-25"
+                      }`}
+                    >
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
-                            {user.name}
+                        <div className="flex items-center space-x-3">
+                          <div className="flex-shrink-0">
+                            <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                              {user.name
+                                ? user.name.charAt(0).toUpperCase()
+                                : "U"}
+                            </div>
                           </div>
-                          <div className="text-sm text-gray-500">
-                            {user.email}
+                          <div>
+                            <div className="text-sm font-bold text-gray-900">
+                              {user.name}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {user.email}
+                            </div>
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            user.role === "admin"
-                              ? "bg-purple-100 text-purple-800"
-                              : "bg-gray-100 text-gray-800"
-                          }`}
-                        >
-                          {user.role}
-                        </span>
+                        <div className="flex items-center">
+                          <span
+                            className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold shadow-sm ${
+                              user.role === "admin"
+                                ? "bg-gradient-to-r from-purple-500 to-indigo-600 text-white"
+                                : "bg-gradient-to-r from-gray-400 to-gray-500 text-white"
+                            }`}
+                          >
+                            {user.role === "admin" && (
+                              <Shield className="w-3 h-3 mr-1" />
+                            )}
+                            {user.role}
+                          </span>
+                        </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {user.reportCount}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-700">
+                        <div className="bg-blue-50 text-blue-700 px-3 py-1 rounded-lg inline-block">
+                          {user.reportCount}
+                        </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {new Date(user.joinedAt).toLocaleDateString()}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-medium">
+                        <div className="flex items-center">
+                          <Calendar className="w-4 h-4 mr-2 text-gray-400" />
+                          {new Date(user.joinedAt).toLocaleDateString()}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold shadow-sm ${
                             user.isActive
-                              ? "bg-green-100 text-green-800"
-                              : "bg-red-100 text-red-800"
+                              ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white"
+                              : "bg-gradient-to-r from-red-500 to-pink-500 text-white"
                           }`}
                         >
+                          <div
+                            className={`w-2 h-2 rounded-full mr-2 ${
+                              user.isActive ? "bg-white" : "bg-white opacity-70"
+                            }`}
+                          ></div>
                           {user.isActive ? "Active" : "Inactive"}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center space-x-3">
+                          {/* Toggle Status Button */}
+                          <button
+                            onClick={() =>
+                              toggleUserStatus(parseInt(user.id), user.isActive)
+                            }
+                            className={`p-2 rounded-xl font-medium text-sm transition-all duration-200 shadow-sm hover:shadow-md ${
+                              user.isActive
+                                ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
+                                : "bg-green-100 text-green-700 hover:bg-green-200"
+                            }`}
+                            title={
+                              user.isActive
+                                ? "Deactivate User"
+                                : "Activate User"
+                            }
+                          >
+                            {user.isActive ? (
+                              <UserX size={18} />
+                            ) : (
+                              <Shield size={18} />
+                            )}
+                          </button>
+
+                          {/* Delete Button - Only show for non-admin users */}
+                          {user.role !== "admin" && (
+                            <button
+                              onClick={() =>
+                                openDeleteConfirm(parseInt(user.id), user.name)
+                              }
+                              className="p-2 rounded-xl bg-red-100 text-red-700 hover:bg-red-200 transition-all duration-200 shadow-sm hover:shadow-md"
+                              title="Delete User"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -582,109 +999,257 @@ export const AdminDashboard: React.FC = () => {
 
       {/* Analytics Tab */}
       {activeTab === "analytics" && (
-        <div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-            <div className="bg-white p-6 rounded-lg border border-gray-200">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <Flag className="h-8 w-8 text-blue-600" />
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-500">
+        <div className="space-y-8">
+          {/* Overview Stats Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-gray-600 text-sm font-medium">
                     Total Reports
                   </p>
-                  <p className="text-2xl font-semibold text-gray-900">
+                  <p className="text-2xl font-bold text-gray-900">
                     {Array.isArray(reports) ? reports.length : 0}
                   </p>
+                  <p className="text-gray-500 text-xs mt-1">All time</p>
+                </div>
+                <div className="bg-blue-50 p-3 rounded-lg">
+                  <Flag className="h-5 w-5 text-blue-600" />
                 </div>
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-lg border border-gray-200">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <Clock className="h-8 w-8 text-yellow-600" />
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-500">
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-gray-600 text-sm font-medium">
                     Pending Reports
                   </p>
-                  <p className="text-2xl font-semibold text-gray-900">
-                    {reports.filter((r) => r.status === "pending").length}
+                  <p className="text-2xl font-bold text-orange-600">
+                    {Array.isArray(reports)
+                      ? reports.filter((r) => r.status === "pending").length
+                      : 0}
                   </p>
+                  <p className="text-gray-500 text-xs mt-1">Needs attention</p>
+                </div>
+                <div className="bg-orange-50 p-3 rounded-lg">
+                  <Clock className="h-5 w-5 text-orange-600" />
                 </div>
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-lg border border-gray-200">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <Users className="h-8 w-8 text-green-600" />
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-500">
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-gray-600 text-sm font-medium">
                     Active Users
                   </p>
-                  <p className="text-2xl font-semibold text-gray-900">
-                    {users.filter((u) => u.isActive).length}
+                  <p className="text-2xl font-bold text-green-600">
+                    {Array.isArray(users)
+                      ? users.filter((u) => u.isActive).length
+                      : 0}
                   </p>
+                  <p className="text-gray-500 text-xs mt-1">Online today</p>
+                </div>
+                <div className="bg-green-50 p-3 rounded-lg">
+                  <Users className="h-5 w-5 text-green-600" />
                 </div>
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-lg border border-gray-200">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <Check className="h-8 w-8 text-emerald-600" />
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-gray-600 text-sm font-medium">
+                    System Health
+                  </p>
+                  <p className="text-2xl font-bold text-gray-900">98%</p>
+                  <p className="text-gray-500 text-xs mt-1">Uptime</p>
                 </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-500">
-                    Approved Today
-                  </p>
-                  <p className="text-2xl font-semibold text-gray-900">
-                    {
-                      reports.filter(
-                        (r) =>
-                          r.status === "approved" &&
-                          new Date(r.updatedAt).toDateString() ===
-                            new Date().toDateString()
-                      ).length
-                    }
-                  </p>
+                <div className="bg-gray-50 p-3 rounded-lg">
+                  <Activity className="h-5 w-5 text-gray-600" />
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-lg border border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Recent Activity
-            </h3>
-            <div className="space-y-4">
-              {reports
-                .sort(
-                  (a, b) =>
-                    new Date(b.updatedAt).getTime() -
-                    new Date(a.updatedAt).getTime()
-                )
-                .slice(0, 5)
-                .map((report) => (
-                  <div key={report.id} className="flex items-center space-x-3">
-                    <div
-                      className={`w-3 h-3 rounded-full ${
-                        getStatusColor(report.status).split(" ")[0]
-                      }`}
-                    ></div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-900 truncate">
-                        {report.title} - {report.status}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        {new Date(report.updatedAt).toLocaleString()}
-                      </p>
-                    </div>
+          {/* Recent Activity */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Recent Reports */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+              <div className="bg-gray-50 px-6 py-4 border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                    <TrendingUp className="w-5 h-5 mr-2 text-blue-600" />
+                    Recent Reports
+                  </h3>
+                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                </div>
+              </div>
+              <div className="p-6 space-y-4">
+                {Array.isArray(reports) ? (
+                  reports
+                    .sort(
+                      (a, b) =>
+                        new Date(b.updatedAt).getTime() -
+                        new Date(a.updatedAt).getTime()
+                    )
+                    .slice(0, 5)
+                    .map((report) => (
+                      <div
+                        key={report.id}
+                        className="flex items-center space-x-4 p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+                      >
+                        <div
+                          className={`w-3 h-3 rounded-full ${
+                            report.status === "approved"
+                              ? "bg-green-500"
+                              : report.status === "pending"
+                              ? "bg-yellow-500"
+                              : report.status === "rejected"
+                              ? "bg-red-500"
+                              : "bg-gray-500"
+                          }`}
+                        ></div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {report.title}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(report.updatedAt).toLocaleString()}
+                          </p>
+                        </div>
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                            report.status
+                          )}`}
+                        >
+                          {report.status}
+                        </span>
+                      </div>
+                    ))
+                ) : (
+                  <p className="text-gray-500 text-center py-4">
+                    No reports available
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* System Overview */}
+            <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+              <div className="bg-gradient-to-r from-purple-50 to-pink-50 px-6 py-4 border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-gray-900 flex items-center">
+                    <Target className="w-5 h-5 mr-2 text-purple-600" />
+                    System Overview
+                  </h3>
+                  <Zap className="w-5 h-5 text-yellow-500" />
+                </div>
+              </div>
+              <div className="p-6 space-y-6">
+                <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-xl border border-green-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-green-800">
+                      Database Status
+                    </span>
+                    <span className="text-green-600 font-bold">Healthy</span>
                   </div>
-                ))}
+                </div>
+                <div className="bg-gradient-to-r from-blue-50 to-cyan-50 p-4 rounded-xl border border-blue-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-blue-800">
+                      API Response Time
+                    </span>
+                    <span className="text-blue-600 font-bold">12ms</span>
+                  </div>
+                </div>
+                <div className="bg-gradient-to-r from-purple-50 to-indigo-50 p-4 rounded-xl border border-purple-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-purple-800">
+                      Active Sessions
+                    </span>
+                    <span className="text-purple-600 font-bold">
+                      {Array.isArray(users)
+                        ? users.filter((u) => u.isActive).length
+                        : 0}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {deleteConfirm.isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-8 max-w-lg w-full mx-4 shadow-2xl border border-gray-100">
+            <div className="flex items-center mb-6">
+              <div className="flex-shrink-0">
+                <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-pink-600 rounded-xl flex items-center justify-center shadow-lg">
+                  <Trash2 className="w-7 h-7 text-white" />
+                </div>
+              </div>
+              <div className="ml-4">
+                <h3 className="text-xl font-bold text-gray-900">
+                  Delete User Account
+                </h3>
+                <p className="text-sm text-red-600 font-medium">
+                  This action cannot be undone
+                </p>
+              </div>
+            </div>
+
+            <div className="mb-8">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                <p className="text-sm text-gray-800 font-medium">
+                  Are you sure you want to delete the user account for{" "}
+                  <span className="font-bold text-red-700">
+                    {deleteConfirm.userName}
+                  </span>
+                  ?
+                </p>
+              </div>
+              <p className="text-sm text-gray-700 font-medium mb-3">
+                This will permanently remove:
+              </p>
+              <ul className="text-sm text-gray-600 space-y-2">
+                <li className="flex items-center">
+                  <div className="w-2 h-2 bg-red-400 rounded-full mr-3"></div>
+                  User account and profile
+                </li>
+                <li className="flex items-center">
+                  <div className="w-2 h-2 bg-red-400 rounded-full mr-3"></div>
+                  All posts and comments by this user
+                </li>
+                <li className="flex items-center">
+                  <div className="w-2 h-2 bg-red-400 rounded-full mr-3"></div>
+                  All likes and interactions
+                </li>
+                <li className="flex items-center">
+                  <div className="w-2 h-2 bg-red-400 rounded-full mr-3"></div>
+                  Route history and saved routes
+                </li>
+              </ul>
+            </div>
+
+            <div className="flex justify-end space-x-4">
+              <button
+                onClick={closeDeleteConfirm}
+                className="px-6 py-3 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-200 rounded-xl hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() =>
+                  deleteConfirm.userId && deleteUser(deleteConfirm.userId)
+                }
+                className="px-6 py-3 text-sm font-medium text-white bg-gradient-to-r from-red-600 to-pink-600 border border-transparent rounded-xl hover:from-red-700 hover:to-pink-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 shadow-lg hover:shadow-xl transition-all duration-200"
+              >
+                Delete User
+              </button>
             </div>
           </div>
         </div>

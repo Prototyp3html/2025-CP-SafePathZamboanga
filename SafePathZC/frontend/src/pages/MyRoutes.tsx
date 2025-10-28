@@ -22,10 +22,13 @@ import {
   BarChart3,
   Loader2,
   RefreshCw,
+  CheckCircle,
 } from "lucide-react";
 import { NavigationBar } from "@/components/NavigationBar";
 import { AddFavoriteModal } from "@/components/AddFavoriteModal";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirmation } from "@/components/ui/confirmation-dialog";
+import { notification } from "@/utils/notifications";
 
 // API Types
 interface RouteHistory {
@@ -82,6 +85,7 @@ const MyRoutes = () => {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const { toast } = useToast();
+  const { confirm } = useConfirmation();
 
   // LocalStorage functions for route data
   const loadCurrentRouteData = () => {
@@ -141,24 +145,34 @@ const MyRoutes = () => {
   // Fetch data from API
   const fetchRouteHistory = async () => {
     try {
+      console.log(
+        "📡 Fetching route history from:",
+        `${API_BASE_URL}/routes/history?limit=20`
+      );
       const response = await fetch(`${API_BASE_URL}/routes/history?limit=20`);
       if (!response.ok) throw new Error("Failed to fetch route history");
       const data = await response.json();
+      console.log("✅ Route history fetched:", data);
       setRouteHistory(data);
     } catch (err) {
-      console.error("Error fetching route history:", err);
+      console.error("❌ Error fetching route history:", err);
       setError("Failed to load route history");
     }
   };
 
   const fetchFavoriteRoutes = async () => {
     try {
+      console.log(
+        "📡 Fetching favorite routes from:",
+        `${API_BASE_URL}/routes/favorites`
+      );
       const response = await fetch(`${API_BASE_URL}/routes/favorites`);
       if (!response.ok) throw new Error("Failed to fetch favorite routes");
       const data = await response.json();
+      console.log("✅ Favorite routes fetched:", data);
       setFavoriteRoutes(data);
     } catch (err) {
-      console.error("Error fetching favorite routes:", err);
+      console.error("❌ Error fetching favorite routes:", err);
       setError("Failed to load favorite routes");
     }
   };
@@ -215,11 +229,15 @@ const MyRoutes = () => {
   };
 
   useEffect(() => {
+    console.log("🔄 MyRoutes: Starting to load all data...");
     loadAllData();
 
     // Check for current localStorage route and save it to history if exists
     const currentRoute = loadCurrentRouteData();
     if (currentRoute && currentRoute.routeDetails) {
+      console.log(
+        "💾 MyRoutes: Found current route in localStorage, saving to history"
+      );
       saveRouteToHistory(currentRoute);
     }
   }, []);
@@ -269,6 +287,77 @@ const MyRoutes = () => {
       toast({
         title: "Error",
         description: "Failed to remove favorite. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // 🆕 GPS Tracking and Manual Completion Functions
+  const startGPSTracking = (routeId: number) => {
+    const route = routeHistory.find((r) => r.id === routeId);
+    if (!route) {
+      toast({
+        title: "Error",
+        description: "Route not found.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    notification.route.planningStarted();
+
+    // Store route data for GPS tracking and navigate to map
+    localStorage.setItem("pendingGPSRoute", JSON.stringify(route));
+    window.location.href = "/";
+  };
+
+  const markRouteCompleted = async (routeId: number) => {
+    const confirmed = await confirm({
+      title: "Mark Route as Completed",
+      description:
+        "Are you sure you want to mark this route as completed? This will update your completion statistics.",
+      confirmText: "Mark Completed",
+      cancelText: "Cancel",
+      variant: "success",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/routes/history/${routeId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ status: "completed" }),
+        }
+      );
+
+      if (!response.ok) throw new Error("Failed to mark route as completed");
+
+      // Update local state
+      setRouteHistory((prev) =>
+        prev.map((route) =>
+          route.id === routeId ? { ...route, status: "completed" } : route
+        )
+      );
+
+      toast({
+        title: "Route completed! 🎉",
+        description: "Congratulations on reaching your destination safely!",
+      });
+
+      // Refresh analytics to update completion rate
+      fetchAnalytics();
+    } catch (err) {
+      console.error("Error marking route as completed:", err);
+      toast({
+        title: "Error",
+        description: "Failed to mark route as completed. Please try again.",
         variant: "destructive",
       });
     }
@@ -669,6 +758,31 @@ const MyRoutes = () => {
                           <Repeat className="h-3 w-3 mr-1" />
                           Repeat
                         </Button>
+
+                        {/* 🆕 GPS Tracking and Manual Completion Options */}
+                        {route.status === "planned" && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => startGPSTracking(route.id)}
+                              className="bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+                            >
+                              <MapPin className="h-3 w-3 mr-1" />
+                              Start GPS
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => markRouteCompleted(route.id)}
+                              className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                            >
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Mark Done
+                            </Button>
+                          </>
+                        )}
+
                         <Button
                           size="sm"
                           variant="outline"

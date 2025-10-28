@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
+import { notification } from "@/utils/notifications";
+import { LocationAutocomplete } from "./LocationAutocomplete";
 
 interface ReportModalProps {
   onClose: () => void;
@@ -13,6 +15,10 @@ export const ReportModal = ({
 }: ReportModalProps) => {
   const [reportType, setReportType] = useState("");
   const [location, setLocation] = useState("");
+  const [locationCoordinates, setLocationCoordinates] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
   const [description, setDescription] = useState("");
   const [severity, setSeverity] = useState("moderate");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -151,8 +157,28 @@ export const ReportModal = ({
     },
   ];
 
+  // Handle location selection from autocomplete
+  const handleLocationSelect = (selectedLocation: any) => {
+    console.log("📍 Selected location for report:", selectedLocation);
+    setLocationCoordinates({
+      lat: parseFloat(selectedLocation.lat),
+      lng: parseFloat(selectedLocation.lon),
+    });
+  };
+
   const handleSubmit = async () => {
-    if (!reportType || !location || !description) return;
+    console.log("🔍 Form validation check:", {
+      reportType: reportType || "MISSING",
+      location: location || "MISSING",
+      description: description || "MISSING",
+      isLoggedIn,
+      locationCoordinates,
+    });
+
+    if (!reportType || !location || !description) {
+      console.log("❌ Form validation failed - missing required fields");
+      return;
+    }
 
     setIsSubmitting(true);
 
@@ -163,7 +189,7 @@ export const ReportModal = ({
         localStorage.getItem("user_token");
 
       if (!token) {
-        alert("Please log in to submit reports");
+        notification.auth.loginRequired();
         setIsSubmitting(false);
         return;
       }
@@ -177,32 +203,94 @@ export const ReportModal = ({
         other: "Other Issue",
       };
 
-      // Create forum post for the report
-      const postData = {
-        title: `🚨 ${
+      // Get user info from stored user data instead of JWT token
+      const storedUserData = localStorage.getItem("user_data");
+      let userName = "Anonymous User";
+      let userEmail = "anonymous@example.com";
+      let userId = "anonymous";
+
+      if (storedUserData) {
+        try {
+          const userData = JSON.parse(storedUserData);
+          userName = userData.name || "Anonymous User";
+          userEmail = userData.email || "anonymous@example.com";
+          userId = userData.id?.toString() || "anonymous";
+        } catch (error) {
+          console.warn("Failed to parse stored user data:", error);
+        }
+      } else {
+        // Fallback: try to get user ID from JWT token
+        try {
+          const userPayload = JSON.parse(atob(token.split(".")[1]));
+          userId = userPayload.sub || "anonymous";
+        } catch (error) {
+          console.warn("Failed to decode JWT token:", error);
+        }
+      }
+
+      // First, create a proper Report record for admin dashboard
+      const reportData = {
+        title: `${
           typeLabels[reportType as keyof typeof typeLabels]
         } Report - ${location}`,
-        content: `**Report Details:**
-📍 **Location:** ${location}
-⚠️ **Issue Type:** ${typeLabels[reportType as keyof typeof typeLabels]}
-📝 **Description:** ${description}
-🔴 **Severity:** ${severity.charAt(0).toUpperCase() + severity.slice(1)}
+        description: description,
+        category: reportType,
+        urgency: severity,
+        location_lat: locationCoordinates?.lat || 0,
+        location_lng: locationCoordinates?.lng || 0,
+        location_address: location,
+        reporter_name: userName,
+        reporter_email: userEmail,
+        reporter_id: userId,
+      };
+
+      const reportResponse = await fetch(
+        "http://localhost:8001/admin/reports",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(reportData),
+        }
+      );
+
+      let reportId = null;
+      if (reportResponse.ok) {
+        const reportResult = await reportResponse.json();
+        reportId = reportResult.id;
+        console.log("Report record created:", reportResult);
+      }
+
+      // Then, create forum post for community visibility
+      const postData = {
+        title: `${
+          typeLabels[reportType as keyof typeof typeLabels]
+        } in ${location}${
+          severity === "severe" ? " - " + new Date().toLocaleDateString() : ""
+        }`,
+        content: `${description}
 
 ${
   weatherData
-    ? `**Weather Conditions at Time of Report:**
-🌡️ Temperature: ${weatherData.current.temp_c}°C
-🌤️ Condition: ${weatherData.current.condition.text}
-🌧️ Precipitation: ${weatherData.current.precip_mm}mm
-💨 Wind: ${weatherData.current.wind_kph}kph
-`
+    ? `Weather conditions at the time: ${weatherData.current.condition.text.toLowerCase()}, ${
+        weatherData.current.temp_c
+      }°C with ${weatherData.current.wind_kph}kph winds.`
     : ""
 }
-**Reported:** ${new Date().toLocaleString()}
 
-*This is a community-generated report. Please verify information before taking action.*`,
+Location: ${location}${
+          reportId
+            ? `
+
+Report ID: #${reportId}`
+            : ""
+        }
+
+Please be cautious when traveling through this area and consider alternative routes if possible.`,
         category: "reports",
-        tags: [reportType, severity, "community-report"],
+        tags: [reportType, ...(severity === "severe" ? ["urgent"] : [])],
         is_urgent: severity === "severe",
       };
 
@@ -218,18 +306,44 @@ ${
       if (response.ok) {
         const result = await response.json();
         console.log("Report posted to forum:", result);
-        alert(
-          "Thank you for your report! It has been posted to the community forum for others to see and verify."
-        );
+
+        // Update user's reports count
+        try {
+          const userStatsResponse = await fetch(
+            `http://localhost:8001/auth/stats`,
+            {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ reports_submitted: 1 }),
+            }
+          );
+
+          if (userStatsResponse.ok) {
+            const statsResult = await userStatsResponse.json();
+            console.log("✅ User stats updated successfully:", statsResult);
+          } else {
+            const errorText = await userStatsResponse.text();
+            console.warn(
+              "⚠️ Failed to update user stats:",
+              userStatsResponse.status,
+              errorText
+            );
+          }
+        } catch (statsError) {
+          console.warn("❌ Error updating user stats:", statsError);
+        }
+
+        notification.reports.submitted(reportId);
         onClose();
       } else {
         throw new Error(`Failed to submit report: ${response.status}`);
       }
     } catch (error) {
       console.error("Error submitting report:", error);
-      alert(
-        "Failed to submit report. Please try again or check your internet connection."
-      );
+      notification.reports.failed();
     } finally {
       setIsSubmitting(false);
     }
@@ -373,21 +487,36 @@ ${
             )}
           </div>
 
-          {/* Location Input */}
+          {/* Location Input with Autocomplete */}
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               <i className="fas fa-map-marker-alt mr-1"></i>
-              Location
+              Location in Zamboanga City
             </label>
-            <input
-              type="text"
+            <LocationAutocomplete
               value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder="e.g., Veterans Avenue near City Hall"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wmsu-blue focus:border-transparent outline-none"
+              onChange={setLocation}
+              onLocationSelect={handleLocationSelect}
+              placeholder="Search for areas like: Sinunuc, Tetuan, City Hall, RT Lim..."
               disabled={!isLoggedIn}
               required
+              className="text-sm"
             />
+            {locationCoordinates && (
+              <div className="mt-2 text-xs text-green-600 bg-green-50 p-2 rounded-md">
+                <i className="fas fa-check-circle mr-1"></i>
+                Location confirmed: {location}
+                <div className="text-gray-500 mt-1">
+                  Coordinates: {locationCoordinates.lat.toFixed(6)},{" "}
+                  {locationCoordinates.lng.toFixed(6)}
+                </div>
+              </div>
+            )}
+            {!isLoggedIn && (
+              <p className="text-xs text-gray-500 mt-1">
+                Please log in to select a location for your report
+              </p>
+            )}
           </div>
 
           {/* Severity Level */}
@@ -427,18 +556,52 @@ ${
           {isLoggedIn && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
               <h4 className="text-sm font-semibold text-blue-800 mb-1">
-                Community Guidelines
+                <i className="fas fa-info-circle mr-1"></i>
+                Reporting Guidelines
               </h4>
               <ul className="text-xs text-blue-700 space-y-1">
-                <li>• Provide accurate and specific location information</li>
-                <li>• Include time-sensitive details if applicable</li>
-                <li>• Be respectful and constructive in your reports</li>
+                <li>
+                  • <strong>Location:</strong> Use the search above to find
+                  accurate Zamboanga locations
+                </li>
+                <li>
+                  • <strong>Details:</strong> Include time-sensitive information
+                  and clear descriptions
+                </li>
+                <li>
+                  • <strong>Verification:</strong> Confirm your location shows
+                  green checkmark before submitting
+                </li>
+                <li>
+                  • <strong>Community:</strong> Be respectful and constructive
+                  in your reports
+                </li>
               </ul>
             </div>
           )}
 
           {/* Action Buttons */}
-          <div className="flex space-x-3">
+          <div className="flex gap-3">
+            {/* Form Validation Status */}
+            {(!isLoggedIn || !reportType || !location || !description) && (
+              <div className="w-full mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div className="flex items-center text-yellow-800 mb-2">
+                  <i className="fas fa-exclamation-triangle mr-2"></i>
+                  <span className="font-medium">
+                    Please complete the following:
+                  </span>
+                </div>
+                <ul className="text-sm text-yellow-700 space-y-1">
+                  {!isLoggedIn && <li>• Log in to your account</li>}
+                  {!reportType && <li>• Select a report type</li>}
+                  {!location && <li>• Enter and select a location</li>}
+                  {!description && (
+                    <li>• Provide a description of the issue</li>
+                  )}
+                </ul>
+              </div>
+            )}
+
             <button
               onClick={onClose}
               className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-lg font-medium hover:bg-gray-300 transition-colors duration-200"
@@ -454,7 +617,20 @@ ${
                 !description ||
                 isSubmitting
               }
-              className="flex-1 bg-wmsu-blue text-white py-2 px-4 rounded-lg font-medium hover:bg-wmsu-blue-light transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 bg-wmsu-blue text-white py-2 px-4 rounded-lg font-medium hover:bg-wmsu-blue-light transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed relative"
+              title={
+                !isLoggedIn
+                  ? "Please log in to submit reports"
+                  : !reportType
+                  ? "Please select a report type"
+                  : !location
+                  ? "Please enter and select a location"
+                  : !description
+                  ? "Please enter a description"
+                  : !locationCoordinates && location
+                  ? "Please select a location from the dropdown for accurate positioning"
+                  : "Click to submit your report"
+              }
             >
               {isSubmitting ? (
                 <>
@@ -465,6 +641,12 @@ ${
                 <>
                   <i className="fas fa-paper-plane mr-2"></i>
                   Submit Report
+                  {!locationCoordinates && location && (
+                    <i
+                      className="fas fa-exclamation-triangle ml-2 text-yellow-300"
+                      title="Location not verified"
+                    ></i>
+                  )}
                 </>
               )}
             </button>

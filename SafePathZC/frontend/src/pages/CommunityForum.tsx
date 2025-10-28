@@ -12,6 +12,7 @@ import {
   Search,
   TrendingUp,
   Filter,
+  Trash2,
 } from "lucide-react";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
@@ -22,6 +23,8 @@ import {
   CardTitle,
 } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
+import { notification } from "../utils/notifications";
+import { useConfirmation } from "../components/ui/confirmation-dialog";
 
 // Define interfaces for the forum data
 interface ForumPost {
@@ -49,6 +52,8 @@ interface ForumStats {
 }
 
 const CommunityForum = () => {
+  const { confirm } = useConfirmation();
+
   useEffect(() => {
     document.body.style.overflow = "auto";
   }, []);
@@ -234,6 +239,59 @@ const CommunityForum = () => {
     } catch (err) {
       console.error("Error toggling like:", err);
       alert("Network error. Please check your connection.");
+    }
+  };
+
+  const handleDeletePost = async (postId: number, postTitle: string) => {
+    if (!isAdmin) {
+      notification.auth.unauthorized();
+      return;
+    }
+
+    try {
+      const confirmed = await confirm({
+        title: "Delete Post",
+        description: `Are you sure you want to delete "${postTitle}"? This action cannot be undone and will also delete all comments and likes associated with this post.`,
+        variant: "destructive",
+        confirmText: "Delete",
+        cancelText: "Cancel",
+      });
+
+      if (!confirmed) return;
+
+      const response = await fetch(
+        `http://localhost:8001/api/forum/admin/posts/${postId}`,
+        {
+          method: "DELETE",
+          headers: getAuthHeaders(),
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+
+        // Remove the post from the list
+        setForumPosts((posts) => posts.filter((post) => post.id !== postId));
+
+        // Show success notification
+        notification.success("Post deleted successfully!");
+      } else {
+        const errorData = await response.json();
+        console.error("Delete error:", response.status, errorData);
+
+        if (response.status === 403) {
+          notification.auth.unauthorized();
+        } else if (response.status === 404) {
+          notification.warning(
+            "Post not found - it may have already been deleted."
+          );
+        } else {
+          notification.warning("Failed to delete post. Please try again.");
+        }
+      }
+    } catch (err) {
+      console.error("Error deleting post:", err);
+      notification.error("Network error. Please check your connection.");
     }
   };
 
@@ -600,12 +658,26 @@ const CommunityForum = () => {
                                 </span>
                               </button>
                             </div>
-                            <button
-                              onClick={() => setSelectedPostId(post.id)}
-                              className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-3 rounded-xl font-medium hover:shadow-lg transform hover:scale-105 transition-all duration-200"
-                            >
-                              Read More
-                            </button>
+                            <div className="flex items-center space-x-3">
+                              {isAdmin && (
+                                <button
+                                  onClick={() =>
+                                    handleDeletePost(post.id, post.title)
+                                  }
+                                  className="bg-gradient-to-r from-red-500 to-red-600 text-white px-4 py-3 rounded-xl font-medium hover:shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center space-x-2"
+                                  title="Delete this post"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                  <span>Delete</span>
+                                </button>
+                              )}
+                              <button
+                                onClick={() => setSelectedPostId(post.id)}
+                                className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-3 rounded-xl font-medium hover:shadow-lg transform hover:scale-105 transition-all duration-200"
+                              >
+                                Read More
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>

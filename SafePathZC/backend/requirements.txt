@@ -10,3 +10,4 @@ requests==2.31.0
 PyJWT==2.8.0
 beautifulsoup4==4.12.2
 lxml==4.9.3
+httpx==0.25.2

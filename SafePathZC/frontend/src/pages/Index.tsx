@@ -77,8 +77,8 @@ const Index = () => {
 
       {/* Modals */}
       {activeModal === "report" && (
-        <ReportModal 
-          onClose={() => setActiveModal(null)} 
+        <ReportModal
+          onClose={() => setActiveModal(null)}
           isLoggedIn={isLoggedIn}
           onLoginRequired={handleLoginRequired}
         />

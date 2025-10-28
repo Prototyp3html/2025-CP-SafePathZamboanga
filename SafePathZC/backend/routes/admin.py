@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import models and database 
-from models import AdminUser, Report, User, SessionLocal
+from models import AdminUser, Report, User, Post, Comment, PostLike, RouteHistory, FavoriteRoute, SearchHistory, SessionLocal
 
 # Dependency to get DB session
 def get_db():
@@ -210,6 +210,26 @@ async def update_report_status(
     
     if update_data.status:
         report.status = update_data.status
+        
+        # If report is approved, also approve the corresponding forum post
+        if update_data.status == "approved":
+            try:
+                from models import Post
+                # Find forum post that contains this report ID
+                forum_post = db.query(Post).filter(
+                    Post.content.contains(f"Report ID:** #{report_id}"),
+                    Post.category == "reports",
+                    Post.is_approved == False
+                ).first()
+                
+                if forum_post:
+                    forum_post.is_approved = True
+                    forum_post.updated_at = datetime.utcnow()
+                    print(f"Auto-approved forum post {forum_post.id} for report {report_id}")
+                
+            except Exception as e:
+                print(f"Failed to auto-approve forum post for report {report_id}: {e}")
+    
     if update_data.admin_notes:
         report.admin_notes = update_data.admin_notes
     
@@ -217,6 +237,38 @@ async def update_report_status(
     db.commit()
     
     return {"message": "Report status updated successfully"}
+
+@router.post("/reports/sync-forum-posts")
+async def sync_reports_with_forum_posts(
+    user_id: int = Depends(verify_admin_token),
+    db: Session = Depends(get_db)
+):
+    """Sync approved reports with their forum posts (approve forum posts for approved reports)"""
+    try:
+        # Find all approved reports
+        approved_reports = db.query(Report).filter(Report.status == "approved").all()
+        synced_count = 0
+        
+        for report in approved_reports:
+            # Find corresponding forum post
+            forum_post = db.query(Post).filter(
+                Post.content.contains(f"Report ID:** #{report.id}"),
+                Post.category == "reports"
+            ).first()
+            
+            if forum_post and not forum_post.is_approved:
+                forum_post.is_approved = True
+                forum_post.updated_at = datetime.utcnow()
+                synced_count += 1
+        
+        db.commit()
+        return {
+            "message": f"Successfully synced {synced_count} forum posts with approved reports",
+            "synced_count": synced_count
+        }
+        
+    except Exception as e:
+        return {"error": f"Failed to sync reports: {str(e)}"}
 
 @router.patch("/reports/{report_id}/visibility")
 async def toggle_report_visibility(
@@ -306,6 +358,103 @@ async def create_report(
     db.refresh(new_report)
     
     return {"message": "Report submitted successfully", "id": new_report.id}
+
+@router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: int,
+    admin_id: int = Depends(verify_admin_token),
+    db: Session = Depends(get_db)
+):
+    """Delete a user account (Admin only)"""
+    
+    # Find the user to delete
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Prevent deletion of admin users (safety check)
+    if user.role == "admin":
+        raise HTTPException(status_code=403, detail="Cannot delete admin users")
+    
+    # Store user info for response
+    deleted_user_info = {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "role": user.role
+    }
+    
+    try:
+        # Delete related data first (to avoid foreign key constraints)
+        
+        # Delete user's posts
+        db.query(Post).filter(Post.author_id == user_id).delete()
+        
+        # Delete user's comments
+        db.query(Comment).filter(Comment.author_id == user_id).delete()
+        
+        # Delete user's post likes
+        db.query(PostLike).filter(PostLike.user_id == user_id).delete()
+        
+        # Delete user's route history
+        db.query(RouteHistory).filter(RouteHistory.user_id == str(user_id)).delete()
+        
+        # Delete user's favorite routes
+        db.query(FavoriteRoute).filter(FavoriteRoute.user_id == str(user_id)).delete()
+        
+        # Delete user's search history
+        db.query(SearchHistory).filter(SearchHistory.user_id == str(user_id)).delete()
+        
+        # Finally delete the user
+        db.delete(user)
+        db.commit()
+        
+        return {
+            "message": "User account deleted successfully",
+            "deleted_user": deleted_user_info
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}")
+
+@router.patch("/users/{user_id}/status")
+async def update_user_status(
+    user_id: int,
+    status_data: dict,
+    admin_id: int = Depends(verify_admin_token),
+    db: Session = Depends(get_db)
+):
+    """Activate or deactivate a user account (Admin only)"""
+    
+    # Find the user
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Get is_active from request body
+    is_active = status_data.get("is_active")
+    if is_active is None:
+        raise HTTPException(status_code=422, detail="is_active field is required")
+    
+    # Prevent deactivation of admin users
+    if user.role == "admin" and not is_active:
+        raise HTTPException(status_code=403, detail="Cannot deactivate admin users")
+    
+    # Update user status
+    user.is_active = is_active
+    db.commit()
+    
+    status_text = "activated" if is_active else "deactivated"
+    return {
+        "message": f"User account {status_text} successfully",
+        "user": {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "is_active": user.is_active
+        }
+    }
 
 # Initialize admin user if not exists
 def init_admin_user(db: Session):

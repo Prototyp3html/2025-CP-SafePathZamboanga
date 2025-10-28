@@ -27,6 +27,7 @@ from routes.admin import router as admin_router, init_admin_user
 from routes.user_auth import router as user_auth_router, init_demo_user
 from routes.forum import router as forum_router
 from routes.flood_routing import router as flood_routing_router
+from routes.geocoding import router as geocoding_router
 
 # Load environment variables
 load_dotenv()
@@ -257,6 +258,7 @@ app.include_router(admin_router)
 app.include_router(user_auth_router)
 app.include_router(forum_router)
 app.include_router(flood_routing_router)  # Flood-aware routing with 3 distinct routes
+app.include_router(geocoding_router, prefix="/api/geocoding", tags=["geocoding"])
 
 # Dependency to get DB session
 def get_db():
@@ -1591,6 +1593,21 @@ async def delete_route_history(route_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Route deleted successfully"}
 
+@app.patch("/api/routes/history/{route_id}")
+async def update_route_status(route_id: int, update_data: dict, db: Session = Depends(get_db)):
+    """Update route status (for GPS completion tracking)"""
+    route = db.query(RouteHistory).filter(RouteHistory.id == route_id).first()
+    if not route:
+        raise HTTPException(status_code=404, detail="Route not found")
+    
+    # Update allowed fields
+    if "status" in update_data:
+        route.status = update_data["status"]
+    
+    db.commit()
+    db.refresh(route)
+    return {"message": f"Route status updated to {route.status}", "route": route}
+
 # Favorite Routes Endpoints
 @app.get("/api/routes/favorites", response_model=List[FavoriteRouteResponse])
 async def get_favorite_routes(
@@ -2632,7 +2649,8 @@ if __name__ == "__main__":
 async def local_route(
     start: str = Query(..., description="Start coordinates as 'lat,lng'"),
     end: str = Query(..., description="End coordinates as 'lat,lng'"),
-    waypoints: Optional[str] = Query(None, description="Optional waypoints as 'lng,lat;lng,lat;...'")
+    waypoints: Optional[str] = Query(None, description="Optional waypoints as 'lng,lat;lng,lat;...'"),
+    transport_mode: str = Query("car", description="Transportation mode: car, motorcycle, walking, public_transport, bicycle, truck")
 ):
     """
     Calculate flood-aware routes using OSRM + terrain flood data.
@@ -2674,7 +2692,8 @@ async def local_route(
             end_lat=end_lat,
             end_lng=end_lng,
             waypoints=waypoint_list,
-            weather_data=None
+            weather_data=None,
+            transport_mode=transport_mode
         )
         
         response = await get_flood_aware_routes(request)

@@ -571,3 +571,109 @@ async def disable_two_factor(
         
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+class UserStatsUpdate(BaseModel):
+    routes_used: Optional[int] = None
+    reports_submitted: Optional[int] = None
+    community_points: Optional[int] = None
+
+@router.patch("/stats")
+async def update_user_stats(
+    stats_update: UserStatsUpdate,
+    db: Session = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials = Security(security)
+):
+    """Update user statistics"""
+    try:
+        # Verify token
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id_str = payload.get("sub")
+        
+        if not user_id_str:
+            raise HTTPException(status_code=401, detail="Invalid token: no user ID")
+        
+        # Convert string ID to integer
+        try:
+            user_id = int(user_id_str)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=401, detail="Invalid token: invalid user ID format")
+        
+        print(f"🔍 Stats update for user ID: {user_id}, payload: {payload}")  # Debug log
+        
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail=f"User not found with ID: {user_id}")
+        
+        print(f"📊 Current user stats - Reports: {user.reports_submitted}, Routes: {user.routes_used}")
+        
+        # Update statistics (increment existing values)
+        if stats_update.routes_used is not None:
+            user.routes_used = (user.routes_used or 0) + stats_update.routes_used
+        
+        if stats_update.reports_submitted is not None:
+            old_reports = user.reports_submitted or 0
+            user.reports_submitted = old_reports + stats_update.reports_submitted
+            print(f"📈 Reports updated: {old_reports} + {stats_update.reports_submitted} = {user.reports_submitted}")
+            
+        if stats_update.community_points is not None:
+            user.community_points = (user.community_points or 0) + stats_update.community_points
+        
+        user.last_activity = datetime.utcnow()
+        
+        db.commit()
+        db.refresh(user)
+        
+        print(f"✅ Stats updated successfully for user: {user.name}")
+        
+        return {
+            "message": "User statistics updated successfully",
+            "user_id": user_id,
+            "user_name": user.name,
+            "stats": {
+                "routes_used": user.routes_used,
+                "reports_submitted": user.reports_submitted,
+                "community_points": user.community_points
+            }
+        }
+        
+    except jwt.PyJWTError as e:
+        print(f"❌ JWT Error: {e}")
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+    except Exception as e:
+        print(f"❌ Stats update error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update stats: {str(e)}")
+
+@router.get("/profile")
+async def get_user_profile(
+    db: Session = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials = Security(security)
+):
+    """Get current user profile and stats"""
+    try:
+        # Verify token
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id_str = payload.get("sub")
+        
+        if not user_id_str:
+            raise HTTPException(status_code=401, detail="Invalid token: no user ID")
+        
+        user_id = int(user_id_str)
+        user = db.query(User).filter(User.id == user_id).first()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        return {
+            "user": format_user_response(user),
+            "jwt_payload": payload,
+            "debug": {
+                "user_id_from_token": user_id,
+                "user_found": True,
+                "token_valid": True
+            }
+        }
+        
+    except jwt.PyJWTError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Profile error: {str(e)}")

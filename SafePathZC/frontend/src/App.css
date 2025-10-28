@@ -564,3 +564,37 @@
     opacity: 0;
   }
 }
+
+/* Enhanced Terrain Contour Styling */
+.terrain-contour {
+  transition: all 0.2s ease-in-out;
+  filter: blur(0.3px);
+}
+
+.terrain-contour:hover {
+  filter: blur(0px) brightness(1.1);
+  transform: scale(1.02);
+  z-index: 1000;
+}
+
+/* Smooth gradient overlay for terrain */
+.leaflet-overlay-pane .terrain-contour {
+  mix-blend-mode: normal;
+  backdrop-filter: saturate(1.1);
+}
+
+/* Enhanced terrain legend styling */
+.terrain-legend {
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.terrain-legend-item {
+  transition: all 0.2s ease;
+}
+
+.terrain-legend-item:hover {
+  transform: translateX(2px);
+  filter: brightness(1.1);
+}

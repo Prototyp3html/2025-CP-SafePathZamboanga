@@ -524,3 +524,30 @@ def reject_post(
     db.commit()
     
     return {"message": "Post rejected and deleted successfully"}
+
+@router.delete("/admin/posts/{post_id}")
+def delete_post(
+    post_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete any post (admin only)"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
+    # Delete associated likes and comments first
+    db.query(PostLike).filter(PostLike.post_id == post_id).delete()
+    db.query(Comment).filter(Comment.post_id == post_id).delete()
+    
+    # Store post title for response
+    post_title = post.title
+    
+    # Delete the post
+    db.delete(post)
+    db.commit()
+    
+    return {"message": f"Post '{post_title}' deleted successfully"}

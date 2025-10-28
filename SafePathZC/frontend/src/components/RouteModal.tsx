@@ -1,4 +1,8 @@
 import { useState } from "react";
+import {
+  TransportationSelector,
+  TransportationMode,
+} from "./TransportationSelector";
 
 interface LocationSuggestion {
   display_name: string;
@@ -50,6 +54,8 @@ interface RouteModalProps {
   searchLocations?: (query: string) => Promise<LocationSuggestion[]>;
   waypoints?: Waypoint[];
   setWaypoints?: React.Dispatch<React.SetStateAction<Waypoint[]>>;
+  selectedTransportationMode: TransportationMode;
+  onTransportationModeChange: (mode: TransportationMode) => void;
 }
 
 export const RouteModal = ({
@@ -76,11 +82,15 @@ export const RouteModal = ({
   searchLocations,
   waypoints: propsWaypoints,
   setWaypoints: propsSetWaypoints,
+  selectedTransportationMode,
+  onTransportationModeChange,
 }: RouteModalProps) => {
   // Use waypoints from props if available, otherwise fallback to local state
   const [localWaypoints, setLocalWaypoints] = useState<Waypoint[]>([]);
-  const waypoints = propsWaypoints !== undefined ? propsWaypoints : localWaypoints;
-  const setWaypoints = propsSetWaypoints !== undefined ? propsSetWaypoints : setLocalWaypoints;
+  const waypoints =
+    propsWaypoints !== undefined ? propsWaypoints : localWaypoints;
+  const setWaypoints =
+    propsSetWaypoints !== undefined ? propsSetWaypoints : setLocalWaypoints;
 
   // Add a new waypoint
   const addWaypoint = () => {
@@ -104,11 +114,9 @@ export const RouteModal = ({
   // Update waypoint input and search for suggestions
   const updateWaypointInput = async (id: string, value: string) => {
     setWaypoints(
-      waypoints.map((wp) =>
-        wp.id === id ? { ...wp, input: value } : wp
-      )
+      waypoints.map((wp) => (wp.id === id ? { ...wp, input: value } : wp))
     );
-    
+
     // Search for location suggestions if searchLocations function is provided
     if (searchLocations && value.length >= 2) {
       try {
@@ -120,7 +128,9 @@ export const RouteModal = ({
               : wp
           )
         );
-        console.log(`🔍 Found ${suggestions.length} suggestions for waypoint ${id}`);
+        console.log(
+          `🔍 Found ${suggestions.length} suggestions for waypoint ${id}`
+        );
       } catch (error) {
         console.error("Error searching waypoint locations:", error);
       }
@@ -139,7 +149,12 @@ export const RouteModal = ({
     setWaypoints(
       waypoints.map((wp) =>
         wp.id === id
-          ? { ...wp, location, input: location.display_name, showSuggestions: false }
+          ? {
+              ...wp,
+              location,
+              input: location.display_name,
+              showSuggestions: false,
+            }
           : wp
       )
     );
@@ -544,8 +559,17 @@ export const RouteModal = ({
 
           {/* Waypoint Inputs */}
           {waypoints.map((waypoint, index) => (
-            <div key={waypoint.id} style={{ marginBottom: "20px", position: "relative" }}>
-              <div style={{ display: "flex", alignItems: "center", marginBottom: "8px" }}>
+            <div
+              key={waypoint.id}
+              style={{ marginBottom: "20px", position: "relative" }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  marginBottom: "8px",
+                }}
+              >
                 <label
                   style={{
                     flex: 1,
@@ -597,7 +621,9 @@ export const RouteModal = ({
                 <input
                   type="text"
                   value={waypoint.input}
-                  onChange={(e) => updateWaypointInput(waypoint.id, e.target.value)}
+                  onChange={(e) =>
+                    updateWaypointInput(waypoint.id, e.target.value)
+                  }
                   placeholder={`Enter waypoint ${getWaypointLetter(index)}`}
                   style={{
                     width: "100%",
@@ -612,14 +638,16 @@ export const RouteModal = ({
                     if (waypoint.suggestions.length > 0) {
                       setWaypoints((prev) =>
                         prev.map((wp) =>
-                          wp.id === waypoint.id ? { ...wp, showSuggestions: true } : wp
+                          wp.id === waypoint.id
+                            ? { ...wp, showSuggestions: true }
+                            : wp
                         )
                       );
                     }
                   }}
                 />
               </div>
-              
+
               {/* Waypoint Suggestions Dropdown */}
               {waypoint.showSuggestions && waypoint.suggestions.length > 0 && (
                 <div
@@ -642,7 +670,10 @@ export const RouteModal = ({
                     <div
                       key={suggestionIndex}
                       onClick={(e) => {
-                        console.log("🖱️ Waypoint dropdown clicked!", suggestion);
+                        console.log(
+                          "🖱️ Waypoint dropdown clicked!",
+                          suggestion
+                        );
                         e.preventDefault();
                         e.stopPropagation();
                         selectWaypointLocation(waypoint.id, suggestion);
@@ -708,6 +739,15 @@ export const RouteModal = ({
               )}
             </div>
           ))}
+
+          {/* Transportation Mode Selector */}
+          <div style={{ marginBottom: "16px" }}>
+            <TransportationSelector
+              selectedMode={selectedTransportationMode}
+              onModeChange={onTransportationModeChange}
+              className="w-full"
+            />
+          </div>
 
           {/* Find Route Button */}
           <button

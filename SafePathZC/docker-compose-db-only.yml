@@ -1,0 +1,67 @@
+services:
+  # PostgreSQL Database Only (use your existing pgAdmin 4)
+  postgres:
+    image: postgis/postgis:15-3.3
+    container_name: safepath-postgres
+    environment:
+      POSTGRES_DB: safepathzc
+      POSTGRES_USER: safepathzc_user
+      POSTGRES_PASSWORD: safepath123
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U safepathzc_user -d safepathzc"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # OSRM Driving Profile (Cars/Motorcycles)
+  osrm-driving:
+    image: osrm/osrm-backend
+    container_name: safepath-osrm-driving
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend/osrm-data:/data
+    command: osrm-routed --algorithm ch /data/zamboanga_roads.osrm
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:5000/route/v1/driving/122.079,6.9214;122.08,6.92",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # OSRM Walking Profile (Pedestrians)
+  osrm-walking:
+    image: osrm/osrm-backend
+    container_name: safepath-osrm-walking
+    ports:
+      - "5001:5000"
+    volumes:
+      - ./backend/osrm-data:/data
+    command: osrm-routed --algorithm mld /data/zamboanga-foot.osrm
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:5000/route/v1/foot/122.079,6.9214;122.08,6.92",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:

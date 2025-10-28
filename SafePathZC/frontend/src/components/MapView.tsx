@@ -1,4 +1,6 @@
 ﻿import { useState, useEffect, useRef, useCallback } from "react";
+import { notification } from "@/utils/notifications";
+import { useConfirmation } from "@/components/ui/confirmation-dialog";
 
 declare global {
   interface Window {
@@ -14,6 +16,13 @@ import "../App.css";
 import { RouteModal } from "./RouteModal";
 import { AlertBanner } from "./AlertBanner";
 import { WeatherDashboard } from "./WeatherDashboard";
+import {
+  TransportationSelector,
+  TransportationMode,
+  TRANSPORTATION_MODES,
+  getFloodSafety,
+  isRouteAccessibleForMode,
+} from "./TransportationSelector";
 import {
   searchZamboCityLocations,
   getLocationByCoordinates,
@@ -829,6 +838,32 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     const savedEndInput = localStorage.getItem("safepath_end_input");
     if (savedStartInput) setStartLocationInput(savedStartInput);
     if (savedEndInput) setEndLocationInput(savedEndInput);
+
+    // Check for pending GPS route
+    const pendingGPSRoute = localStorage.getItem("pendingGPSRoute");
+    if (pendingGPSRoute) {
+      try {
+        const routeData = JSON.parse(pendingGPSRoute);
+        console.log(
+          "🎯 Found pending GPS route, starting tracking:",
+          routeData
+        );
+
+        // Remove from localStorage
+        localStorage.removeItem("pendingGPSRoute");
+
+        // Start GPS tracking for this route
+        setActiveRouteId(routeData.id);
+        setTrackingStatus("requesting-permission");
+        setIsTrackingRoute(true);
+
+        // Start route tracking
+        startRouteTracking(routeData.id);
+      } catch (error) {
+        console.error("Error processing pending GPS route:", error);
+        localStorage.removeItem("pendingGPSRoute");
+      }
+    }
   }, []);
 
   // Function to call the local routing service on port 8001
@@ -859,6 +894,326 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     } catch (error) {
       console.error("❌ Local routing service failed:", error);
       return null;
+    }
+  };
+
+  // Transportation-aware route calculation
+  const calculateTransportationAwareRoute = (
+    route: LatLng[],
+    mode: TransportationMode,
+    floodData?: any
+  ) => {
+    const modeConfig = TRANSPORTATION_MODES[mode];
+    const baseDistance = calculateRouteDistance(route);
+
+    // Calculate transportation-specific duration based on speed factor
+    const avgSpeedKmh =
+      mode === "walking"
+        ? 5
+        : mode === "bicycle"
+        ? 15
+        : mode === "motorcycle"
+        ? 45
+        : 50;
+    const adjustedSpeed = avgSpeedKmh * modeConfig.speedFactor;
+    const duration = (baseDistance / adjustedSpeed) * 60; // in minutes
+
+    // Check flood safety along route
+    let floodRisk = "safe";
+    if (floodData) {
+      // This would check flood depths along the route
+      const maxFloodDepth = 20; // Example - you'd get this from actual flood data
+      const safety = getFloodSafety(maxFloodDepth, mode);
+      if (safety === "dangerous") floodRisk = "dangerous";
+      else if (safety === "risky") floodRisk = "risky";
+    }
+
+    return {
+      route,
+      distance: Math.round(baseDistance * 1000), // in meters
+      duration: Math.round(duration), // in minutes
+      transportationMode: mode,
+      floodRisk,
+      color: modeConfig.color,
+    };
+  };
+
+  // 🆕 AUTO-SAVE: Function to automatically save completed routes to history
+  const autoSaveRouteToHistory = async (routes: RouteDetails) => {
+    try {
+      console.log("💾 Auto-saving route to history...");
+
+      // Use the safe route as the primary route for history
+      const safeRoute = routes.safeRoute;
+      if (!safeRoute || !startPoint || !endPoint) {
+        console.log("❌ Cannot save route: missing route data or points");
+        return;
+      }
+
+      // Calculate duration and distance
+      const routeDistance = calculateRouteDistance(safeRoute.waypoints || []);
+      const estimatedDuration = Math.round((routeDistance / 40) * 60); // 40 km/h average speed
+
+      const historyData = {
+        from_location:
+          startLocationInput ||
+          `${startPoint.lat.toFixed(4)}, ${startPoint.lng.toFixed(4)}`,
+        to_location:
+          endLocationInput ||
+          `${endPoint.lat.toFixed(4)}, ${endPoint.lng.toFixed(4)}`,
+        from_lat: startPoint.lat,
+        from_lng: startPoint.lng,
+        to_lat: endPoint.lat,
+        to_lng: endPoint.lng,
+        date: new Date().toISOString(),
+        duration: `${estimatedDuration}`,
+        distance: `${routeDistance.toFixed(2)}`,
+        status: "planned", // Route is planned, not completed yet
+        weather_condition: "Current",
+        route_type: "safe",
+        waypoints: JSON.stringify(safeRoute.waypoints || []),
+      };
+
+      const response = await fetch("http://localhost:8001/api/routes/history", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(historyData),
+      });
+
+      if (response.ok) {
+        const savedRoute = await response.json();
+        const routeId = savedRoute.id;
+        console.log(
+          "✅ Route successfully saved to history! Route ID:",
+          routeId
+        );
+
+        // Only offer GPS tracking on mobile/devices with GPS capability
+        const isMobile =
+          /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+            navigator.userAgent
+          );
+        const hasGeolocation = "geolocation" in navigator;
+
+        if (isMobile && hasGeolocation) {
+          // Show GPS tracking option for mobile devices
+          const startTracking = await confirm({
+            title: "Route Saved Successfully!",
+            description:
+              "Would you like to start GPS tracking to automatically mark this route as completed when you reach your destination?",
+            confirmText: "Start GPS Tracking",
+            cancelText: "View Route Only",
+            variant: "success",
+          });
+
+          if (startTracking) {
+            startRouteTracking(routeId);
+          } else {
+            notification.route.saved(false);
+          }
+        } else {
+          // For desktop/non-mobile: Just show route saved message
+          console.log(
+            "📋 Route saved for viewing - GPS tracking not offered on this device"
+          );
+          notification.route.saved(false);
+        }
+      } else {
+        console.error(
+          "❌ Failed to save route to history:",
+          response.statusText
+        );
+        notification.error(
+          "Failed to Save Route",
+          "Unable to save your route. Please try again."
+        );
+      }
+    } catch (error) {
+      console.error("❌ Error saving route to history:", error);
+      notification.error(
+        "Route Save Error",
+        "An unexpected error occurred while saving your route."
+      );
+    }
+  };
+
+  // 🆕 GPS TRACKING & GEOFENCING SYSTEM
+
+  // Calculate distance between two coordinates (Haversine formula)
+  const calculateDistance = (
+    lat1: number,
+    lng1: number,
+    lat2: number,
+    lng2: number
+  ): number => {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lng2 - lng1) * Math.PI) / 180;
+
+    const a =
+      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c; // Distance in meters
+  };
+
+  // Start GPS tracking for route completion
+  const startRouteTracking = async (routeId: number) => {
+    if (!endPoint) {
+      console.error("❌ Cannot start tracking: No destination set");
+      return;
+    }
+
+    try {
+      setTrackingStatus("requesting-permission");
+      console.log("📍 Requesting GPS permission for route tracking...");
+
+      // Request GPS permission
+      const permission = await navigator.permissions.query({
+        name: "geolocation",
+      });
+
+      if (permission.state === "denied") {
+        setTrackingStatus("error");
+        notification.gps.permissionRequired();
+        return;
+      }
+
+      // Start watching position
+      const watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const userPos = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          };
+
+          setCurrentPosition(userPos);
+          setTrackingStatus("tracking");
+
+          // Calculate distance to destination
+          const distanceToEnd = calculateDistance(
+            userPos.lat,
+            userPos.lng,
+            endPoint.lat,
+            endPoint.lng
+          );
+
+          setDistanceToDestination(distanceToEnd);
+          console.log(
+            `📍 Current position: ${userPos.lat.toFixed(
+              6
+            )}, ${userPos.lng.toFixed(6)}`
+          );
+          console.log(
+            `🎯 Distance to destination: ${Math.round(distanceToEnd)}m`
+          );
+
+          // Check if user reached destination (within 100 meters)
+          if (distanceToEnd <= 100) {
+            console.log("🎉 Destination reached! Auto-completing route...");
+            completeRoute(routeId);
+          } else if (distanceToEnd <= 500) {
+            console.log(
+              `🚗 Almost there! ${Math.round(distanceToEnd)}m remaining`
+            );
+          }
+        },
+        (error) => {
+          console.error("❌ GPS tracking error:", error);
+          setTrackingStatus("error");
+
+          switch (error.code) {
+            case error.PERMISSION_DENIED:
+              notification.gps.permissionDenied();
+              break;
+            case error.POSITION_UNAVAILABLE:
+              notification.gps.unavailable();
+              break;
+            case error.TIMEOUT:
+              console.log("GPS timeout, retrying...");
+              break;
+          }
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 5000,
+        }
+      );
+
+      setGpsWatchId(watchId);
+      setActiveRouteId(routeId);
+      setIsTrackingRoute(true);
+
+      // Update route status to "in-progress"
+      updateRouteStatus(routeId, "in-progress");
+
+      console.log("✅ GPS tracking started successfully!");
+    } catch (error) {
+      console.error("❌ Failed to start GPS tracking:", error);
+      setTrackingStatus("error");
+    }
+  };
+
+  // Stop GPS tracking
+  const stopRouteTracking = () => {
+    if (gpsWatchId !== null) {
+      navigator.geolocation.clearWatch(gpsWatchId);
+      setGpsWatchId(null);
+    }
+
+    setIsTrackingRoute(false);
+    setCurrentPosition(null);
+    setDistanceToDestination(null);
+    setActiveRouteId(null);
+    setTrackingStatus("idle");
+
+    console.log("⏹️ GPS tracking stopped");
+  };
+
+  // Complete route (called when destination reached)
+  const completeRoute = async (routeId: number) => {
+    try {
+      stopRouteTracking();
+      setTrackingStatus("completed");
+
+      await updateRouteStatus(routeId, "completed");
+
+      // Show success notification
+      notification.gps.destinationReached();
+
+      console.log("✅ Route completed successfully!");
+    } catch (error) {
+      console.error("❌ Error completing route:", error);
+    }
+  };
+
+  // Update route status in backend
+  const updateRouteStatus = async (routeId: number, status: string) => {
+    try {
+      const response = await fetch(
+        `http://localhost:8001/api/routes/history/${routeId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ status }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to update route status");
+      }
+
+      console.log(`✅ Route status updated to: ${status}`);
+    } catch (error) {
+      console.error("❌ Error updating route status:", error);
     }
   };
 
@@ -899,6 +1254,22 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const [showRoutePlannerModal, setShowRoutePlannerModal] = useState(false);
   const [startLocationInput, setStartLocationInput] = useState("");
   const [endLocationInput, setEndLocationInput] = useState("");
+
+  // 🆕 GPS Tracking & Route Completion States
+  const [isTrackingRoute, setIsTrackingRoute] = useState(false);
+  const [currentPosition, setCurrentPosition] = useState<LatLng | null>(null);
+  const [distanceToDestination, setDistanceToDestination] = useState<
+    number | null
+  >(null);
+  const [activeRouteId, setActiveRouteId] = useState<number | null>(null);
+  const [gpsWatchId, setGpsWatchId] = useState<number | null>(null);
+  const [trackingStatus, setTrackingStatus] = useState<
+    "idle" | "requesting-permission" | "tracking" | "completed" | "error"
+  >("idle");
+
+  // Initialize confirmation dialog hook
+  const { confirm } = useConfirmation();
+
   const [startSuggestions, setStartSuggestions] = useState<
     LocationSuggestion[]
   >([]);
@@ -942,6 +1313,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   );
   const [pathFound, setPathFound] = useState<LatLng[]>([]);
   const [isCalculatingRoutes, setIsCalculatingRoutes] = useState(false);
+
+  // Transportation mode state
+  const [selectedTransportationMode, setSelectedTransportationMode] =
+    useState<TransportationMode>("car");
 
   // Terrain roads data for enhanced routing
   const [terrainRoadsData, setTerrainRoadsData] =
@@ -1546,20 +1921,22 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   // Add markers for waypoints
   useEffect(() => {
     if (!mapRef.current || !isMapReady || waypoints.length === 0) return;
-    
+
     // Skip if waypoints were already snapped and markers manually created
     if (waypointsSnappedRef.current) {
-      console.log("⏭️ Skipping waypoint marker creation - using snapped markers");
+      console.log(
+        "⏭️ Skipping waypoint marker creation - using snapped markers"
+      );
       return;
     }
-    
+
     // Reset snapped flag when waypoints change (user added/removed waypoint)
     waypointsSnappedRef.current = false;
 
     // Remove old waypoint markers (markers with className containing 'waypoint')
     markersRef.current = markersRef.current.filter((marker) => {
       const markerElement = marker.getElement();
-      if (markerElement && markerElement.className.includes('waypoint-pin')) {
+      if (markerElement && markerElement.className.includes("waypoint-pin")) {
         if (mapRef.current && mapRef.current.hasLayer(marker)) {
           mapRef.current.removeLayer(marker);
         }
@@ -1614,9 +1991,16 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         if (mapInstance && mapInstance.getContainer()) {
           try {
             marker.addTo(mapInstance);
-            marker.bindPopup(`Point ${String.fromCharCode(67 + index)}: ${waypoint.location.display_name}`);
+            marker.bindPopup(
+              `Point ${String.fromCharCode(67 + index)}: ${
+                waypoint.location.display_name
+              }`
+            );
             markersRef.current.push(marker);
-            console.log(`📍 Added waypoint marker ${String.fromCharCode(67 + index)} at`, coordinates);
+            console.log(
+              `📍 Added waypoint marker ${String.fromCharCode(67 + index)} at`,
+              coordinates
+            );
           } catch (markerError) {
             console.error("Error adding waypoint marker:", markerError);
           }
@@ -1684,21 +2068,21 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     popupAnchor: [0, -32],
   });
 
-  // Zamboanga City location search using local database (simplified working version)
+  // Zamboanga City location search (same as report form)
   const searchLocations = async (
     query: string
   ): Promise<LocationSuggestion[]> => {
     if (query.length < 2) return [];
 
     try {
-      console.log(`🔍 Searching for "${query}" in local Zamboanga database...`);
+      console.log(`🔍 Searching for "${query}" in Zamboanga locations...`);
 
-      // Use the local Zamboanga City database (async version)
-      const zamboCityResults = await searchZamboCityLocations(query, 5);
+      // Use the same search function as the report form
+      const zamboCityResults = await searchZamboCityLocations(query, 8);
 
       if (!Array.isArray(zamboCityResults)) {
         console.error(
-          "❌ Local search returned invalid data:",
+          "❌ Location search returned invalid data:",
           zamboCityResults
         );
         return [];
@@ -2113,7 +2497,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     try {
       // *** CRITICAL FIX: Use the /local-route endpoint with segmented A* routing ***
       // This endpoint uses your flood-aware A* pathfinding logic, NOT OSRM
-      const localRouteUrl = `${BACKEND_URL}/local-route?start=${start.lat},${start.lng}&end=${end.lat},${end.lng}${
+      const localRouteUrl = `${BACKEND_URL}/local-route?start=${start.lat},${
+        start.lng
+      }&end=${end.lat},${end.lng}${
         waypoints.length > 0
           ? `&waypoints=${waypoints
               .map((wp) => `${wp.lng},${wp.lat}`) // Waypoints are lng,lat format
@@ -2121,7 +2507,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           : ""
       }`;
 
-      console.log(`� Using FastAPI /local-route (A* flood-aware routing): ${localRouteUrl}`);
+      console.log(
+        `� Using FastAPI /local-route (A* flood-aware routing): ${localRouteUrl}`
+      );
       console.log(
         `   Coordinates: Start=[${start.lat}, ${start.lng}] End=[${end.lat}, ${end.lng}]`
       );
@@ -2157,7 +2545,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       // Get the first route (or the one matching current selection)
       // FastAPI returns routes in format: [{ route_type, coordinates: [[lat, lng], ...], ... }]
       const selectedRoute = data.routes[0]; // You can select based on route_type if needed
-      
+
       // Convert coordinates from [[lat, lng], ...] to LatLng objects
       const route = selectedRoute.coordinates.map((coord: any) => ({
         lat: coord.lat,
@@ -2251,9 +2639,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         console.log("  📊 Flood-aware routing response:", data);
 
         if (data.routes && data.routes.length > 0) {
-          console.log(
-            `  ✅ Got ${data.routes.length} flood-aware routes`
-          );
+          console.log(`  ✅ Got ${data.routes.length} flood-aware routes`);
 
           // Map routes by label (safest/balanced/direct)
           for (const routeData of data.routes) {
@@ -2268,8 +2654,12 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               // Map based on label from backend
               const label = routeData.label || "";
               const floodPercentage = routeData.flood_percentage || 0;
-              
-              console.log(`    Route ${label}: ${floodPercentage.toFixed(1)}% flooded, ${route.length} points`);
+
+              console.log(
+                `    Route ${label}: ${floodPercentage.toFixed(1)}% flooded, ${
+                  route.length
+                } points`
+              );
 
               if (label === "safest") {
                 routes.safe = route;
@@ -2283,13 +2673,19 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
           // If we got routes, return them
           if (routes.safe || routes.manageable || routes.prone) {
+            console.log("  🎉 Successfully got distinct flood-aware routes!");
             console.log(
-              "  🎉 Successfully got distinct flood-aware routes!"
+              `    Safe: ${routes.safe ? routes.safe.length : 0} points`
             );
-            console.log(`    Safe: ${routes.safe ? routes.safe.length : 0} points`);
-            console.log(`    Manageable: ${routes.manageable ? routes.manageable.length : 0} points`);
-            console.log(`    Prone: ${routes.prone ? routes.prone.length : 0} points`);
-            
+            console.log(
+              `    Manageable: ${
+                routes.manageable ? routes.manageable.length : 0
+              } points`
+            );
+            console.log(
+              `    Prone: ${routes.prone ? routes.prone.length : 0} points`
+            );
+
             return {
               safe: routes.safe || [],
               manageable: routes.manageable || [],
@@ -2311,7 +2707,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       routes.prone = fallbackRoute;
     } catch (error) {
       console.warn("Flood-aware routing error, using fallback:", error);
-      
+
       // Final fallback: Use direct route for all three
       try {
         const fallbackRoute = await getLocalOSRMRoute(start, end, []);
@@ -5469,19 +5865,27 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const generateFloodRoutes = async (
     start: LatLng,
     end: LatLng,
-    waypointsCoords?: LatLng[]
+    waypointsCoords?: LatLng[],
+    transportationMode: TransportationMode = "car"
   ): Promise<RouteDetails> => {
     try {
       console.log(
-        "🚀 HYBRID ROUTING: Calling backend for OSRM routes + flood analysis..."
+        `🚀 HYBRID ROUTING: Calling backend for OSRM routes + flood analysis (Mode: ${transportationMode})...`
       );
       console.log("📍 DEBUG: Input coordinates:");
       console.log(`   Start: lat=${start.lat}, lng=${start.lng}`);
       console.log(`   End: lat=${end.lat}, lng=${end.lng}`);
+      console.log(
+        `   Transportation: ${TRANSPORTATION_MODES[transportationMode].name}`
+      );
       if (waypointsCoords && waypointsCoords.length > 0) {
         console.log(`   Waypoints: ${waypointsCoords.length} stops`);
         waypointsCoords.forEach((wp, i) => {
-          console.log(`     Point ${String.fromCharCode(67 + i)}: lat=${wp.lat}, lng=${wp.lng}`);
+          console.log(
+            `     Point ${String.fromCharCode(67 + i)}: lat=${wp.lat}, lng=${
+              wp.lng
+            }`
+          );
         });
       }
 
@@ -5512,20 +5916,22 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
       // Build the URL with waypoints if provided
       // *** CRITICAL FIX: Use /local-route endpoint with segmented A* routing ***
-      let routeUrl = `${BACKEND_URL}/local-route?start=${start.lat},${start.lng}&end=${end.lat},${end.lng}`;
-      
+      let routeUrl = `${BACKEND_URL}/local-route?start=${start.lat},${start.lng}&end=${end.lat},${end.lng}&transport_mode=${transportationMode}`;
+
       // Add waypoints to the request if available (waypoints use lng,lat format)
       if (waypointsCoords && waypointsCoords.length > 0) {
         const waypointsParam = waypointsCoords
-          .map(wp => `${wp.lng},${wp.lat}`)
-          .join(';');
+          .map((wp) => `${wp.lng},${wp.lat}`)
+          .join(";");
         routeUrl += `&waypoints=${waypointsParam}`;
         console.log("🗺️ Including waypoints in route request:", waypointsParam);
       }
 
       // Call backend /local-route endpoint that uses segmented A* + flood analysis
       try {
-        console.log("🌐 Fetching flood-aware routes from FastAPI /local-route...");
+        console.log(
+          "🌐 Fetching flood-aware routes from FastAPI /local-route..."
+        );
         console.log("📡 Request URL:", routeUrl);
         const response = await fetch(routeUrl);
 
@@ -5540,7 +5946,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
         // Check for backend error responses
         if (data.success === false) {
-          throw new Error(`Backend routing failed: ${data.message || 'Unknown error'}`);
+          throw new Error(
+            `Backend routing failed: ${data.message || "Unknown error"}`
+          );
         }
 
         if (!data.routes || data.routes.length === 0) {
@@ -5550,19 +5958,24 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         if (!data.analyses || data.analyses.length === 0) {
           throw new Error("Backend returned no flood analyses");
         }
-        
+
         // Update waypoint markers with OSRM-snapped coordinates
         if (data.snapped_waypoints && data.snapped_waypoints.length > 0) {
-          console.log("📍 Updating waypoint markers with OSRM-snapped coordinates...");
+          console.log(
+            "📍 Updating waypoint markers with OSRM-snapped coordinates..."
+          );
           const updatedWaypoints = [...waypoints];
-          
+
           // Set flag to prevent useEffect from recreating markers
           waypointsSnappedRef.current = true;
-          
+
           // First, remove all existing waypoint markers
           markersRef.current = markersRef.current.filter((marker) => {
             const markerElement = marker.getElement();
-            if (markerElement && markerElement.className.includes('waypoint-pin')) {
+            if (
+              markerElement &&
+              markerElement.className.includes("waypoint-pin")
+            ) {
               if (mapRef.current && mapRef.current.hasLayer(marker)) {
                 mapRef.current.removeLayer(marker);
               }
@@ -5570,21 +5983,28 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             }
             return true;
           });
-          
+
           data.snapped_waypoints.forEach((snappedWp: any, index: number) => {
-            if (index < updatedWaypoints.length && updatedWaypoints[index].location) {
+            if (
+              index < updatedWaypoints.length &&
+              updatedWaypoints[index].location
+            ) {
               const oldLat = updatedWaypoints[index].location.lat;
               const oldLng = updatedWaypoints[index].location.lon;
-              
+
               // Update to snapped coordinates
               updatedWaypoints[index].location = {
                 ...updatedWaypoints[index].location,
                 lat: snappedWp.lat.toString(),
                 lon: snappedWp.lng.toString(),
               };
-              
-              console.log(`   Point ${snappedWp.letter}: [${oldLng}, ${oldLat}] → [${snappedWp.lng}, ${snappedWp.lat}] (${snappedWp.name || 'unnamed road'})`);
-              
+
+              console.log(
+                `   Point ${snappedWp.letter}: [${oldLng}, ${oldLat}] → [${
+                  snappedWp.lng
+                }, ${snappedWp.lat}] (${snappedWp.name || "unnamed road"})`
+              );
+
               // Immediately create new marker at snapped location
               if (mapRef.current) {
                 const waypointMarker = L.divIcon({
@@ -5619,13 +6039,19 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                 });
 
                 marker.addTo(mapRef.current);
-                marker.bindPopup(`Point ${snappedWp.letter}: ${snappedWp.name || 'Waypoint'} (snapped to road)`);
+                marker.bindPopup(
+                  `Point ${snappedWp.letter}: ${
+                    snappedWp.name || "Waypoint"
+                  } (snapped to road)`
+                );
                 markersRef.current.push(marker);
-                console.log(`   ✅ Created marker at snapped location: [${snappedWp.lng}, ${snappedWp.lat}]`);
+                console.log(
+                  `   ✅ Created marker at snapped location: [${snappedWp.lng}, ${snappedWp.lat}]`
+                );
               }
             }
           });
-          
+
           setWaypoints(updatedWaypoints);
         }
 
@@ -5728,7 +6154,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       } catch (error) {
         console.error("❌ Backend routing failed:", error);
         // Re-throw the error to be handled by the UI
-        throw new Error(`Route calculation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        throw new Error(
+          `Route calculation failed: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`
+        );
       }
     } catch (outerError) {
       console.error("Fatal error in generateFloodRoutes:", outerError);
@@ -5844,21 +6274,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           return;
         }
 
-        // Update polyline to show progress with pulse effect
+        // Update polyline to show smooth progress without effects
         const currentWaypoints = waypoints.slice(0, currentIndex + 1);
         polyline.setLatLngs(currentWaypoints);
-
-        // Add subtle pulse effect to show progress
-        const element = polyline.getElement() as HTMLElement;
-        if (element) {
-          element.style.animation = "pulse 0.3s ease-in-out";
-          setTimeout(() => {
-            if (element) {
-              element.style.animation = "";
-            }
-          }, 300);
-        }
-      }, 75); // Faster animation: Draw segment every 75ms
+      }, 35); // Faster animation: Draw segment every 35ms (increased speed)
     });
   };
 
@@ -6314,25 +6733,32 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       console.log("📍 End location data:", selectedEndLocation);
       console.log("📍 Start point:", startPoint);
       console.log("📍 End point:", endPoint);
-      
+
       // Extract waypoint coordinates
       const waypointsCoords: LatLng[] = waypoints
-        .filter(wp => wp.location !== null)
-        .map(wp => ({
+        .filter((wp) => wp.location !== null)
+        .map((wp) => ({
           lat: parseFloat(wp.location!.lat),
-          lng: parseFloat(wp.location!.lon)
+          lng: parseFloat(wp.location!.lon),
         }));
-      
+
       console.log("🗺️ WAYPOINTS DEBUG:");
       console.log("  Total waypoints in state:", waypoints.length);
-      console.log("  Waypoints with location:", waypoints.filter(wp => wp.location !== null).length);
+      console.log(
+        "  Waypoints with location:",
+        waypoints.filter((wp) => wp.location !== null).length
+      );
       console.log("  Waypoints array:", waypoints);
       console.log("  Extracted coordinates:", waypointsCoords);
-      
+
       if (waypointsCoords.length > 0) {
-        console.log(`✅ Route will include ${waypointsCoords.length} waypoint(s)`);
+        console.log(
+          `✅ Route will include ${waypointsCoords.length} waypoint(s)`
+        );
         waypointsCoords.forEach((wp, i) => {
-          console.log(`   Point ${String.fromCharCode(67 + i)}: ${wp.lat}, ${wp.lng}`);
+          console.log(
+            `   Point ${String.fromCharCode(67 + i)}: ${wp.lat}, ${wp.lng}`
+          );
         });
       } else {
         console.log("⚠️ No waypoints will be included in route");
@@ -6347,7 +6773,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           startPoint.lng > 122.3)
       ) {
         console.error("❌ Start point outside Zamboanga bounds:", startPoint);
-        alert(
+        notification.warning(
+          "Location Outside Zamboanga City",
           "Start location appears to be outside Zamboanga City. Please select a different location."
         );
         return;
@@ -6361,7 +6788,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           endPoint.lng > 122.3)
       ) {
         console.error("❌ End point outside Zamboanga bounds:", endPoint);
-        alert(
+        notification.warning(
+          "Location Outside Zamboanga City",
           "End location appears to be outside Zamboanga City. Please select a different location."
         );
         return;
@@ -6404,8 +6832,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         setIsCalculatingRoutes(true);
         setPathfindingStep("calculating");
 
-        // Generate routes using OSRM with waypoints
-        const routes = await generateFloodRoutes(startPoint!, endPoint!, waypointsCoords);
+        // Generate routes using OSRM with waypoints and transportation mode
+        const routes = await generateFloodRoutes(
+          startPoint!,
+          endPoint!,
+          waypointsCoords,
+          selectedTransportationMode
+        );
 
         // Pre-cache elevation data for route points
         const elevationCache = new Map<string, TerrainData>();
@@ -6659,7 +7092,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           await drawRouteWithAnimation(routes.safeRoute, "Safe Route");
 
           console.log("🎯 Safe route complete! Now drawing other routes...");
-          await new Promise((resolve) => setTimeout(resolve, 500)); // Faster pause before other routes
+          await new Promise((resolve) => setTimeout(resolve, 200)); // Even faster pause before other routes
 
           // Draw the other routes simultaneously after safe route is done
           const otherRoutes = [
@@ -6717,6 +7150,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         await drawAllRoutes(routes);
 
         setRouteDetails(routes);
+
+        // 🆕 AUTO-SAVE: Save route to history automatically
+        await autoSaveRouteToHistory(routes);
       } catch (error) {
         // Turn off loading animation on error
         setIsCalculatingRoutes(false);
@@ -6740,7 +7176,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         }
 
         // Show user-friendly error message
-        alert(errorMessage);
+        notification.error("Route Generation Failed", errorMessage);
 
         // Don't show fallback routes to avoid confusion - user should try again
         console.log(
@@ -6788,11 +7224,17 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           }
         },
         (error) => {
-          alert("Unable to get current location: " + error.message);
+          notification.error(
+            "Location Error",
+            "Unable to get current location: " + error.message
+          );
         }
       );
     } else {
-      alert("Geolocation is not supported by this browser");
+      notification.error(
+        "Geolocation Not Supported",
+        "Your browser doesn't support location services."
+      );
     }
   };
 
@@ -6990,15 +7432,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     min-width: 180px;
                     max-width: 220px;
                   ">
-                    <div style="color: ${color}; font-weight: 600; font-size: 13px; margin-bottom: 6px;">
-                      🏔️ Terrain Data ${
-                        elevationData
-                          ? useOfflineMode || apiFailureCount > 3
-                            ? "(Estimated)"
-                            : "(Live)"
-                          : "(Estimated)"
-                      }
-                    </div>
                     <div style="margin-bottom: 4px; font-size: 12px;">
                       <strong>Elevation:</strong> ${displayElevation.toFixed(
                         1
@@ -7057,9 +7490,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     font-family: system-ui, -apple-system, sans-serif;
                     min-width: 180px;
                   ">
-                    <div style="color: ${color}; font-weight: 600; font-size: 13px; margin-bottom: 6px;">
-                      🏔️ Terrain Data (Estimated)
-                    </div>
                     <div style="margin-bottom: 4px; font-size: 12px;">
                       <strong>Elevation:</strong> ~${elevation.toFixed(1)}m
                     </div>
@@ -7367,19 +7797,232 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     // Set map as ready after initialization
     setTimeout(() => setIsMapReady(true), 100);
 
-    // 1. FIRST: Add geocoder (search bar)
-    const geocoder = (L.Control as any)
-      .geocoder({
-        defaultMarkGeocode: false,
+    // 1. FIRST: Add custom search control with dropdown in top-left position
+    const SearchControl = L.Control.extend({
+      options: {
         position: "topleft",
-        placeholder: "Search in Zamboanga City...",
-        collapsed: false,
-      })
-      .on("markgeocode", function (e: any) {
-        const latlng = e.geocode.center;
-        map.setView(latlng, 16);
-      })
-      .addTo(map);
+      },
+      onAdd: function () {
+        const container = L.DomUtil.create(
+          "div",
+          "leaflet-bar leaflet-control"
+        );
+        container.style.cssText = `
+          background: white;
+          border-radius: 8px;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+          border: 1px solid #ddd;
+          overflow: visible;
+          margin-top: 10px;
+          position: relative;
+          z-index: 10000;
+        `;
+
+        const searchContainer = L.DomUtil.create("div", "", container);
+        searchContainer.style.cssText = `
+          display: flex;
+          align-items: center;
+          padding: 8px 12px;
+          min-width: 280px;
+        `;
+
+        // Professional search icon
+        const searchIcon = L.DomUtil.create("div", "", searchContainer);
+        searchIcon.innerHTML = `
+          <svg width="16" height="16" fill="#6b7280" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/>
+          </svg>
+        `;
+        searchIcon.style.cssText = `
+          margin-right: 8px;
+          display: flex;
+          align-items: center;
+          transition: all 0.2s ease;
+        `;
+
+        // Hover effect
+        searchIcon.addEventListener("mouseenter", () => {
+          const svg = searchIcon.querySelector("svg");
+          if (svg) svg.setAttribute("fill", "#374151");
+        });
+
+        searchIcon.addEventListener("mouseleave", () => {
+          const svg = searchIcon.querySelector("svg");
+          if (svg) svg.setAttribute("fill", "#6b7280");
+        });
+
+        const searchInput = L.DomUtil.create("input", "", searchContainer);
+        searchInput.type = "text";
+        searchInput.placeholder = "Search locations...";
+        searchInput.style.cssText = `
+          border: none;
+          outline: none;
+          background: transparent;
+          flex: 1;
+          font-size: 14px;
+          color: #333;
+        `;
+
+        // Create dropdown for suggestions
+        const dropdown = L.DomUtil.create("div", "", container);
+        dropdown.style.cssText = `
+          position: absolute;
+          top: 100%;
+          left: 0;
+          right: 0;
+          background: white;
+          border: 1px solid #ddd;
+          border-top: none;
+          border-radius: 0 0 8px 8px;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+          max-height: 200px;
+          overflow-y: auto;
+          z-index: 10000;
+          display: none;
+        `;
+
+        // Prevent map interaction when using search
+        L.DomEvent.disableClickPropagation(container);
+        L.DomEvent.disableScrollPropagation(container);
+
+        // Add search functionality with dropdown
+        let searchTimeout: NodeJS.Timeout;
+        let currentSuggestions: any[] = [];
+
+        const showDropdown = () => {
+          dropdown.style.display = "block";
+        };
+
+        const hideDropdown = () => {
+          setTimeout(() => {
+            dropdown.style.display = "none";
+          }, 150);
+        };
+
+        const updateDropdown = (suggestions: any[]) => {
+          dropdown.innerHTML = "";
+          currentSuggestions = suggestions;
+
+          if (suggestions.length === 0) {
+            const noResults = L.DomUtil.create("div", "", dropdown);
+            noResults.textContent = "No locations found";
+            noResults.style.cssText = `
+              padding: 12px;
+              color: #666;
+              font-size: 14px;
+              text-align: center;
+            `;
+            return;
+          }
+
+          suggestions.forEach((location, index) => {
+            const item = L.DomUtil.create("div", "", dropdown);
+            item.style.cssText = `
+              padding: 8px 12px;
+              cursor: pointer;
+              border-bottom: 1px solid #f0f0f0;
+              font-size: 14px;
+              transition: background-color 0.2s;
+            `;
+            item.innerHTML = `
+              <div style="font-weight: 500; color: #333;">${
+                location.displayName.split(",")[0]
+              }</div>
+              <div style="font-size: 12px; color: #666;">${
+                location.displayName
+              }</div>
+            `;
+
+            item.addEventListener("mouseenter", () => {
+              item.style.backgroundColor = "#f8f9fa";
+            });
+
+            item.addEventListener("mouseleave", () => {
+              item.style.backgroundColor = "transparent";
+            });
+
+            item.addEventListener("click", () => {
+              searchInput.value = location.displayName.split(",")[0];
+              map.setView([location.lat, location.lng], 16);
+
+              // Create a custom beautiful marker icon
+              const customIcon = L.divIcon({
+                html: `
+                  <div style="
+                    width: 30px;
+                    height: 30px;
+                    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+                    border: 3px solid white;
+                    border-radius: 50%;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    position: relative;
+                  ">
+                    <svg width="16" height="16" fill="white" viewBox="0 0 20 20">
+                      <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/>
+                    </svg>
+                  </div>
+                `,
+                className: "custom-search-marker",
+                iconSize: [30, 30],
+                iconAnchor: [15, 15],
+              });
+
+              // Add a temporary marker with custom icon
+              const marker = L.marker([location.lat, location.lng], {
+                icon: customIcon,
+              })
+                .addTo(map)
+                .bindPopup(location.displayName)
+                .openPopup();
+
+              // Remove marker after 3 seconds
+              setTimeout(() => {
+                map.removeLayer(marker);
+              }, 3000);
+
+              hideDropdown();
+            });
+          });
+        };
+
+        searchInput.addEventListener("input", (e) => {
+          const query = (e.target as HTMLInputElement).value;
+
+          clearTimeout(searchTimeout);
+          searchTimeout = setTimeout(async () => {
+            if (query.length >= 2) {
+              try {
+                const results = await searchZamboCityLocations(query, 8);
+                updateDropdown(results);
+                showDropdown();
+              } catch (error) {
+                console.error("Search error:", error);
+                updateDropdown([]);
+                showDropdown();
+              }
+            } else {
+              hideDropdown();
+            }
+          }, 300);
+        });
+
+        searchInput.addEventListener("focus", () => {
+          if (currentSuggestions.length > 0) {
+            showDropdown();
+          }
+        });
+
+        searchInput.addEventListener("blur", hideDropdown);
+
+        return container;
+      },
+    });
+
+    const searchControl = new SearchControl();
+    map.addControl(searchControl);
 
     // 2. SECOND: Add flood-aware routing button control
     const RoutingBtn = L.Control.extend({
@@ -7426,7 +8069,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     const routingBtn = new RoutingBtn({ position: "topleft" });
     map.addControl(routingBtn);
 
-    // 3. THIRD: Add zoom controls
+    // 2. SECOND: Add zoom controls
     const zoomControl = new L.Control.Zoom({
       position: "topleft",
     });
@@ -7596,7 +8239,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               mapRef.current?.setView([latlng.lat, latlng.lng], 15);
             });
           } else {
-            alert("Geolocation not supported");
+            notification.error(
+              "Geolocation Not Supported",
+              "Your browser doesn't support location services."
+            );
           }
         };
 
@@ -7748,7 +8394,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         text.style.fontSize = "12px";
         text.style.fontWeight = "500";
         text.style.color = "#000";
-        
+
         // Store reference to update later
         reportsButtonTextRef.current = text;
 
@@ -7882,7 +8528,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         await handleFindRoute();
       } catch (error) {
         console.error("Failed to start directions:", error);
-        alert(
+        notification.error(
+          "Directions Failed",
           error instanceof Error
             ? error.message
             : "We could not access your current location. Please allow location permissions and try again."
@@ -8287,7 +8934,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     setEndSuggestions([]);
     setShowStartSuggestions(false);
     setShowEndSuggestions(false);
-    
+
     // Clear waypoints
     setWaypoints([]);
     console.log("🗑️ Cleared all waypoints");
@@ -8891,27 +9538,28 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         {routeMode && (
           <div
             style={{
-              position: "absolute",
-              bottom: "10px",
-              left: "10px",
+              position: "fixed",
+              bottom: "30px",
+              left: "20px",
               background: "rgba(255, 255, 255, 0.95)",
               padding: "12px",
-              borderRadius: "10px",
-              boxShadow: "0 4px 15px rgba(0,0,0,0.15)",
+              borderRadius: "8px",
+              boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
               border: "1px solid rgba(0,0,0,0.1)",
-              zIndex: 1500,
-              minWidth: "180px",
+              zIndex: 1000,
+              minWidth: "200px",
+              fontFamily: "system-ui, -apple-system, sans-serif",
             }}
           >
             <h4
               style={{
                 margin: "0 0 10px 0",
+                color: "#2c3e50",
                 fontSize: "14px",
-                fontWeight: "bold",
-                color: "#333",
+                fontWeight: "600",
               }}
             >
-              Route Options
+              🗺️ Route Options
             </h4>
             <div
               style={{ display: "flex", flexDirection: "column", gap: "5px" }}
@@ -8982,6 +9630,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           searchLocations={searchLocations}
           waypoints={waypoints}
           setWaypoints={setWaypoints}
+          selectedTransportationMode={selectedTransportationMode}
+          onTransportationModeChange={setSelectedTransportationMode}
           // Add these back temporarily to prevent crashes:
           routeOptions={{
             avoidFloods: false,
@@ -9567,6 +10217,92 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         isOpen={showWeatherDashboard}
         onClose={() => setShowWeatherDashboard(false)}
       />
+
+      {/* 🆕 GPS Tracking Status Indicator */}
+      {isTrackingRoute && (
+        <div
+          style={{
+            position: "absolute",
+            top: "120px",
+            right: "20px",
+            background:
+              trackingStatus === "tracking"
+                ? "linear-gradient(135deg, #00b894, #00a085)"
+                : "#e17055",
+            color: "white",
+            padding: "12px 16px",
+            borderRadius: "12px",
+            boxShadow: "0 4px 15px rgba(0,0,0,0.2)",
+            zIndex: 1000,
+            minWidth: "200px",
+            border: "2px solid white",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              marginBottom: "4px",
+            }}
+          >
+            <div
+              style={{
+                width: "8px",
+                height: "8px",
+                borderRadius: "50%",
+                backgroundColor:
+                  trackingStatus === "tracking" ? "#00ff88" : "#ff6b6b",
+                animation:
+                  trackingStatus === "tracking"
+                    ? "pulse 1.5s infinite"
+                    : "none",
+              }}
+            ></div>
+            <strong>
+              {trackingStatus === "tracking"
+                ? "🛣️ Following Route"
+                : trackingStatus === "completed"
+                ? "🎉 Route Completed!"
+                : trackingStatus === "error"
+                ? "❌ GPS Error"
+                : "📍 Starting..."}
+            </strong>
+          </div>
+          {distanceToDestination !== null && (
+            <div style={{ fontSize: "14px", opacity: 0.9 }}>
+              🎯 {Math.round(distanceToDestination)}m to destination
+              {distanceToDestination <= 500 && " - Almost there! 🚗"}
+            </div>
+          )}
+          <button
+            onClick={stopRouteTracking}
+            style={{
+              background: "rgba(255,255,255,0.2)",
+              border: "1px solid rgba(255,255,255,0.3)",
+              color: "white",
+              padding: "4px 8px",
+              borderRadius: "6px",
+              fontSize: "12px",
+              marginTop: "6px",
+              cursor: "pointer",
+            }}
+          >
+            Stop Tracking
+          </button>
+        </div>
+      )}
+
+      {/* Map Container */}
+      <div
+        id="map"
+        style={{
+          height: "100%",
+          width: "100%",
+          borderRadius: "8px",
+          overflow: "hidden",
+        }}
+      ></div>
     </div>
   );
 };
