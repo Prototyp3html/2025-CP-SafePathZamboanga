@@ -1858,8 +1858,9 @@ async def get_route(route_request: RouteRequest):
         start_lat, start_lon = route_request.start
         end_lat, end_lon = route_request.end
         
-        # Call OSRM API
-        osrm_url = f"http://router.project-osrm.org/route/v1/driving/{start_lon},{start_lat};{end_lon},{end_lat}"
+        # Use environment variable for OSRM URL, fallback to public OSRM
+        osrm_base_url = os.getenv("OSRM_DRIVING_URL", "http://router.project-osrm.org")
+        osrm_url = f"{osrm_base_url}/route/v1/driving/{start_lon},{start_lat};{end_lon},{end_lat}"
         params = {
             "overview": "full",
             "geometries": "geojson"
@@ -2353,7 +2354,9 @@ async def get_route_with_alternatives(start_lat: float, start_lng: float, end_la
     # Get default route
     try:
         coordinates = f"{start_lng},{start_lat};{end_lng},{end_lat}"
-        url = f"http://router.project-osrm.org/route/v1/driving/{coordinates}"
+        # Use environment variable for OSRM URL
+        osrm_base_url = os.getenv("OSRM_DRIVING_URL", "http://router.project-osrm.org")
+        url = f"{osrm_base_url}/route/v1/driving/{coordinates}"
         params = {
             "overview": "full",
             "geometries": "geojson"
@@ -2376,7 +2379,9 @@ async def get_route_with_alternatives(start_lat: float, start_lng: float, end_la
     
     # Get alternative routes
     try:
-        url = f"http://router.project-osrm.org/route/v1/driving/{coordinates}"
+        # Use environment variable for OSRM URL
+        osrm_base_url = os.getenv("OSRM_DRIVING_URL", "http://router.project-osrm.org")
+        url = f"{osrm_base_url}/route/v1/driving/{coordinates}"
         params = {
             "overview": "full",
             "geometries": "geojson",
