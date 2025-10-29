@@ -244,10 +244,18 @@ class EnhancedSafeRouteResponse(BaseModel):
 # FastAPI app
 app = FastAPI(title="SafePathZC Routes API", version="1.0.0")
 
+# CORS configuration for deployment
+origins = [
+    "https://safepath-zc.vercel.app",  # Your Vercel URL
+    "http://localhost:5173",          # Local development
+    "http://localhost:3000",          # Alternative local
+    "http://127.0.0.1:5173",         # Local IP
+]
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
