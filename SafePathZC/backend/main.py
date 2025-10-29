@@ -254,10 +254,11 @@ app = FastAPI(title="SafePathZC Routes API", version="1.0.0")
 
 # CORS configuration for deployment
 origins = [
-    "https://safepath-zc.vercel.app",  # Your Vercel URL
-    "http://localhost:5173",          # Local development
-    "http://localhost:3000",          # Alternative local
-    "http://127.0.0.1:5173",         # Local IP
+    "https://safepath-zamboanga-city.vercel.app",  # Your actual Vercel URL
+    "https://safepath-zc.vercel.app",             # Alternative Vercel URL
+    "http://localhost:5173",                      # Local development
+    "http://localhost:3000",                      # Alternative local
+    "http://127.0.0.1:5173",                     # Local IP
 ]
 
 # CORS middleware
