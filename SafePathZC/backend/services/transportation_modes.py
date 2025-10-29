@@ -131,10 +131,10 @@ def get_osrm_endpoint_for_mode(transport_mode: str) -> str:
         transport_mode = 'car'  # fallback
     
     config = TRANSPORTATION_MODES[transport_mode]
-    port = config['osrm_port']
+    base_url = config['osrm_url']
     profile = config['osrm_profile']
     
-    return f"http://localhost:{port}/route/v1/{profile}"
+    return f"{base_url}/route/v1/{profile}"
 
 def adjust_route_for_transportation_mode(route_data: dict, transport_mode: str) -> dict:
     """
