@@ -299,10 +299,12 @@ DEFAULT_ALIGNMENT_SPEED_MPS = 8.33  # ~30 km/h fallback when OSRM provides no ti
 async def get_osrm_route(start_lng: float, start_lat: float, end_lng: float, end_lat: float, alternatives: bool = False):
     """Get route from OSRM routing service with robust error handling and road snapping"""
     try:
-        from services.local_routing import snap_route_to_roads
+        # Check if we're in local development or production
+        osrm_host = os.getenv("OSRM_HOST", "localhost")
+        osrm_port = os.getenv("OSRM_PORT", "5000")
         
-        # Use local OSRM server for Zamboanga-specific routing
-        base_url = "http://localhost:5000/route/v1/driving"
+        # Use local OSRM server for Zamboanga-specific routing (if available)
+        base_url = f"http://{osrm_host}:{osrm_port}/route/v1/driving"
         url = f"{base_url}/{start_lng},{start_lat};{end_lng},{end_lat}"
         
         params = {
@@ -322,20 +324,25 @@ async def get_osrm_route(start_lng: float, start_lat: float, end_lng: float, end
         if response.status_code == 200:
             data = response.json()
             if "routes" in data and len(data["routes"]) > 0:
-                # Snap each route to actual road geometries
-                for route in data["routes"]:
-                    if "geometry" in route and "coordinates" in route["geometry"]:
-                        original_coords = route["geometry"]["coordinates"]
-                        # Snap to roads (coordinates are [lng, lat])
-                        snapped_coords = snap_route_to_roads(
-                            [(coord[0], coord[1]) for coord in original_coords],
-                            snap_distance_m=30.0  # Snap within 30 meters
-                        )
-                        # Update geometry with snapped coordinates
-                        route["geometry"]["coordinates"] = [
-                            [lng, lat] for lng, lat in snapped_coords
-                        ]
-                        print(f"  Snapped route: {len(original_coords)} → {len(snapped_coords)} points")
+                # Only snap to roads if local routing service is available
+                try:
+                    from services.local_routing import snap_route_to_roads
+                    # Snap each route to actual road geometries
+                    for route in data["routes"]:
+                        if "geometry" in route and "coordinates" in route["geometry"]:
+                            original_coords = route["geometry"]["coordinates"]
+                            # Snap to roads (coordinates are [lng, lat])
+                            snapped_coords = snap_route_to_roads(
+                                [(coord[0], coord[1]) for coord in original_coords],
+                                snap_distance_m=30.0  # Snap within 30 meters
+                            )
+                            # Update geometry with snapped coordinates
+                            route["geometry"]["coordinates"] = [
+                                [lng, lat] for lng, lat in snapped_coords
+                            ]
+                            print(f"  Snapped route: {len(original_coords)} → {len(snapped_coords)} points")
+                except ImportError:
+                    print("Road snapping service not available, using original coordinates")
                 return data
             else:
                 raise Exception("No routes found in OSRM response")
@@ -344,21 +351,45 @@ async def get_osrm_route(start_lng: float, start_lat: float, end_lng: float, end
             
     except requests.exceptions.Timeout:
         print("OSRM timeout - generating fallback route")
-        # Generate a simple fallback route
-        return {
-            "routes": [{
-                "distance": 5000,  # 5km estimate
-                "duration": 600,   # 10min estimate
-                "geometry": {
-                    "type": "LineString",
-                    "coordinates": [[start_lng, start_lat], [end_lng, end_lat]]
-                }
-            }],
-            "code": "Ok"
-        }
+        return generate_fallback_route(start_lng, start_lat, end_lng, end_lat)
+    except requests.exceptions.ConnectionError:
+        print("OSRM connection failed - generating fallback route")
+        return generate_fallback_route(start_lng, start_lat, end_lng, end_lat)
     except Exception as e:
-        print(f"OSRM error: {e}")
-        raise HTTPException(status_code=500, detail=f"Routing service error: {str(e)}")
+        print(f"OSRM error: {e} - generating fallback route")
+        return generate_fallback_route(start_lng, start_lat, end_lng, end_lat)
+
+def generate_fallback_route(start_lng: float, start_lat: float, end_lng: float, end_lat: float):
+    """Generate a simple fallback route when OSRM is not available"""
+    import math
+    
+    # Calculate distance using Haversine formula
+    def haversine_distance(lat1, lon1, lat2, lon2):
+        R = 6371  # Earth radius in kilometers
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = (math.sin(dlat / 2) * math.sin(dlat / 2) +
+             math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
+             math.sin(dlon / 2) * math.sin(dlon / 2))
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        return R * c
+    
+    distance_km = haversine_distance(start_lat, start_lng, end_lat, end_lng)
+    duration_seconds = (distance_km / 30) * 3600  # Assume 30 km/h average speed
+    
+    # Create simple direct route
+    return {
+        "routes": [{
+            "distance": distance_km * 1000,  # Convert to meters
+            "duration": duration_seconds,
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[start_lng, start_lat], [end_lng, end_lat]]
+            }
+        }],
+        "code": "Ok",
+        "fallback": True  # Indicate this is a fallback route
+    }
 
 async def get_osrm_route_with_waypoints(
     start_lng: float, 
@@ -372,7 +403,9 @@ async def get_osrm_route_with_waypoints(
     try:
         from services.local_routing import snap_route_to_roads
         
-        base_url = "http://localhost:5000/route/v1/driving"
+        # Use environment variable for OSRM URL, fallback to localhost
+        osrm_base_url = os.getenv("OSRM_DRIVING_URL", "http://localhost:5000")
+        base_url = f"{osrm_base_url}/route/v1/driving"
         
         # Build coordinates string: start;waypoint1;waypoint2;...;end
         coords_parts = [f"{start_lng},{start_lat}"]

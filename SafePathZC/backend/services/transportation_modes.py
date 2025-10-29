@@ -1,6 +1,12 @@
 # Transportation mode configurations for SafePath routing
 # Matches the frontend TransportationSelector.tsx configurations
 
+import os
+
+# Get OSRM URLs from environment variables
+OSRM_DRIVING_BASE = os.getenv("OSRM_DRIVING_URL", "http://localhost:5000")
+OSRM_WALKING_BASE = os.getenv("OSRM_WALKING_URL", "http://localhost:5001")
+
 TRANSPORTATION_MODES = {
     'car': {
         'name': 'Car',
@@ -11,7 +17,7 @@ TRANSPORTATION_MODES = {
         'can_use_highways': True,
         'speed_factor': 1.0,
         'osrm_profile': 'driving',
-        'osrm_port': 5000,  # localhost:5000 for driving
+        'osrm_url': OSRM_DRIVING_BASE,
     },
     'motorcycle': {
         'name': 'Motorcycle',
@@ -22,7 +28,7 @@ TRANSPORTATION_MODES = {
         'can_use_highways': True,
         'speed_factor': 0.9,
         'osrm_profile': 'driving',
-        'osrm_port': 5000,  # localhost:5000 for driving
+        'osrm_url': OSRM_DRIVING_BASE,
     },
     'walking': {
         'name': 'Walking',
@@ -33,7 +39,7 @@ TRANSPORTATION_MODES = {
         'can_use_highways': False,
         'speed_factor': 0.1,
         'osrm_profile': 'foot',
-        'osrm_port': 5001,  # localhost:5001 for walking
+        'osrm_url': OSRM_WALKING_BASE,
     },
     'public_transport': {
         'name': 'Public Transport',
@@ -44,7 +50,7 @@ TRANSPORTATION_MODES = {
         'can_use_highways': True,
         'speed_factor': 0.6,
         'osrm_profile': 'driving',
-        'osrm_port': 5000,  # localhost:5000 for driving
+        'osrm_url': OSRM_DRIVING_BASE,
     },
     'bicycle': {
         'name': 'Bicycle',
@@ -55,7 +61,7 @@ TRANSPORTATION_MODES = {
         'can_use_highways': False,
         'speed_factor': 0.3,
         'osrm_profile': 'cycling',
-        'osrm_port': 5000,  # Use driving for now, cycling profile would need port 5002
+        'osrm_url': OSRM_DRIVING_BASE,  # Use driving for now
     },
     'truck': {
         'name': 'Truck',
@@ -66,7 +72,7 @@ TRANSPORTATION_MODES = {
         'can_use_highways': True,
         'speed_factor': 0.7,
         'osrm_profile': 'driving',
-        'osrm_port': 5000,  # localhost:5000 for driving
+        'osrm_url': OSRM_DRIVING_BASE,
     }
 }
 
