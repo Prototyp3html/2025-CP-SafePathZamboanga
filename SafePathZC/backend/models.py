@@ -1,16 +1,7 @@
-from sqlalchemy import Column, Integer, String, DateTime, Float, Boolean, Text, create_engine
+from sqlalchemy import Column, Integer, String, DateTime, Float, Boolean, Text
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
 from datetime import datetime
-import os
-from dotenv import load_dotenv
 
-load_dotenv()
-
-# Database setup
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://safepathzc_user:safepath123@localhost:5432/safepathzc")
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 # Existing models
