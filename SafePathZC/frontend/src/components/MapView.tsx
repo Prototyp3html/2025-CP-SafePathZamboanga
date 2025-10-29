@@ -874,7 +874,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       );
 
       const response = await fetch(
-        `http://localhost:8001/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`,
+        `${
+          import.meta.env.VITE_BACKEND_URL || "http://localhost:8001"
+        }/route?start=${start.lng},${start.lat}&end=${end.lng},${
+          end.lat
+        }&alternatives=true`,
         {
           method: "GET",
           headers: {
@@ -974,13 +978,18 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         waypoints: JSON.stringify(safeRoute.waypoints || []),
       };
 
-      const response = await fetch("http://localhost:8001/api/routes/history", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(historyData),
-      });
+      const response = await fetch(
+        `${
+          import.meta.env.VITE_API_BASE_URL || "http://localhost:8001/api"
+        }/routes/history`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(historyData),
+        }
+      );
 
       if (response.ok) {
         const savedRoute = await response.json();

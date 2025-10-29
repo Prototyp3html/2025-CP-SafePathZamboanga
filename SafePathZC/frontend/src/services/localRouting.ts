@@ -45,7 +45,10 @@ class LocalRoutingService {
   private baseUrl: string;
   private healthyStatus: boolean = false;
 
-  constructor(baseUrl: string = "http://localhost:8001") {
+  constructor(
+    baseUrl: string = import.meta.env.VITE_BACKEND_URL ||
+      "http://localhost:8001"
+  ) {
     this.baseUrl = baseUrl;
     this.checkHealth();
   }

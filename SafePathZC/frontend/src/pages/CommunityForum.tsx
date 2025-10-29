@@ -148,7 +148,9 @@ const CommunityForum = () => {
       }
 
       const response = await fetch(
-        `http://localhost:8001/api/forum/posts?${params}`,
+        `${
+          import.meta.env.VITE_API_BASE_URL || "http://localhost:8001/api"
+        }/forum/posts?${params}`,
         {
           headers: getAuthHeaders(),
         }
@@ -172,9 +174,14 @@ const CommunityForum = () => {
 
   const fetchStats = async () => {
     try {
-      const response = await fetch("http://localhost:8001/api/forum/stats", {
-        headers: getAuthHeaders(),
-      });
+      const response = await fetch(
+        `${
+          import.meta.env.VITE_API_BASE_URL || "http://localhost:8001/api"
+        }/forum/stats`,
+        {
+          headers: getAuthHeaders(),
+        }
+      );
       if (response.ok) {
         const data = await response.json();
         setForumStats(data);
