@@ -819,6 +819,40 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   // Only log configuration once per session and load terrain data
 
   useEffect(() => {
+    // Add custom CSS for less obtrusive OpenStreetMap attribution
+    const styleElement = document.createElement("style");
+    styleElement.innerHTML = `
+      .leaflet-control-attribution {
+        background: rgba(255, 255, 255, 0.5) !important;
+        font-size: 10px !important;
+        padding: 2px 4px !important;
+        border-radius: 2px !important;
+        opacity: 0.6 !important;
+        transition: opacity 0.2s ease !important;
+        max-width: 200px !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+      }
+      
+      .leaflet-control-attribution:hover {
+        opacity: 1 !important;
+        background: rgba(255, 255, 255, 0.9) !important;
+      }
+      
+      .leaflet-control-attribution a {
+        color: #666 !important;
+        text-decoration: none !important;
+        font-size: 9px !important;
+      }
+      
+      .leaflet-control-attribution a:hover {
+        color: #000 !important;
+        text-decoration: underline !important;
+      }
+    `;
+    document.head.appendChild(styleElement);
+
     if (!window.mapViewConfigLogged) {
       console.log(`🗺️ MapView Configuration:
         - Backend URL: ${BACKEND_URL}
@@ -864,6 +898,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         localStorage.removeItem("pendingGPSRoute");
       }
     }
+
+    // Cleanup function to remove the style element when component unmounts
+    return () => {
+      if (document.head.contains(styleElement)) {
+        document.head.removeChild(styleElement);
+      }
+    };
   }, []);
 
   // Function to call the local routing service on port 8001
