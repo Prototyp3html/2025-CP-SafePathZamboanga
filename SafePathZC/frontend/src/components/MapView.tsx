@@ -1629,15 +1629,30 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       // Method 1: Fetch from forum posts (existing approved reports)
       try {
         console.log("📋 Fetching from forum posts...");
+        
+        // Add timeout to forum API call to prevent hanging
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+        
         const forumResponse = await fetch(
-          `${apiUrl}/api/forum/posts?category=reports&limit=100`
+          `${apiUrl}/api/forum/posts?category=reports&limit=100`,
+          { 
+            signal: controller.signal,
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            }
+          }
         );
+        
+        clearTimeout(timeoutId);
 
         if (forumResponse.ok) {
           const forumData = await forumResponse.json();
           console.log("📋 Forum posts data:", forumData);
 
           if (forumData.posts && Array.isArray(forumData.posts)) {
+            console.log(`📋 Found ${forumData.posts.length} forum posts`);
             for (const post of forumData.posts) {
               try {
                 const content = post.content;
@@ -1675,20 +1690,42 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                 );
               }
             }
+          } else {
+            console.log("📋 No forum posts found or invalid format");
           }
+        } else {
+          console.error(`❌ Forum API failed: ${forumResponse.status} ${forumResponse.statusText}`);
         }
       } catch (error) {
-        console.error("❌ Error fetching forum posts:", error);
+        if (error.name === 'AbortError') {
+          console.error("❌ Forum API timeout - taking too long to respond");
+        } else {
+          console.error("❌ Error fetching forum posts:", error);
+        }
       }
 
       // Method 2: Fetch directly from reports API (including non-approved reports)
       try {
         console.log("📊 Fetching from reports API...");
-        const reportsResponse = await fetch(`${apiUrl}/api/reports?limit=100`);
+        
+        // Add timeout to reports API call as well
+        const reportsController = new AbortController();
+        const reportsTimeoutId = setTimeout(() => reportsController.abort(), 15000); // 15 second timeout
+        
+        const reportsResponse = await fetch(`${apiUrl}/api/reports?limit=100`, {
+          signal: reportsController.signal,
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        clearTimeout(reportsTimeoutId);
 
         if (reportsResponse.ok) {
           const reportsData = await reportsResponse.json();
           console.log("📊 Reports API data:", reportsData);
+          console.log(`📊 Found ${reportsData?.length || 0} direct reports`);
 
           if (reportsData && Array.isArray(reportsData)) {
             for (const report of reportsData) {
@@ -1759,7 +1796,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           );
         }
       } catch (error) {
-        console.error("❌ Error fetching direct reports:", error);
+        if (error.name === 'AbortError') {
+          console.error("❌ Reports API timeout - taking too long to respond");
+        } else {
+          console.error("❌ Error fetching direct reports:", error);
+        }
       }
 
       console.log(`🎯 Total reports for map: ${reports.length}`);

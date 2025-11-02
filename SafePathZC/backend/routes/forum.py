@@ -83,6 +83,10 @@ def get_current_user(user_id: int = Depends(verify_token), db: Session = Depends
                 self.name = admin.name
                 self.email = admin.email
                 self.role = admin.role
+                # Add missing attributes that might be accessed by forum code
+                self.reports_submitted = 0  # Admins don't track report counts
+                self.joined_at = admin.created_at if hasattr(admin, 'created_at') else None
+                self.is_active = admin.is_active if hasattr(admin, 'is_active') else True
         return AdminAsUser(admin)
     
     # Then check regular User table
@@ -111,6 +115,10 @@ def get_current_user_optional(request: Request, db: Session = Depends(get_db)):
                 self.name = admin.name
                 self.email = admin.email
                 self.role = admin.role
+                # Add missing attributes that might be accessed by forum code
+                self.reports_submitted = 0  # Admins don't track report counts
+                self.joined_at = admin.created_at if hasattr(admin, 'created_at') else None
+                self.is_active = admin.is_active if hasattr(admin, 'is_active') else True
         return AdminAsUser(admin)
     
     # Then check regular User table
@@ -340,12 +348,24 @@ def create_post(post_data: PostCreate, current_user: User = Depends(get_current_
         is_approved=is_auto_approved
     )
     
-    db.add(new_post)
-    
-    # If this is a report, increment the user's reports_submitted counter
+    # Enhanced admin vs user handling for reports
     if post_data.category == "reports":
-        current_user.reports_submitted = (current_user.reports_submitted or 0) + 1
-        print(f"📈 Incremented report count for user {current_user.name}: {current_user.reports_submitted}")
+        if current_user.role == 'admin':
+            # Admin reports: Auto-approve and add admin badge
+            new_post.is_approved = True  # Force approval for admin reports
+            new_post.author_name = f"👑 {current_user.name} (Admin)"  # Add admin badge
+            print(f"👑 Admin {current_user.name} created auto-approved report: {post_data.title}")
+        else:
+            # Regular user reports: Normal flow + increment counter
+            if hasattr(current_user, 'reports_submitted'):
+                current_user.reports_submitted = (current_user.reports_submitted or 0) + 1
+                print(f"📈 User {current_user.name} report count: {current_user.reports_submitted}")
+            print(f"📋 User {current_user.name} created report (pending approval): {post_data.title}")
+    else:
+        # Non-report posts
+        print(f"� {current_user.role.title()} {current_user.name} created post: {post_data.title}")
+    
+    db.add(new_post)
     
     db.commit()
     db.refresh(new_post)

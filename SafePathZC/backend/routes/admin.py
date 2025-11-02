@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Security
+from fastapi import APIRouter, HTTPException, Depends, Security, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -104,6 +104,20 @@ def verify_admin_token(credentials: HTTPAuthorizationCredentials = Security(secu
         return user_id
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+
+def verify_admin_token_direct(token: str, db: Session):
+    """Helper function to verify admin token directly from token string"""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: int = payload.get("sub")
+        if user_id is None:
+            return None
+        
+        # Check if the user_id corresponds to an admin user
+        admin_user = db.query(AdminUser).filter(AdminUser.id == user_id).first()
+        return admin_user
+    except (jwt.PyJWTError, Exception):
+        return None
 
 # Router setup
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -514,9 +528,46 @@ async def get_users(
 @router.post("/reports")
 async def create_report(
     report_data: ReportCreate,
+    request: Request,
     db: Session = Depends(get_db)
 ):
-    """Create a new report (public endpoint for users)"""
+    """Create a new report with admin detection and special handling"""
+    
+    # Try to detect if this is an admin user
+    is_admin = False
+    admin_user = None
+    reporter_name = report_data.reporter_name
+    reporter_email = report_data.reporter_email
+    
+    # Check for admin token in Authorization header
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        try:
+            # Try to verify as admin token
+            from routes.admin import verify_admin_token_direct
+            admin_id = verify_admin_token_direct(token)
+            if admin_id:
+                admin_user = db.query(AdminUser).filter(AdminUser.id == admin_id).first()
+                if admin_user:
+                    is_admin = True
+                    reporter_name = f"👑 {admin_user.name} (Admin)"
+                    reporter_email = admin_user.email
+                    print(f"👑 Admin {admin_user.name} creating report: {report_data.title}")
+        except:
+            # If admin token verification fails, treat as regular user
+            pass
+    
+    # Determine status based on user type
+    if is_admin:
+        status = "approved"  # Auto-approve admin reports
+        is_visible = True    # Make visible immediately  
+        admin_notes = f"Auto-approved admin report created by {admin_user.name}"
+    else:
+        status = "pending"   # Regular users need approval
+        is_visible = False   # Hidden until approved
+        admin_notes = None
+        print(f"📋 User creating report (pending approval): {report_data.title}")
     
     new_report = Report(
         title=report_data.title,
@@ -526,10 +577,11 @@ async def create_report(
         location_lat=report_data.location_lat,
         location_lng=report_data.location_lng,
         location_address=report_data.location_address,
-        reporter_name=report_data.reporter_name,
-        reporter_email=report_data.reporter_email,
-        status="pending",
-        is_visible=False  # Admin must approve first
+        reporter_name=reporter_name,
+        reporter_email=reporter_email,
+        status=status,
+        is_visible=is_visible,
+        admin_notes=admin_notes
     )
     
     db.add(new_report)
@@ -537,6 +589,50 @@ async def create_report(
     db.refresh(new_report)
     
     return {"message": "Report submitted successfully", "id": new_report.id}
+
+# Enhanced admin-aware report creation endpoint
+@router.post("/reports/admin-create")
+async def create_admin_report(
+    report_data: ReportCreate,
+    user_id: int = Depends(verify_admin_token),
+    db: Session = Depends(get_db)
+):
+    """Create a new report with admin detection and auto-approval"""
+    
+    # Get admin user details
+    admin_user = db.query(AdminUser).filter(AdminUser.id == user_id).first()
+    if not admin_user:
+        raise HTTPException(status_code=404, detail="Admin user not found")
+    
+    print(f"👑 Admin {admin_user.name} creating report: {report_data.title}")
+    
+    new_report = Report(
+        title=report_data.title,
+        description=report_data.description,
+        category=report_data.category,
+        urgency=report_data.urgency,
+        location_lat=report_data.location_lat,
+        location_lng=report_data.location_lng,
+        location_address=report_data.location_address,
+        reporter_name=f"👑 {admin_user.name} (Admin)",  # Add admin badge
+        reporter_email=admin_user.email,
+        status="approved",  # Auto-approve admin reports
+        is_visible=True,    # Make visible immediately
+        admin_notes=f"Auto-approved admin report created by {admin_user.name}"
+    )
+    
+    db.add(new_report)
+    db.commit()
+    db.refresh(new_report)
+    
+    print(f"✅ Auto-approved admin report {new_report.id} created")
+    
+    return {
+        "message": "Admin report created and auto-approved successfully", 
+        "id": new_report.id,
+        "status": "approved",
+        "is_admin_report": True
+    }
 
 @router.delete("/users/{user_id}")
 async def delete_user(
