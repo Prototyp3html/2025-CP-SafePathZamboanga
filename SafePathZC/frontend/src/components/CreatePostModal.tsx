@@ -62,6 +62,12 @@ export const CreatePostModal = ({
         localStorage.getItem("admin_token") ||
         localStorage.getItem("user_token");
 
+      console.log("Token found:", token ? "Yes" : "No");
+      console.log(
+        "Token preview:",
+        token ? `${token.substring(0, 20)}...` : "None"
+      );
+
       if (!token) {
         toast({
           title: "Authentication Required",
@@ -73,6 +79,8 @@ export const CreatePostModal = ({
       }
 
       const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
+      console.log("API URL:", apiUrl);
+
       const response = await fetch(`${apiUrl}/api/forum/posts`, {
         method: "POST",
         headers: {
@@ -88,13 +96,25 @@ export const CreatePostModal = ({
         }),
       });
 
+      console.log("Response status:", response.status);
+      console.log("Response headers:", [...response.headers.entries()]);
+
       if (!response.ok) {
         if (response.status === 401) {
+          const errorText = await response.text();
+          console.log("401 Error details:", errorText);
           throw new Error(
-            "You must be logged in to create a post. Please log in and try again."
+            `Authentication failed: ${
+              errorText ||
+              "Token may be expired or invalid. Please log out and log in again."
+            }`
           );
         }
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        console.log("Error response:", errorText);
+        throw new Error(
+          `HTTP error! status: ${response.status} - ${errorText}`
+        );
       }
 
       const newPost = await response.json();
