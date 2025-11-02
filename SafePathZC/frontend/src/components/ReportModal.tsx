@@ -244,8 +244,9 @@ export const ReportModal = ({
         reporter_id: userId,
       };
 
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
       const reportResponse = await fetch(
-        "http://localhost:8001/admin/reports",
+        `${apiUrl}/admin/reports`,
         {
           method: "POST",
           headers: {

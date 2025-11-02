@@ -62,7 +62,8 @@ export const CreatePostModal = ({
         localStorage.getItem("admin_token") ||
         localStorage.getItem("user_token");
 
-      const response = await fetch("http://localhost:8001/api/forum/posts", {
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
+      const response = await fetch(`${apiUrl}/api/forum/posts`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

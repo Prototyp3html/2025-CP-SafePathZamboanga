@@ -204,7 +204,8 @@ const Alerts = () => {
 
       // Fetch community reports from backend (simulated for now)
       try {
-        const reportsResponse = await fetch('http://localhost:8001/api/reports/approved');
+        const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
+        const reportsResponse = await fetch(`${apiUrl}/api/reports/approved`);
         if (reportsResponse.ok) {
           const communityReports = await reportsResponse.json();
           communityReports.forEach((report: any) => {
@@ -232,7 +233,8 @@ const Alerts = () => {
 
       // NEWS FEED STYLE: Fetch PAGASA bulletins FIRST (highest priority)
       try {
-        const pagasaResponse = await fetch('http://localhost:8001/api/pagasa/bulletins');
+        const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
+        const pagasaResponse = await fetch(`${apiUrl}/api/pagasa/bulletins`);
         if (pagasaResponse.ok) {
           const pagasaData = await pagasaResponse.json();
           

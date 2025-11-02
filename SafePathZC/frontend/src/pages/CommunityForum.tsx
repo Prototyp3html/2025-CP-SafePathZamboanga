@@ -198,8 +198,9 @@ const CommunityForum = () => {
     }
 
     try {
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
       const response = await fetch(
-        `http://localhost:8001/api/forum/posts/${postId}/like`,
+        `${apiUrl}/api/forum/posts/${postId}/like`,
         {
           method: "POST",
           headers: getAuthHeaders(),
@@ -266,8 +267,9 @@ const CommunityForum = () => {
 
       if (!confirmed) return;
 
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
       const response = await fetch(
-        `http://localhost:8001/api/forum/admin/posts/${postId}`,
+        `${apiUrl}/api/forum/admin/posts/${postId}`,
         {
           method: "DELETE",
           headers: getAuthHeaders(),

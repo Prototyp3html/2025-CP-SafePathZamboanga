@@ -1248,8 +1248,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   // Update route status in backend
   const updateRouteStatus = async (routeId: number, status: string) => {
     try {
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
       const response = await fetch(
-        `http://localhost:8001/api/routes/history/${routeId}`,
+        `${apiUrl}/api/routes/history/${routeId}`,
         {
           method: "PATCH",
           headers: {
@@ -1622,8 +1623,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
   const fetchCommunityReports = useCallback(async () => {
     try {
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
       const response = await fetch(
-        "http://localhost:8001/api/forum/posts?category=reports&limit=100"
+        `${apiUrl}/api/forum/posts?category=reports&limit=100`
       );
       if (!response.ok) return;
 
@@ -7516,8 +7518,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       const timeoutMs = 1500; // Reduced timeout for faster fallback
 
       // Try backend elevation API
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
       const response = await Promise.race([
-        fetch(`http://localhost:8001/elevation?locations=${lat},${lng}`, {
+        fetch(`${apiUrl}/elevation?locations=${lat},${lng}`, {
           method: "GET",
           headers: {
             Accept: "application/json",
