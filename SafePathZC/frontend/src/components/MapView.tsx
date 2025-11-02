@@ -1629,22 +1629,22 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       // Method 1: Fetch from forum posts (existing approved reports)
       try {
         console.log("📋 Fetching from forum posts...");
-        
+
         // Add timeout to forum API call to prevent hanging
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-        
+
         const forumResponse = await fetch(
           `${apiUrl}/api/forum/posts?category=reports&limit=100`,
-          { 
+          {
             signal: controller.signal,
             headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json'
-            }
+              Accept: "application/json",
+              "Content-Type": "application/json",
+            },
           }
         );
-        
+
         clearTimeout(timeoutId);
 
         if (forumResponse.ok) {
@@ -1694,10 +1694,12 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             console.log("📋 No forum posts found or invalid format");
           }
         } else {
-          console.error(`❌ Forum API failed: ${forumResponse.status} ${forumResponse.statusText}`);
+          console.error(
+            `❌ Forum API failed: ${forumResponse.status} ${forumResponse.statusText}`
+          );
         }
       } catch (error) {
-        if (error.name === 'AbortError') {
+        if (error.name === "AbortError") {
           console.error("❌ Forum API timeout - taking too long to respond");
         } else {
           console.error("❌ Error fetching forum posts:", error);
@@ -1707,19 +1709,22 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       // Method 2: Fetch directly from reports API (including non-approved reports)
       try {
         console.log("📊 Fetching from reports API...");
-        
+
         // Add timeout to reports API call as well
         const reportsController = new AbortController();
-        const reportsTimeoutId = setTimeout(() => reportsController.abort(), 15000); // 15 second timeout
-        
+        const reportsTimeoutId = setTimeout(
+          () => reportsController.abort(),
+          15000
+        ); // 15 second timeout
+
         const reportsResponse = await fetch(`${apiUrl}/api/reports?limit=100`, {
           signal: reportsController.signal,
           headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-          }
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
         });
-        
+
         clearTimeout(reportsTimeoutId);
 
         if (reportsResponse.ok) {
@@ -1796,7 +1801,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           );
         }
       } catch (error) {
-        if (error.name === 'AbortError') {
+        if (error.name === "AbortError") {
           console.error("❌ Reports API timeout - taking too long to respond");
         } else {
           console.error("❌ Error fetching direct reports:", error);
