@@ -62,12 +62,22 @@ export const CreatePostModal = ({
         localStorage.getItem("admin_token") ||
         localStorage.getItem("user_token");
 
+      if (!token) {
+        toast({
+          title: "Authentication Required",
+          description:
+            "You must be logged in to create a post. Please log in and try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
       const response = await fetch(`${apiUrl}/api/forum/posts`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(token && { Authorization: `Bearer ${token}` }),
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           title: title.trim(),
@@ -79,6 +89,11 @@ export const CreatePostModal = ({
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error(
+            "You must be logged in to create a post. Please log in and try again."
+          );
+        }
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 

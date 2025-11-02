@@ -580,26 +580,6 @@ Please be cautious when traveling through this area and consider alternative rou
 
           {/* Action Buttons */}
           <div className="flex gap-3">
-            {/* Form Validation Status */}
-            {(!isLoggedIn || !reportType || !location || !description) && (
-              <div className="w-full mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <div className="flex items-center text-yellow-800 mb-2">
-                  <i className="fas fa-exclamation-triangle mr-2"></i>
-                  <span className="font-medium">
-                    Please complete the following:
-                  </span>
-                </div>
-                <ul className="text-sm text-yellow-700 space-y-1">
-                  {!isLoggedIn && <li>• Log in to your account</li>}
-                  {!reportType && <li>• Select a report type</li>}
-                  {!location && <li>• Enter and select a location</li>}
-                  {!description && (
-                    <li>• Provide a description of the issue</li>
-                  )}
-                </ul>
-              </div>
-            )}
-
             <button
               onClick={onClose}
               className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-lg font-medium hover:bg-gray-300 transition-colors duration-200"
