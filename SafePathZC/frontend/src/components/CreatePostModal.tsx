@@ -80,6 +80,13 @@ export const CreatePostModal = ({
 
       const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
       console.log("API URL:", apiUrl);
+      console.log("Environment variables:", {
+        VITE_API_URL: import.meta.env.VITE_API_URL,
+        VITE_BACKEND_URL: import.meta.env.VITE_BACKEND_URL,
+        VITE_API_BASE_URL: import.meta.env.VITE_API_BASE_URL,
+        NODE_ENV: import.meta.env.NODE_ENV,
+        PROD: import.meta.env.PROD,
+      });
 
       const response = await fetch(`${apiUrl}/api/forum/posts`, {
         method: "POST",
