@@ -269,13 +269,13 @@ export const ReportModal = ({
         title: `${
           reportType.charAt(0).toUpperCase() + reportType.slice(1)
         } Report - ${location}`,
-        content: `🚨 **${reportType.toUpperCase()} ALERT**
+        content: `🚨 ${reportType.toUpperCase()} ALERT
 
-**Location:** ${location}
+📍 Location: ${location}
 
-**Description:** ${description}
+📝 Description: ${description}
 
-**Severity:** ${
+⚠️ Severity: ${
           severity === "severe"
             ? "🔴 HIGH"
             : severity === "moderate"
@@ -285,16 +285,16 @@ export const ReportModal = ({
 
 ${
   weatherData
-    ? `**Weather Conditions:**
-• ${weatherData.current.condition.text}
-• Temperature: ${weatherData.current.temp_c}°C
-• Wind: ${weatherData.current.wind_kph} km/h`
+    ? `🌤️ Weather Conditions:
+   ${weatherData.current.condition.text}
+   Temperature: ${weatherData.current.temp_c}°C
+   Wind: ${weatherData.current.wind_kph} km/h`
     : ""
 }
 
-${reportId ? `**Report ID:** #${reportId}` : ""}
+${reportId ? `📋 Report ID: #${reportId}` : ""}
 
-⚠️ **Please exercise caution when traveling through this area and consider alternative routes if possible.**`,
+⚠️ Please exercise caution when traveling through this area and consider alternative routes if possible.`,
         category: "reports",
         tags: [reportType, ...(severity === "severe" ? ["urgent"] : [])],
         is_urgent: severity === "severe",
@@ -421,10 +421,10 @@ ${reportId ? `**Report ID:** #${reportId}` : ""}
 
           {/* Report Type Selection */}
           <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-4">
               What type of issue are you reporting?
             </label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-4">
               {reportTypes.map((type) => {
                 const status = type.getStatus();
                 const isSelected = reportType === type.id;
@@ -437,28 +437,33 @@ ${reportId ? `**Report ID:** #${reportId}` : ""}
                     disabled={isDisabled}
                     title={status.reason}
                     className={`
-                      relative p-4 rounded-lg border-2 transition-all duration-200 bg-white
+                      relative p-5 rounded-xl border-2 transition-all duration-300 bg-white transform hover:scale-105
                       ${
                         isSelected
-                          ? "border-wmsu-blue bg-blue-50 shadow-md"
+                          ? "border-wmsu-blue bg-blue-50 shadow-lg scale-105 ring-2 ring-blue-200"
                           : isDisabled
-                          ? "border-gray-200 bg-gray-50 cursor-not-allowed opacity-50"
-                          : "border-gray-300 hover:border-wmsu-blue hover:bg-blue-50 hover:shadow-sm"
+                          ? "border-gray-200 bg-gray-50 cursor-not-allowed opacity-60"
+                          : "border-gray-300 hover:border-wmsu-blue hover:bg-blue-50 hover:shadow-md"
                       }
                     `}
                   >
-                    <div className="flex flex-col items-center">
-                      <i
-                        className={`${type.icon} text-2xl mb-2 ${
+                    <div className="flex flex-col items-center text-center">
+                      <div
+                        className={`
+                        p-3 rounded-full mb-3 transition-colors duration-300
+                        ${
                           isSelected
-                            ? "text-wmsu-blue"
+                            ? "bg-wmsu-blue text-white"
                             : isDisabled
-                            ? "text-gray-400"
-                            : "text-gray-600"
-                        }`}
-                      ></i>
+                            ? "bg-gray-200 text-gray-400"
+                            : "bg-gray-100 text-gray-600"
+                        }
+                      `}
+                      >
+                        <i className={`${type.icon} text-xl`}></i>
+                      </div>
                       <span
-                        className={`text-sm font-medium ${
+                        className={`text-sm font-semibold leading-tight ${
                           isSelected
                             ? "text-wmsu-blue"
                             : isDisabled
@@ -473,13 +478,20 @@ ${reportId ? `**Report ID:** #${reportId}` : ""}
                       {status.enabled &&
                         type.id !== "other" &&
                         type.id !== "roadblock" && (
-                          <span className="absolute top-2 right-2 w-2 h-2 bg-orange-500 rounded-full animate-pulse"></span>
+                          <span className="absolute top-3 right-3 w-3 h-3 bg-orange-500 rounded-full animate-pulse shadow-sm"></span>
                         )}
 
                       {/* Disabled indicator */}
                       {!status.enabled && isLoggedIn && (
-                        <span className="absolute top-2 right-2">
+                        <span className="absolute top-3 right-3 p-1 bg-gray-200 rounded-full">
                           <i className="fas fa-lock text-gray-400 text-xs"></i>
+                        </span>
+                      )}
+
+                      {/* Selection checkmark */}
+                      {isSelected && (
+                        <span className="absolute top-3 left-3 p-1 bg-wmsu-blue rounded-full">
+                          <i className="fas fa-check text-white text-xs"></i>
                         </span>
                       )}
                     </div>

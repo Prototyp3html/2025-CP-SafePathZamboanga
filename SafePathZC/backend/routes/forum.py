@@ -538,8 +538,15 @@ def delete_post(
     db: Session = Depends(get_db)
 ):
     """Delete any post (admin only)"""
+    print(f"🔍 Delete attempt by user: {current_user.name} (ID: {current_user.id})")
+    print(f"🔍 User role: {current_user.role}")
+    print(f"🔍 Is admin? {current_user.role == 'admin'}")
+    
     if current_user.role != "admin":
+        print(f"❌ Access denied - role '{current_user.role}' is not 'admin'")
         raise HTTPException(status_code=403, detail="Admin access required")
+    
+    print(f"✅ Admin access confirmed for user: {current_user.name}")
     
     post = db.query(Post).filter(Post.id == post_id).first()
     if not post:

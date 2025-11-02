@@ -124,6 +124,16 @@ const CommunityForum = () => {
       localStorage.getItem("access_token") ||
       localStorage.getItem("admin_token") ||
       localStorage.getItem("user_token");
+
+    console.log("🔍 Available tokens:", {
+      access_token: localStorage.getItem("access_token")
+        ? "Found"
+        : "Not found",
+      admin_token: localStorage.getItem("admin_token") ? "Found" : "Not found",
+      user_token: localStorage.getItem("user_token") ? "Found" : "Not found",
+      selected_token: token ? `${token.substring(0, 20)}...` : "None",
+    });
+
     return {
       "Content-Type": "application/json",
       ...(token && { Authorization: `Bearer ${token}` }),
