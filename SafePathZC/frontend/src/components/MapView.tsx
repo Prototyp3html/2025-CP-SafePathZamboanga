@@ -1647,23 +1647,28 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               try {
                 console.log(`🔍 Processing forum post ${post.id}:`, post.title);
                 const content = post.content;
-                console.log(`📄 Post content:`, content.substring(0, 200) + "...");
-                
+                console.log(
+                  `📄 Post content:`,
+                  content.substring(0, 200) + "..."
+                );
+
                 // Try multiple location patterns
-                const locationMatch = 
+                const locationMatch =
                   content.match(/📍\s*Location:\s*(.+?)(?:\n|\r|$)/i) ||
                   content.match(/\*\*Location:\*\*\s*(.+?)(?:\n|\r|$)/i) ||
                   content.match(/Location:\s*(.+?)(?:\n|\r|$)/i);
-                
-                // Try multiple severity patterns  
-                const severityMatch = 
+
+                // Try multiple severity patterns
+                const severityMatch =
                   content.match(/⚠️\s*Severity:\s*(.+?)(?:\n|\r|$)/i) ||
                   content.match(/\*\*Severity:\*\*\s*(.+?)(?:\n|\r|$)/i) ||
                   content.match(/Severity:\s*(.+?)(?:\n|\r|$)/i);
-                
+
                 // Try multiple type patterns - extract from title or content
-                const typeMatch = 
-                  post.title.match(/(Roadblock|Damage|Flood|Traffic|Accident|Construction)/i) ||
+                const typeMatch =
+                  post.title.match(
+                    /(Roadblock|Damage|Flood|Traffic|Accident|Construction)/i
+                  ) ||
                   content.match(/🚨\s*(.+?)\s*ALERT/i) ||
                   content.match(/\*\*Issue Type:\*\*\s*(.+?)(?:\n|\r|$)/i) ||
                   content.match(/Type:\s*(.+?)(?:\n|\r|$)/i);
@@ -1876,33 +1881,63 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       title: report.title,
     });
 
-    // Create popup content
+    // Create popup content with improved styling
+    const severityColorClass = 
+      report.severity.toLowerCase().includes("severe") || report.severity.toLowerCase().includes("critical")
+        ? "bg-red-100 text-red-800 border-red-200"
+        : report.severity.toLowerCase().includes("moderate")
+        ? "bg-yellow-100 text-yellow-800 border-yellow-200"
+        : "bg-green-100 text-green-800 border-green-200";
+
+    const typeIcon = 
+      report.reportType.toLowerCase().includes("roadblock") ? "🚧" :
+      report.reportType.toLowerCase().includes("damage") ? "⚠️" :
+      report.reportType.toLowerCase().includes("flood") ? "🌊" :
+      report.reportType.toLowerCase().includes("traffic") ? "🚦" :
+      report.reportType.toLowerCase().includes("accident") ? "🚨" :
+      "📍";
+
     const popupContent = `
-      <div class="max-w-xs">
-        <h3 class="font-bold text-sm text-gray-800 mb-2">${report.title}</h3>
-        <div class="space-y-1 text-xs">
-          <p><span class="font-semibold">Type:</span> ${report.reportType}</p>
-          <p><span class="font-semibold">Severity:</span> 
-            <span class="px-1 py-0.5 rounded text-xs ${
-              report.severity.toLowerCase() === "severe"
-                ? "bg-red-100 text-red-800"
-                : report.severity.toLowerCase() === "moderate"
-                ? "bg-yellow-100 text-yellow-800"
-                : "bg-green-100 text-green-800"
-            }">${report.severity}</span>
-          </p>
-          <p><span class="font-semibold">Location:</span> ${report.location}</p>
-          <p><span class="font-semibold">Reported by:</span> ${
-            report.author
-          }</p>
-          <p><span class="font-semibold">Date:</span> ${new Date(
-            report.created_at
-          ).toLocaleDateString()}</p>
+      <div class="report-popup-container">
+        <div class="report-header">
+          <div class="report-icon">${typeIcon}</div>
+          <h3 class="report-title">${report.title}</h3>
         </div>
+        
+        <div class="report-details">
+          <div class="report-field">
+            <span class="field-label">Type:</span> 
+            <span class="field-value">${report.reportType}</span>
+          </div>
+          
+          <div class="report-field">
+            <span class="field-label">Severity:</span> 
+            <span class="severity-badge ${severityColorClass}">
+              ${report.severity}
+            </span>
+          </div>
+          
+          <div class="report-field">
+            <span class="field-label">📍 Location:</span> 
+            <span class="field-value">${report.location}</span>
+          </div>
+          
+          <div class="report-field">
+            <span class="field-label">👤 Reported by:</span> 
+            <span class="field-value">${report.author}</span>
+          </div>
+          
+          <div class="report-field">
+            <span class="field-label">📅 Date:</span> 
+            <span class="field-value">${new Date(report.created_at).toLocaleDateString()}</span>
+          </div>
+        </div>
+        
         <button 
           onclick="window.open('/community', '_blank')" 
-          class="mt-2 px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
+          class="report-button"
         >
+          <span class="button-icon">👁️</span>
           View Full Report
         </button>
       </div>
@@ -9070,12 +9105,132 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           z-index: 1000;
         }
         .report-popup .leaflet-popup-content-wrapper {
-          border-radius: 8px;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+          border-radius: 12px;
+          box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+          border: 1px solid #e5e7eb;
+          overflow: hidden;
         }
         .report-popup .leaflet-popup-content {
-          margin: 8px 12px;
+          margin: 0;
+          line-height: 1.5;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .report-popup .leaflet-popup-tip {
+          background: white;
+          border: 1px solid #e5e7eb;
+        }
+        
+        /* Report popup content styling */
+        .report-popup-container {
+          width: 280px;
+          background: white;
+        }
+        
+        .report-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 16px 16px 12px 16px;
+          background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+          border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .report-icon {
+          font-size: 20px;
+          filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+        }
+        
+        .report-title {
+          font-size: 14px;
+          font-weight: 600;
+          color: #1e293b;
+          margin: 0;
           line-height: 1.4;
+        }
+        
+        .report-details {
+          padding: 16px;
+          background: white;
+        }
+        
+        .report-field {
+          display: flex;
+          align-items: center;
+          margin-bottom: 10px;
+          gap: 6px;
+        }
+        
+        .report-field:last-child {
+          margin-bottom: 0;
+        }
+        
+        .field-label {
+          font-size: 12px;
+          font-weight: 500;
+          color: #64748b;
+          min-width: 70px;
+          flex-shrink: 0;
+        }
+        
+        .field-value {
+          font-size: 12px;
+          color: #1e293b;
+          font-weight: 400;
+          flex-grow: 1;
+        }
+        
+        .severity-badge {
+          padding: 2px 8px;
+          border-radius: 12px;
+          font-size: 10px;
+          font-weight: 500;
+          border: 1px solid;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        
+        .report-button {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          padding: 12px 16px;
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          color: white;
+          border: none;
+          font-size: 12px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          border-top: 1px solid #e2e8f0;
+        }
+        
+        .report-button:hover {
+          background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+          transform: translateY(-1px);
+          box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+        }
+        
+        .button-icon {
+          font-size: 14px;
+        }
+        
+        /* Color classes for severity badges */
+        .bg-red-100.text-red-800.border-red-200 { 
+          background-color: #fef2f2 !important; 
+          color: #991b1b !important; 
+          border-color: #fecaca !important; 
+        }
+        .bg-yellow-100.text-yellow-800.border-yellow-200 { 
+          background-color: #fefce8 !important; 
+          color: #92400e !important; 
+          border-color: #fde68a !important; 
+        }
+        .bg-green-100.text-green-800.border-green-200 { 
+          background-color: #f0fdf4 !important; 
+          color: #166534 !important; 
+          border-color: #bbf7d0 !important; 
         }
       `}</style>
 

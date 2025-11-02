@@ -271,30 +271,30 @@ export const ReportModal = ({
         } Report - ${location}`,
         content: `🚨 ${reportType.toUpperCase()} ALERT
 
-📍 Location: ${location}
+📍 **Location:** ${location}
 
-📝 Description: ${description}
+📝 **Description:** ${description}
 
-⚠️ Severity: ${
+⚠️ **Severity:** ${
           severity === "severe"
             ? "🔴 HIGH"
             : severity === "moderate"
             ? "🟡 MODERATE"
             : "🟢 LOW"
-        }
-
-${
+        }${
   weatherData
-    ? `🌤️ Weather Conditions:
-   ${weatherData.current.condition.text}
-   Temperature: ${weatherData.current.temp_c}°C
-   Wind: ${weatherData.current.wind_kph} km/h`
+    ? `
+
+🌤️ **Weather Conditions:**
+• **Condition:** ${weatherData.current.condition.text}
+• **Temperature:** ${weatherData.current.temp_c}°C
+• **Wind Speed:** ${weatherData.current.wind_kph} km/h`
     : ""
 }
 
-${reportId ? `📋 Report ID: #${reportId}` : ""}
+---
 
-⚠️ Please exercise caution when traveling through this area and consider alternative routes if possible.`,
+⚠️ **Safety Advisory:** Please exercise caution when traveling through this area and consider alternative routes if possible.`,
         category: "reports",
         tags: [reportType, ...(severity === "severe" ? ["urgent"] : [])],
         is_urgent: severity === "severe",
