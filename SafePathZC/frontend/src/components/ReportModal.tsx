@@ -267,29 +267,34 @@ export const ReportModal = ({
       // Then, create forum post for community visibility
       const postData = {
         title: `${
-          typeLabels[reportType as keyof typeof typeLabels]
-        } in ${location}${
-          severity === "severe" ? " - " + new Date().toLocaleDateString() : ""
-        }`,
-        content: `${description}
+          reportType.charAt(0).toUpperCase() + reportType.slice(1)
+        } Report - ${location}`,
+        content: `🚨 **${reportType.toUpperCase()} ALERT**
+
+**Location:** ${location}
+
+**Description:** ${description}
+
+**Severity:** ${
+          severity === "severe"
+            ? "🔴 HIGH"
+            : severity === "moderate"
+            ? "🟡 MODERATE"
+            : "🟢 LOW"
+        }
 
 ${
   weatherData
-    ? `Weather conditions at the time: ${weatherData.current.condition.text.toLowerCase()}, ${
-        weatherData.current.temp_c
-      }°C with ${weatherData.current.wind_kph}kph winds.`
+    ? `**Weather Conditions:**
+• ${weatherData.current.condition.text}
+• Temperature: ${weatherData.current.temp_c}°C
+• Wind: ${weatherData.current.wind_kph} km/h`
     : ""
 }
 
-Location: ${location}${
-          reportId
-            ? `
+${reportId ? `**Report ID:** #${reportId}` : ""}
 
-Report ID: #${reportId}`
-            : ""
-        }
-
-Please be cautious when traveling through this area and consider alternative routes if possible.`,
+⚠️ **Please exercise caution when traveling through this area and consider alternative routes if possible.**`,
         category: "reports",
         tags: [reportType, ...(severity === "severe" ? ["urgent"] : [])],
         is_urgent: severity === "severe",
@@ -314,17 +319,18 @@ Please be cautious when traveling through this area and consider alternative rou
 
         // Update user's reports count
         try {
-          const userStatsResponse = await fetch(
-            `http://localhost:8001/auth/stats`,
-            {
-              method: "PATCH",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
-              },
-              body: JSON.stringify({ reports_submitted: 1 }),
-            }
-          );
+          const statsApiUrl =
+            import.meta.env.VITE_API_URL ||
+            import.meta.env.VITE_BACKEND_URL ||
+            "http://localhost:8001";
+          const userStatsResponse = await fetch(`${statsApiUrl}/auth/stats`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ reports_submitted: 1 }),
+          });
 
           if (userStatsResponse.ok) {
             const statsResult = await userStatsResponse.json();
@@ -355,10 +361,10 @@ Please be cautious when traveling through this area and consider alternative rou
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in">
-      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 animate-scale-in max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 animate-fade-in backdrop-blur-sm">
+      <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full mx-4 animate-scale-in max-h-[90vh] overflow-y-auto border border-gray-200">
         {/* Modal Header */}
-        <div className="bg-wmsu-blue text-white p-4 rounded-t-lg sticky top-0">
+        <div className="bg-wmsu-blue text-white p-4 rounded-t-lg sticky top-0 shadow-lg">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-lg flex items-center">
               <i className="fas fa-comment-alt mr-2"></i>
@@ -366,18 +372,18 @@ Please be cautious when traveling through this area and consider alternative rou
             </h3>
             <button
               onClick={onClose}
-              className="text-white hover:text-gray-200 transition-colors duration-200"
+              className="text-white hover:text-gray-200 transition-colors duration-200 p-1 rounded hover:bg-white hover:bg-opacity-20"
             >
-              <i className="fas fa-times"></i>
+              <i className="fas fa-times text-lg"></i>
             </button>
           </div>
         </div>
 
         {/* Modal Content */}
-        <div className="p-6">
+        <div className="p-6 bg-white rounded-b-lg">
           {/* Login Required Warning */}
           {!isLoggedIn && (
-            <div className="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-lg animate-slide-in">
+            <div className="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-lg animate-slide-in shadow-sm">
               <div className="flex items-start">
                 <i className="fas fa-exclamation-triangle text-yellow-600 text-xl mr-3 mt-1"></i>
                 <div className="flex-1">
@@ -431,13 +437,13 @@ Please be cautious when traveling through this area and consider alternative rou
                     disabled={isDisabled}
                     title={status.reason}
                     className={`
-                      relative p-4 rounded-lg border-2 transition-all duration-200
+                      relative p-4 rounded-lg border-2 transition-all duration-200 bg-white
                       ${
                         isSelected
-                          ? "border-wmsu-blue bg-blue-50"
+                          ? "border-wmsu-blue bg-blue-50 shadow-md"
                           : isDisabled
                           ? "border-gray-200 bg-gray-50 cursor-not-allowed opacity-50"
-                          : "border-gray-300 hover:border-wmsu-blue hover:bg-blue-50"
+                          : "border-gray-300 hover:border-wmsu-blue hover:bg-blue-50 hover:shadow-sm"
                       }
                     `}
                   >

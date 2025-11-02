@@ -220,9 +220,8 @@ export const notification = {
     submitted: (reportId?: number) =>
       createCustomToast({
         title: "Report Submitted Successfully!",
-        description: `Your report has been recorded for admin review and posted to the community forum.${
-          reportId ? ` Report ID: #${reportId}.` : ""
-        } Thank you for helping keep our community safe!`,
+        description:
+          "Your report has been recorded for admin review and posted to the community forum. Thank you for helping keep our community safe!",
         type: "success",
         icon: <CheckCircle className="h-5 w-5 text-green-600" />,
         duration: 8000,

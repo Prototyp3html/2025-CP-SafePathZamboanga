@@ -306,6 +306,12 @@ def create_post(post_data: PostCreate, current_user: User = Depends(get_current_
     )
     
     db.add(new_post)
+    
+    # If this is a report, increment the user's reports_submitted counter
+    if post_data.category == "reports":
+        current_user.reports_submitted = (current_user.reports_submitted or 0) + 1
+        print(f"📈 Incremented report count for user {current_user.name}: {current_user.reports_submitted}")
+    
     db.commit()
     db.refresh(new_post)
     
