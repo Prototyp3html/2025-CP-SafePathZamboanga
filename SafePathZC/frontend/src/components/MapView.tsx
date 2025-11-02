@@ -7358,13 +7358,14 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       mapRef.current.removeLayer(terrainOverlayRef.current);
     }
 
-    // Use terrain tile layer for Google Maps-style terrain view
+    // Use OpenTopoMap for free terrain visualization (no API key required)
     const terrainTileLayer = L.tileLayer(
-      'https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}{r}.png',
+      'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
       {
-        attribution: '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>',
-        maxZoom: 18,
-        opacity: 0.7, // Semi-transparent overlay
+        attribution: '&copy; <a href="https://opentopomap.org">OpenTopoMap</a> contributors',
+        maxZoom: 17,
+        opacity: 0.6, // Semi-transparent overlay
+        subdomains: ['a', 'b', 'c']
       }
     );
 
