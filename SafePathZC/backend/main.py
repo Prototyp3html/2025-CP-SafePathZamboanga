@@ -279,6 +279,14 @@ app.include_router(forum_router)
 app.include_router(flood_routing_router)  # Flood-aware routing with 3 distinct routes
 app.include_router(geocoding_router, prefix="/api/geocoding", tags=["geocoding"])
 
+# Dependency to get DB session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 # Public Reports API for map markers
 @app.get("/api/reports", tags=["reports"])
 async def get_public_reports(
@@ -325,14 +333,6 @@ async def get_public_reports(
     except Exception as e:
         print(f"❌ Error fetching public reports: {e}")
         return []
-
-# Dependency to get DB session
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 # Root endpoint for health check
 @app.get("/")
