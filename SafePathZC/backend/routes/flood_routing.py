@@ -138,7 +138,11 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
         if len(all_routes) < 3:
             logger.info("Strategy 2: Generating waypoint routes...")
             
-            offset_factors = [0.08, -0.08, 0.15, -0.15]  # 8%, -8%, 15%, -15% offsets
+            # Smaller offset factors to avoid dead-end segments (reduced from 8%, 15% to 4%, 6%)
+            offset_factors = [0.04, -0.04, 0.06, -0.06]  # 4%, -4%, 6%, -6% offsets
+            
+            # Calculate baseline distance for validation (direct route distance)
+            baseline_distance = all_routes[0]["distance"] if len(all_routes) > 0 else distance * 111000  # Convert degrees to meters
             
             for offset_factor in offset_factors:
                 if len(all_routes) >= 5:  # Limit total routes
@@ -179,6 +183,13 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                 route_data = data["routes"][0]
                                 geometry = route_data.get("geometry", {})
                                 coordinates = geometry.get("coordinates", [])
+                                route_distance = route_data.get("distance", 0)
+                                
+                                # Validate: Skip routes that are too much longer than baseline (>50% longer)
+                                # This filters out routes with dead-end segments or unreasonable detours
+                                if baseline_distance > 0 and route_distance > baseline_distance * 1.5:
+                                    logger.info(f"Skipping waypoint route with offset {offset_factor}: too long ({route_distance:.0f}m vs baseline {baseline_distance:.0f}m)")
+                                    continue
                                 
                                 if coordinates:
                                     # Analyze flood risk
@@ -191,7 +202,7 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                     # Apply transportation mode adjustments
                                     route_info = {
                                         "geometry": geometry,
-                                        "distance": route_data.get("distance", 0),
+                                        "distance": route_distance,
                                         "duration": route_data.get("duration", 0),
                                         "flood_percentage": flood_analysis["flooded_percentage"],
                                         "flooded_distance": flood_analysis["flooded_distance_m"],
@@ -203,6 +214,7 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                     route_info = adjust_route_for_transportation_mode(route_info, request.transport_mode)
                                     
                                     all_routes.append(route_info)
+                                    logger.info(f"✓ Added waypoint route with offset {offset_factor}: {route_distance:.0f}m")
                 except Exception as e:
                     logger.warning(f"Waypoint route with offset {offset_factor} failed: {e}")
         

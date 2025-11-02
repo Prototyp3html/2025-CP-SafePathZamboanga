@@ -6,6 +6,7 @@ import os
 # Get OSRM URLs from environment variables
 OSRM_DRIVING_BASE = os.getenv("OSRM_DRIVING_URL", "http://localhost:5000")
 OSRM_WALKING_BASE = os.getenv("OSRM_WALKING_URL", "http://localhost:5001")
+OSRM_BICYCLE_BASE = os.getenv("OSRM_BICYCLE_URL", "http://localhost:5002")  # NEW: Bicycle OSRM endpoint
 
 TRANSPORTATION_MODES = {
     'car': {
@@ -27,8 +28,8 @@ TRANSPORTATION_MODES = {
         'can_use_main_roads': True,
         'can_use_highways': True,
         'speed_factor': 0.9,
-        'osrm_profile': 'driving',
-        'osrm_url': OSRM_DRIVING_BASE,
+        'osrm_profile': 'bicycle',  # CHANGED: Use bicycle profile for more flexible routing
+        'osrm_url': OSRM_BICYCLE_BASE,  # CHANGED: Use bicycle OSRM endpoint
     },
     'walking': {
         'name': 'Walking',
@@ -60,8 +61,8 @@ TRANSPORTATION_MODES = {
         'can_use_main_roads': True,
         'can_use_highways': False,
         'speed_factor': 0.3,
-        'osrm_profile': 'cycling',
-        'osrm_url': OSRM_DRIVING_BASE,  # Use driving for now
+        'osrm_profile': 'bicycle',  # CHANGED: Use bicycle profile
+        'osrm_url': OSRM_BICYCLE_BASE,  # CHANGED: Use bicycle OSRM endpoint
     },
     'truck': {
         'name': 'Truck',

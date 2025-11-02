@@ -257,8 +257,10 @@ origins = [
     "https://safepath-zamboanga-city.vercel.app",  # Your actual Vercel URL
     "https://safepath-zc.vercel.app",             # Alternative Vercel URL
     "http://localhost:5173",                      # Local development
+    "http://localhost:5174",                      # Local development (Vite alternate port)
     "http://localhost:3000",                      # Alternative local
     "http://127.0.0.1:5173",                     # Local IP
+    "http://127.0.0.1:5174",                     # Local IP (alternate port)
 ]
 
 # CORS middleware
@@ -296,16 +298,23 @@ async def root():
 OSRM_ALIGNMENT_THRESHOLD_METERS = 75.0
 DEFAULT_ALIGNMENT_SPEED_MPS = 8.33  # ~30 km/h fallback when OSRM provides no timing context
 
-async def get_osrm_route(start_lng: float, start_lat: float, end_lng: float, end_lat: float, alternatives: bool = False):
-    """Get route from OSRM routing service with robust error handling and road snapping"""
+async def get_osrm_route(start_lng: float, start_lat: float, end_lng: float, end_lat: float, alternatives: bool = False, transport_mode: str = "car"):
+    """Get route from OSRM routing service with robust error handling and road snapping
+    
+    Args:
+        transport_mode: Transportation mode (car, motorcycle, walking, bicycle, etc.)
+                       This determines which OSRM endpoint and profile to use
+    """
     try:
-        # Check if we're in local development or production
-        osrm_host = os.getenv("OSRM_HOST", "localhost")
-        osrm_port = os.getenv("OSRM_PORT", "5000")
+        # Import transportation mode configuration
+        from services.transportation_modes import get_osrm_endpoint_for_mode, TRANSPORTATION_MODES
         
-        # Use local OSRM server for Zamboanga-specific routing (if available)
-        base_url = f"http://{osrm_host}:{osrm_port}/route/v1/driving"
-        url = f"{base_url}/{start_lng},{start_lat};{end_lng},{end_lat}"
+        # Get the appropriate OSRM endpoint URL for this transport mode
+        # This automatically selects the right OSRM container (driving/walking/bicycle)
+        osrm_endpoint = get_osrm_endpoint_for_mode(transport_mode)
+        url = f"{osrm_endpoint}/{start_lng},{start_lat};{end_lng},{end_lat}"
+        
+        print(f"🚗 Using OSRM endpoint for '{transport_mode}': {osrm_endpoint}")
         
         params = {
             "geometries": "geojson",
@@ -397,15 +406,22 @@ async def get_osrm_route_with_waypoints(
     end_lng: float, 
     end_lat: float, 
     waypoints: List[List[float]],
-    alternatives: bool = False
+    alternatives: bool = False,
+    transport_mode: str = "car"
 ):
-    """Get route from OSRM with waypoints (multi-stop route)"""
+    """Get route from OSRM with waypoints (multi-stop route)
+    
+    Args:
+        transport_mode: Transportation mode (car, motorcycle, walking, bicycle, etc.)
+    """
     try:
         from services.local_routing import snap_route_to_roads
+        from services.transportation_modes import get_osrm_endpoint_for_mode
         
-        # Use environment variable for OSRM URL, fallback to localhost
-        osrm_base_url = os.getenv("OSRM_DRIVING_URL", "http://localhost:5000")
-        base_url = f"{osrm_base_url}/route/v1/driving"
+        # Get the appropriate OSRM endpoint URL for this transport mode
+        base_url = get_osrm_endpoint_for_mode(transport_mode)
+        
+        print(f"🚗 Using OSRM endpoint for '{transport_mode}': {base_url}")
         
         # Build coordinates string: start;waypoint1;waypoint2;...;end
         coords_parts = [f"{start_lng},{start_lat}"]
@@ -481,7 +497,7 @@ async def get_osrm_route_with_waypoints(
         print(f"⚠️ OSRM waypoint routing error: {e}")
         # Fall back to direct route without waypoints
         print("   Falling back to direct route (ignoring waypoints)")
-        return await get_osrm_route(start_lng, start_lat, end_lng, end_lat, alternatives=False)
+        return await get_osrm_route(start_lng, start_lat, end_lng, end_lat, alternatives=False, transport_mode=transport_mode)
 
 # Helper function for elevation data
 async def get_elevation_batch(coordinates: List[List[float]]):
@@ -809,9 +825,16 @@ async def get_route(
     start: str = Query(..., description="Start coordinates as lng,lat"),
     end: str = Query(..., description="End coordinates as lng,lat"),
     alternatives: bool = Query(False, description="Include alternative routes"),
-    waypoints: str = Query(None, description="Optional waypoints as lng,lat;lng,lat")
+    waypoints: str = Query(None, description="Optional waypoints as lng,lat;lng,lat"),
+    transport_mode: str = Query("car", description="Transportation mode: car, motorcycle, walking, public_transport, bicycle, truck")
 ):
-    """Get routing data between two points using HYBRID APPROACH: OSRM for routing + GeoJSON for flood analysis"""
+    """Get routing data between two points using HYBRID APPROACH: OSRM for routing + GeoJSON for flood analysis
+    
+    NOW SUPPORTS TRANSPORT MODE SELECTION - Different vehicles will use different OSRM routing profiles!
+    - car/truck/public_transport: Use driving profile (main roads)
+    - motorcycle/bicycle: Use bicycle profile (can use smaller roads)
+    - walking: Use foot profile (sidewalks, pedestrian paths)
+    """
     try:
         # Parse coordinates
         start_coords = [float(x) for x in start.split(",")]
@@ -857,7 +880,7 @@ async def get_route(
             
             # ROUTE 1: Direct/Fastest route (shortest path)
             # If waypoints exist, route through them
-            print("  📍 Route 1: Direct/fastest route...")
+            print(f"  📍 Route 1: Direct/fastest route (using {transport_mode} profile)...")
             if waypoint_coords:
                 # Build route through all waypoints: start -> wp1 -> wp2 -> ... -> end
                 print(f"     ✅ GREEN ROUTE WILL USE WAYPOINTS!")
@@ -868,7 +891,7 @@ async def get_route(
                 print(f"B({end_lng:.6f},{end_lat:.6f})")
                 
                 direct_route = await get_osrm_route_with_waypoints(
-                    start_lng, start_lat, end_lng, end_lat, waypoint_coords, alternatives=False
+                    start_lng, start_lat, end_lng, end_lat, waypoint_coords, alternatives=False, transport_mode=transport_mode
                 )
                 
                 # Extract snapped waypoints from OSRM response (actual road coordinates)
@@ -882,7 +905,7 @@ async def get_route(
                             snapped_wp_coords.append(loc)  # [lng, lat]
             else:
                 print(f"     ⚠️⚠️⚠️ GREEN ROUTE GOING DIRECT A→B (NO WAYPOINTS!) ⚠️⚠️⚠️")
-                direct_route = await get_osrm_route(start_lng, start_lat, end_lng, end_lat, alternatives=False)
+                direct_route = await get_osrm_route(start_lng, start_lat, end_lng, end_lat, alternatives=False, transport_mode=transport_mode)
                 
             if direct_route.get("routes"):
                 aligned_direct, _ = align_osrm_routes(
@@ -994,7 +1017,8 @@ async def get_route(
                                     detour_segment = await get_osrm_route_with_waypoints(
                                         seg_start[0], seg_start[1], seg_end[0], seg_end[1],
                                         [[detour_lng, detour_lat]],  # Detour point as intermediate waypoint
-                                        alternatives=False
+                                        alternatives=False,
+                                        transport_mode=transport_mode
                                     )
                                     
                                     if detour_segment.get("routes"):
@@ -1026,7 +1050,7 @@ async def get_route(
                                         detour_dur += detour_segment["routes"][0]["duration"]
                                     else:
                                         # Fallback: direct route for this segment
-                                        direct_seg = await get_osrm_route(seg_start[0], seg_start[1], seg_end[0], seg_end[1], alternatives=False)
+                                        direct_seg = await get_osrm_route(seg_start[0], seg_start[1], seg_end[0], seg_end[1], alternatives=False, transport_mode=transport_mode)
                                         if direct_seg.get("routes"):
                                             coords = direct_seg["routes"][0]["geometry"]["coordinates"]
                                             if detour_coords:
@@ -1036,7 +1060,7 @@ async def get_route(
                                             detour_dur += direct_seg["routes"][0]["duration"]
                                 else:
                                     # Segment too short for detour, use direct route
-                                    direct_seg = await get_osrm_route(seg_start[0], seg_start[1], seg_end[0], seg_end[1], alternatives=False)
+                                    direct_seg = await get_osrm_route(seg_start[0], seg_start[1], seg_end[0], seg_end[1], alternatives=False, transport_mode=transport_mode)
                                     if direct_seg.get("routes"):
                                         coords = direct_seg["routes"][0]["geometry"]["coordinates"]
                                         if detour_coords:
@@ -1121,7 +1145,7 @@ async def get_route(
                         
                         # Fetch all segments in parallel (8 calls → ~1-2 seconds instead of 8 seconds!)
                         segment_results = await asyncio.gather(*[
-                            get_osrm_route(s[0], s[1], s[2], s[3], alternatives=False)
+                            get_osrm_route(s[0], s[1], s[2], s[3], alternatives=False, transport_mode=transport_mode)
                             for s in segments_to_fetch
                         ], return_exceptions=True)
                         

@@ -1,5 +1,25 @@
 services:
-  # OSRM Driving Profile (Cars/Motorcycles)
+  # PostgreSQL Database with PostGIS
+  postgres:
+    image: postgis/postgis:15-3.3
+    container_name: safepath-postgres
+    environment:
+      POSTGRES_DB: safepathzc
+      POSTGRES_USER: safepathzc_user
+      POSTGRES_PASSWORD: safepath123
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U safepathzc_user -d safepathzc"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # OSRM Driving Profile (Cars/Trucks/Buses)
   osrm-driving:
     image: osrm/osrm-backend
     container_name: safepath-osrm-driving
@@ -7,7 +27,7 @@ services:
       - "5000:5000"
     volumes:
       - ./backend/osrm-data:/data
-    command: osrm-routed --algorithm ch /data/zamboanga_roads.osrm
+    command: osrm-routed --algorithm mld /data/zamboanga-driving.osrm
     restart: unless-stopped
     healthcheck:
       test:
@@ -43,6 +63,30 @@ services:
       timeout: 10s
       retries: 3
 
+  # OSRM Bicycle Profile (Motorcycles/Bicycles) - NEW!
+  osrm-bicycle:
+    image: osrm/osrm-backend
+    container_name: safepath-osrm-bicycle
+    ports:
+      - "5002:5000"
+    volumes:
+      - ./backend/osrm-data:/data
+    command: osrm-routed --algorithm mld /data/zamboanga-bicycle.osrm
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:5000/route/v1/bicycle/122.079,6.9214;122.08,6.92",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    # Note: This will fail to start until you generate zamboanga-bicycle.osrm files
+    # See EXTRACT_BICYCLE_PROFILE.md for instructions
+
   # Optional: Local tile server for offline maps
   tile-server:
     image: overv/openstreetmap-tile-server
@@ -60,5 +104,6 @@ services:
       - tiles # Only start with --profile tiles
 
 volumes:
+  postgres_data:
   osm-data:
   osm-tiles:
