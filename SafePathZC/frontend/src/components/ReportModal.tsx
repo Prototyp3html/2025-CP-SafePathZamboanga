@@ -244,7 +244,10 @@ export const ReportModal = ({
         reporter_id: userId,
       };
 
-      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
+      const apiUrl =
+        import.meta.env.VITE_API_URL ||
+        import.meta.env.VITE_BACKEND_URL ||
+        "http://localhost:8001";
       const reportResponse = await fetch(`${apiUrl}/admin/reports`, {
         method: "POST",
         headers: {
@@ -292,7 +295,11 @@ Please be cautious when traveling through this area and consider alternative rou
         is_urgent: severity === "severe",
       };
 
-      const response = await fetch("http://localhost:8001/api/forum/posts", {
+      const forumApiUrl =
+        import.meta.env.VITE_API_URL ||
+        import.meta.env.VITE_BACKEND_URL ||
+        "http://localhost:8001";
+      const response = await fetch(`${forumApiUrl}/api/forum/posts`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

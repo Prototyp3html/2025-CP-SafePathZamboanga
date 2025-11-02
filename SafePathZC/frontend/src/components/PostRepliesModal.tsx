@@ -70,8 +70,12 @@ export const PostRepliesModal = ({
 
     try {
       setLoading(true);
+      const apiUrl =
+        import.meta.env.VITE_API_URL ||
+        import.meta.env.VITE_BACKEND_URL ||
+        "http://localhost:8001";
       const response = await fetch(
-        `http://localhost:8001/api/forum/posts/${post.id}/comments`,
+        `${apiUrl}/api/forum/posts/${post.id}/comments`,
         {
           headers: getAuthHeaders(),
         }
@@ -116,8 +120,12 @@ export const PostRepliesModal = ({
 
     try {
       setSubmitting(true);
+      const apiUrl =
+        import.meta.env.VITE_API_URL ||
+        import.meta.env.VITE_BACKEND_URL ||
+        "http://localhost:8001";
       const response = await fetch(
-        `http://localhost:8001/api/forum/posts/${post.id}/comments`,
+        `${apiUrl}/api/forum/posts/${post.id}/comments`,
         {
           method: "POST",
           headers: getAuthHeaders(),
