@@ -89,6 +89,40 @@
     font-size: 9px !important;
     padding: 1px 3px !important;
   }
+
+  /* Fix terrain and reports buttons positioning on mobile */
+  .leaflet-top.leaflet-right {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-end !important;
+    margin-top: 60px !important; /* Push below search bar */
+    gap: 8px !important;
+  }
+
+  .leaflet-top.leaflet-right .leaflet-control {
+    margin: 0 10px 0 0 !important;
+  }
+
+  /* Make buttons smaller and adjust for mobile */
+  .leaflet-top.leaflet-right button {
+    width: 110px !important;
+    height: 32px !important;
+    font-size: 11px !important;
+    padding: 0 6px !important;
+  }
+
+  .leaflet-top.leaflet-right button span {
+    font-size: 11px !important;
+  }
+
+  .leaflet-top.leaflet-right button i {
+    font-size: 11px !important;
+  }
+
+  .leaflet-top.leaflet-right button img {
+    width: 16px !important;
+    height: 16px !important;
+  }
 }
 
 @media (max-width: 480px) {
@@ -102,6 +136,48 @@
     height: 26px !important;
     line-height: 26px !important;
     font-size: 14px !important;
+  }
+
+  /* Extra small mobile adjustments */
+  .leaflet-top.leaflet-right {
+    margin-top: 65px !important;
+    gap: 6px !important;
+  }
+
+  .leaflet-top.leaflet-right .leaflet-control {
+    margin: 0 8px 0 0 !important;
+  }
+
+  .leaflet-top.leaflet-right button {
+    width: 100px !important;
+    height: 30px !important;
+    font-size: 10px !important;
+    padding: 0 4px !important;
+  }
+
+  .leaflet-top.leaflet-right button span {
+    font-size: 10px !important;
+  }
+
+  .leaflet-top.leaflet-right button i {
+    font-size: 10px !important;
+  }
+
+  .leaflet-top.leaflet-right button img {
+    width: 14px !important;
+    height: 14px !important;
+  }
+}
+
+/* Tablet responsive adjustments */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .leaflet-top.leaflet-right {
+    margin-top: 10px !important;
+  }
+
+  .leaflet-top.leaflet-right button {
+    width: 140px !important;
+    height: 35px !important;
   }
 }
 
@@ -410,6 +486,31 @@
 
 .leaflet-control-geocoder.geocoder-hover-toggle .leaflet-control-geocoder-form {
   pointer-events: auto;
+}
+
+/* Responsive adjustments for search/geocoder */
+@media (max-width: 768px) {
+  .leaflet-top.leaflet-left .leaflet-control {
+    margin-top: 10px !important;
+    margin-left: 10px !important;
+  }
+
+  /* Ensure search bar doesn't overlap with right-side buttons */
+  .leaflet-top.leaflet-left .leaflet-bar.leaflet-control {
+    max-width: calc(100vw - 150px) !important; /* Leave space for right-side buttons */
+  }
+}
+
+@media (max-width: 480px) {
+  .leaflet-top.leaflet-left .leaflet-control {
+    margin-top: 8px !important;
+    margin-left: 8px !important;
+  }
+
+  /* Smaller screens need more space reserved */
+  .leaflet-top.leaflet-left .leaflet-bar.leaflet-control {
+    max-width: calc(100vw - 130px) !important;
+  }
 }
 
 .map-place-icon {
