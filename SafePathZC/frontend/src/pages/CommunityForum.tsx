@@ -67,12 +67,19 @@ const CommunityForum = () => {
     const userData = localStorage.getItem("user_data");
     const adminData = localStorage.getItem("admin_data");
 
+    console.log("🔍 User Data Check:", {
+      userData: userData ? "Found" : "Not found",
+      adminData: adminData ? "Found" : "Not found",
+    });
+
     // Check for admin user first
     if (adminData) {
       const parsedAdmin = JSON.parse(adminData);
+      console.log("🔍 Admin Data:", parsedAdmin);
       if (parsedAdmin.userType === "admin" || parsedAdmin.role === "admin") {
         setIsAdmin(true);
         setUser(parsedAdmin);
+        console.log("✅ Admin user detected from admin_data");
         return;
       }
     }
@@ -80,11 +87,13 @@ const CommunityForum = () => {
     // Check for regular user
     if (userData) {
       const parsedUser = JSON.parse(userData);
+      console.log("🔍 User Data:", parsedUser);
 
       // Check if this user is actually an admin
       if (parsedUser.userType === "admin" || parsedUser.role === "admin") {
         setIsAdmin(true);
         setUser(parsedUser);
+        console.log("✅ Admin user detected from user_data");
         return;
       }
 
@@ -120,9 +129,10 @@ const CommunityForum = () => {
 
   // API functions
   const getAuthHeaders = () => {
+    // Prioritize admin_token first for admin actions
     const token =
-      localStorage.getItem("access_token") ||
       localStorage.getItem("admin_token") ||
+      localStorage.getItem("access_token") ||
       localStorage.getItem("user_token");
 
     console.log("🔍 Available tokens:", {
@@ -278,6 +288,14 @@ const CommunityForum = () => {
       return;
     }
 
+    console.log("🗑️ DELETE ATTEMPT:", {
+      postId,
+      postTitle,
+      user: user,
+      isAdmin: isAdmin,
+      headers: getAuthHeaders(),
+    });
+
     try {
       const confirmed = await confirm({
         title: "Delete Post",
@@ -293,13 +311,27 @@ const CommunityForum = () => {
         import.meta.env.VITE_API_URL ||
         import.meta.env.VITE_BACKEND_URL ||
         "http://localhost:8001";
+
+      const headers = getAuthHeaders();
+      console.log("📤 Sending delete request with headers:", headers);
+      console.log(
+        "📍 Request URL:",
+        `${apiUrl}/api/forum/admin/posts/${postId}`
+      );
+
       const response = await fetch(
         `${apiUrl}/api/forum/admin/posts/${postId}`,
         {
           method: "DELETE",
-          headers: getAuthHeaders(),
+          headers: headers,
         }
       );
+
+      console.log("📥 Delete response:", {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+      });
 
       if (response.ok) {
         const data = await response.json();
@@ -310,8 +342,12 @@ const CommunityForum = () => {
         // Show success notification
         notification.success("Post deleted successfully!");
       } else {
-        const errorData = await response.json();
-        console.error("Delete error:", response.status, errorData);
+        const errorText = await response.text();
+        console.error("❌ Delete failed:", {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText,
+        });
 
         if (response.status === 403) {
           notification.auth.unauthorized();

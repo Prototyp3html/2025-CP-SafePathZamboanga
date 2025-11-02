@@ -14,7 +14,7 @@ import json
 import jwt
 import os
 
-from models import SessionLocal, Post, Comment, PostLike, User
+from models import SessionLocal, Post, Comment, PostLike, User, AdminUser
 
 router = APIRouter(prefix="/api/forum", tags=["forum"])
 
@@ -70,18 +70,53 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security))
         print(f"JWT Error: {e}")
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
 
-def get_current_user(user_id: int = Depends(verify_token), db: Session = Depends(get_db)) -> User:
+def get_current_user(user_id: int = Depends(verify_token), db: Session = Depends(get_db)):
+    """Get current user - checks both User and AdminUser tables"""
+    # First check AdminUser table
+    admin = db.query(AdminUser).filter(AdminUser.id == user_id).first()
+    if admin:
+        print(f"🔍 Found admin user: {admin.name} (ID: {admin.id}) with role: {admin.role}")
+        # Return admin as a user-like object
+        class AdminAsUser:
+            def __init__(self, admin):
+                self.id = admin.id
+                self.name = admin.name
+                self.email = admin.email
+                self.role = admin.role
+        return AdminAsUser(admin)
+    
+    # Then check regular User table
     user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
+    if user:
+        print(f"🔍 Found regular user: {user.name} (ID: {user.id}) with role: {getattr(user, 'role', 'user')}")
+        return user
+    
+    print(f"🔍 No user found with ID: {user_id}")
+    raise HTTPException(status_code=404, detail="User not found")
 
 def get_current_user_optional(request: Request, db: Session = Depends(get_db)):
-    """Get current user but return None if not authenticated"""
+    """Get current user but return None if not authenticated - checks both tables"""
     user_id = verify_token_optional(request)
     if user_id is None:
         return None
+    
+    # First check AdminUser table
+    admin = db.query(AdminUser).filter(AdminUser.id == user_id).first()
+    if admin:
+        print(f"🔍 Found optional admin user: {admin.name} (ID: {admin.id}) with role: {admin.role}")
+        # Return admin as a user-like object
+        class AdminAsUser:
+            def __init__(self, admin):
+                self.id = admin.id
+                self.name = admin.name
+                self.email = admin.email
+                self.role = admin.role
+        return AdminAsUser(admin)
+    
+    # Then check regular User table
     user = db.query(User).filter(User.id == user_id).first()
+    if user:
+        print(f"🔍 Found optional regular user: {user.name} (ID: {user.id}) with role: {getattr(user, 'role', 'user')}")
     return user
 
 # Pydantic models
