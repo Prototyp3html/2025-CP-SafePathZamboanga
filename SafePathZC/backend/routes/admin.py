@@ -277,17 +277,82 @@ async def toggle_report_visibility(
     user_id: int = Depends(verify_admin_token),
     db: Session = Depends(get_db)
 ):
-    """Toggle report visibility"""
+    """Toggle report visibility in public forum"""
+    print(f"🔍 Toggling visibility for report {report_id}: {visibility_data}")
     
     report = db.query(Report).filter(Report.id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
     
-    report.is_visible = visibility_data.get("isVisible", not report.is_visible)
+    # Update the report visibility
+    is_visible = visibility_data.get("isVisible", not report.is_visible)
+    report.is_visible = is_visible
     report.updated_at = datetime.utcnow()
+    
+    # Also update the corresponding forum post visibility
+    try:
+        forum_post = db.query(Post).filter(
+            Post.content.contains(f"Report ID:** #{report.id}"),
+            Post.category == "reports"
+        ).first()
+        
+        if forum_post:
+            forum_post.is_approved = is_visible  # Show/hide in forum based on visibility
+            forum_post.updated_at = datetime.utcnow()
+            print(f"🔍 Updated forum post {forum_post.id} visibility to: {is_visible}")
+        else:
+            print(f"🔍 No forum post found for report {report_id}")
+            
+    except Exception as e:
+        print(f"❌ Error updating forum post visibility: {e}")
+    
     db.commit()
     
-    return {"message": "Report visibility updated successfully"}
+    return {
+        "message": "Report visibility updated successfully",
+        "isVisible": is_visible
+    }
+
+@router.delete("/reports/{report_id}")
+async def delete_report(
+    report_id: int,
+    user_id: int = Depends(verify_admin_token),
+    db: Session = Depends(get_db)
+):
+    """Delete a report and its associated forum post"""
+    print(f"🗑️ Admin deleting report {report_id}")
+    
+    report = db.query(Report).filter(Report.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    try:
+        # Find and delete the associated forum post
+        forum_post = db.query(Post).filter(
+            Post.content.contains(f"Report ID:** #{report.id}"),
+            Post.category == "reports"
+        ).first()
+        
+        if forum_post:
+            # Delete associated forum post data (likes, comments)
+            db.query(PostLike).filter(PostLike.post_id == forum_post.id).delete()
+            db.query(Comment).filter(Comment.post_id == forum_post.id).delete()
+            
+            # Delete the forum post
+            db.delete(forum_post)
+            print(f"🗑️ Deleted associated forum post {forum_post.id}")
+        
+        # Delete the original report
+        db.delete(report)
+        db.commit()
+        
+        print(f"✅ Successfully deleted report {report_id}")
+        return {"message": "Report and associated forum post deleted successfully"}
+        
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Error deleting report {report_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete report: {str(e)}")
 
 @router.patch("/reports/{report_id}/urgency")
 async def update_report_urgency(

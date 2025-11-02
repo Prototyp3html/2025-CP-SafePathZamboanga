@@ -95,6 +95,16 @@ export const AdminDashboard: React.FC = () => {
     userName: "",
   });
 
+  const [deleteReportConfirm, setDeleteReportConfirm] = useState<{
+    isOpen: boolean;
+    reportId: number | null;
+    reportTitle: string;
+  }>({
+    isOpen: false,
+    reportId: null,
+    reportTitle: "",
+  });
+
   const BACKEND_URL =
     import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
 
@@ -415,6 +425,59 @@ export const AdminDashboard: React.FC = () => {
     } catch (error) {
       console.error("Error updating report visibility:", error);
     }
+  };
+
+  const deleteReport = async (reportId: number) => {
+    try {
+      const token = localStorage.getItem("admin_token");
+      if (!token) {
+        console.error("No admin token found");
+        return;
+      }
+
+      const response = await fetch(`${BACKEND_URL}/admin/reports/${reportId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        console.log("Report deleted successfully");
+        await loadReports(); // Refresh the reports list
+        setDeleteReportConfirm({
+          isOpen: false,
+          reportId: null,
+          reportTitle: "",
+        });
+
+        // Show success notification (you can customize this)
+        alert("Report deleted successfully");
+      } else {
+        const errorData = await response.json();
+        console.error("Failed to delete report:", response.status, errorData);
+        alert("Failed to delete report. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error deleting report:", error);
+      alert("An error occurred while deleting the report.");
+    }
+  };
+
+  const openDeleteReportConfirm = (reportId: number, reportTitle: string) => {
+    setDeleteReportConfirm({
+      isOpen: true,
+      reportId,
+      reportTitle,
+    });
+  };
+
+  const closeDeleteReportConfirm = () => {
+    setDeleteReportConfirm({
+      isOpen: false,
+      reportId: null,
+      reportTitle: "",
+    });
   };
 
   const filteredReports = Array.isArray(reports)
@@ -780,6 +843,19 @@ export const AdminDashboard: React.FC = () => {
                             </button>
                           </>
                         )}
+                        {/* Delete button - always available */}
+                        <button
+                          onClick={() =>
+                            openDeleteReportConfirm(
+                              parseInt(report.id),
+                              report.title
+                            )
+                          }
+                          className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
+                          title="Delete report permanently"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1249,6 +1325,80 @@ export const AdminDashboard: React.FC = () => {
                 className="px-6 py-3 text-sm font-medium text-white bg-gradient-to-r from-red-600 to-pink-600 border border-transparent rounded-xl hover:from-red-700 hover:to-pink-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 shadow-lg hover:shadow-xl transition-all duration-200"
               >
                 Delete User
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Report Confirmation Dialog */}
+      {deleteReportConfirm.isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-8 max-w-lg w-full mx-4 shadow-2xl border border-gray-100">
+            <div className="flex items-center mb-6">
+              <div className="flex-shrink-0">
+                <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-pink-600 rounded-xl flex items-center justify-center shadow-lg">
+                  <Trash2 className="w-7 h-7 text-white" />
+                </div>
+              </div>
+              <div className="ml-4">
+                <h3 className="text-xl font-bold text-gray-900">
+                  Delete Report
+                </h3>
+                <p className="text-sm text-red-600 font-medium">
+                  This action cannot be undone
+                </p>
+              </div>
+            </div>
+
+            <div className="mb-8">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                <p className="text-sm text-gray-800 font-medium">
+                  Are you sure you want to delete the report{" "}
+                  <span className="font-bold text-red-700">
+                    "{deleteReportConfirm.reportTitle}"
+                  </span>
+                  ?
+                </p>
+              </div>
+              <p className="text-sm text-gray-700 font-medium mb-3">
+                This will permanently remove:
+              </p>
+              <ul className="text-sm text-gray-600 space-y-2">
+                <li className="flex items-center">
+                  <div className="w-2 h-2 bg-red-400 rounded-full mr-3"></div>
+                  The original incident report
+                </li>
+                <li className="flex items-center">
+                  <div className="w-2 h-2 bg-red-400 rounded-full mr-3"></div>
+                  Associated forum post and discussion
+                </li>
+                <li className="flex items-center">
+                  <div className="w-2 h-2 bg-red-400 rounded-full mr-3"></div>
+                  All comments and likes on the forum post
+                </li>
+                <li className="flex items-center">
+                  <div className="w-2 h-2 bg-red-400 rounded-full mr-3"></div>
+                  All report data and metadata
+                </li>
+              </ul>
+            </div>
+
+            <div className="flex justify-end space-x-4">
+              <button
+                onClick={closeDeleteReportConfirm}
+                className="px-6 py-3 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-200 rounded-xl hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() =>
+                  deleteReportConfirm.reportId &&
+                  deleteReport(deleteReportConfirm.reportId)
+                }
+                className="px-6 py-3 text-sm font-medium text-white bg-gradient-to-r from-red-600 to-pink-600 border border-transparent rounded-xl hover:from-red-700 hover:to-pink-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 shadow-lg hover:shadow-xl transition-all duration-200"
+              >
+                Delete Report
               </button>
             </div>
           </div>
