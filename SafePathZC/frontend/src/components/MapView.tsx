@@ -9334,7 +9334,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         .action-buttons-container {
           position: fixed;
           right: 0;
-          top: 50%;
+          top: 60%;
           transform: translateY(-50%);
           display: flex;
           flex-direction: column;
@@ -9382,13 +9382,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         }
         
         .report-button {
-          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
         }
         
         .report-button:hover {
-          background: linear-gradient(135deg, #059669 0%, #047857 100%);
+          background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
           transform: translateX(-10px) scale(1.05);
-          box-shadow: 0 8px 25px rgba(16, 185, 129, 0.4);
+          box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
         }
         
         .emergency-button {
