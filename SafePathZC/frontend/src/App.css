@@ -246,7 +246,7 @@ body {
 .action-buttons-container {
   position: fixed;
   top: 60vh;
-  right: -0.7vw;
+  right: -5px;
   transform: translateY(-50%);
   display: flex;
   flex-direction: column;
@@ -301,7 +301,7 @@ body {
 @media (max-width: 1024px) and (orientation: landscape) {
   .action-buttons-container {
     top: 55vh;
-    right: 0;
+    right: -5px;
     gap: 12px;
   }
 
@@ -317,7 +317,7 @@ body {
 @media (max-width: 1024px) and (orientation: portrait) {
   .action-buttons-container {
     top: 60vh;
-    right: 0;
+    right: -5px;
     gap: 12px;
   }
 
@@ -333,7 +333,7 @@ body {
 @media (max-width: 768px) and (orientation: landscape) {
   .action-buttons-container {
     top: 50vh;
-    right: 2px;
+     right: -5px;
     gap: 8px;
   }
 
@@ -350,7 +350,7 @@ body {
 @media (max-width: 768px) and (orientation: portrait) {
   .action-buttons-container {
     top: 65vh;
-    right: 2px;
+  right: -5px;
     gap: 10px;
   }
 
@@ -365,7 +365,7 @@ body {
 /* Extra small mobile devices */
 @media (max-width: 480px) {
   .action-buttons-container {
-    right: 4px;
+   right: -5px;
     gap: 8px;
   }
 
