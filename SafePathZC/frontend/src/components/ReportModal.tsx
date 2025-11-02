@@ -271,30 +271,28 @@ export const ReportModal = ({
         } Report - ${location}`,
         content: `🚨 ${reportType.toUpperCase()} ALERT
 
-📍 **Location:** ${location}
+📍 Location: ${location}
 
-📝 **Description:** ${description}
+📝 Description: ${description}
 
-⚠️ **Severity:** ${
+⚠️ Severity: ${
           severity === "severe"
             ? "🔴 HIGH"
             : severity === "moderate"
             ? "🟡 MODERATE"
             : "🟢 LOW"
         }${
-  weatherData
-    ? `
+          weatherData
+            ? `
 
-🌤️ **Weather Conditions:**
-• **Condition:** ${weatherData.current.condition.text}
-• **Temperature:** ${weatherData.current.temp_c}°C
-• **Wind Speed:** ${weatherData.current.wind_kph} km/h`
-    : ""
-}
+🌤️ Weather Conditions:
+   ${weatherData.current.condition.text}
+   Temperature: ${weatherData.current.temp_c}°C
+   Wind Speed: ${weatherData.current.wind_kph} km/h`
+            : ""
+        }
 
----
-
-⚠️ **Safety Advisory:** Please exercise caution when traveling through this area and consider alternative routes if possible.`,
+⚠️ Please exercise caution when traveling through this area and consider alternative routes if possible.`,
         category: "reports",
         tags: [reportType, ...(severity === "severe" ? ["urgent"] : [])],
         is_urgent: severity === "severe",
@@ -362,9 +360,9 @@ export const ReportModal = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 animate-fade-in backdrop-blur-sm">
-      <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full mx-4 animate-scale-in max-h-[90vh] overflow-y-auto border border-gray-200">
+      <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full mx-4 animate-scale-in max-h-[90vh] overflow-hidden border border-gray-200 flex flex-col">
         {/* Modal Header */}
-        <div className="bg-wmsu-blue text-white p-4 rounded-t-lg sticky top-0 shadow-lg">
+        <div className="bg-wmsu-blue text-white p-4 rounded-t-lg shadow-lg flex-shrink-0">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-lg flex items-center">
               <i className="fas fa-comment-alt mr-2"></i>
@@ -380,7 +378,7 @@ export const ReportModal = ({
         </div>
 
         {/* Modal Content */}
-        <div className="p-6 bg-white rounded-b-lg">
+        <div className="p-6 bg-white rounded-b-lg flex-1 overflow-y-auto">
           {/* Login Required Warning */}
           {!isLoggedIn && (
             <div className="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-lg animate-slide-in shadow-sm">

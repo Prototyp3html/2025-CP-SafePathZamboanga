@@ -1841,31 +1841,51 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     // Define icon styles for different report types
     const getReportIcon = (type: string, severity: string) => {
-      const iconColors = {
-        flooding: "#3B82F6", // Blue
-        "road blockage": "#EF4444", // Red
-        "road damage": "#F59E0B", // Amber
-        "weather hazard": "#8B5CF6", // Purple
-        "other issue": "#6B7280", // Gray
+      // Much more vibrant and attention-grabbing colors
+      const getIconConfig = () => {
+        const lowerType = type.toLowerCase();
+
+        if (lowerType.includes("roadblock") || lowerType.includes("blockage")) {
+          return { color: "#DC2626", icon: "🚧", bgColor: "#FEE2E2" }; // Bright red
+        }
+        if (lowerType.includes("damage")) {
+          return { color: "#EA580C", icon: "⚠️", bgColor: "#FED7AA" }; // Bright orange
+        }
+        if (lowerType.includes("flood")) {
+          return { color: "#2563EB", icon: "🌊", bgColor: "#DBEAFE" }; // Bright blue
+        }
+        if (lowerType.includes("traffic") || lowerType.includes("accident")) {
+          return { color: "#7C2D12", icon: "🚦", bgColor: "#FEF3C7" }; // Dark orange
+        }
+        if (lowerType.includes("weather")) {
+          return { color: "#7C3AED", icon: "⛈️", bgColor: "#EDE9FE" }; // Purple
+        }
+        // Default for other types
+        return { color: "#DC2626", icon: "🚨", bgColor: "#FEE2E2" }; // Alert red
       };
 
-      const severitySize =
-        severity.toLowerCase() === "severe" ? "w-6 h-6" : "w-5 h-5";
-      const color =
-        iconColors[type.toLowerCase() as keyof typeof iconColors] ||
-        iconColors["other issue"];
+      const config = getIconConfig();
+      const isSevere =
+        severity.toLowerCase().includes("severe") ||
+        severity.toLowerCase().includes("critical");
+      const size = isSevere ? 32 : 28;
+      const iconSize = isSevere ? "18px" : "16px";
 
       return L.divIcon({
         html: `
-          <div class="relative">
-            <div class="absolute inset-0 bg-white rounded-full shadow-lg"></div>
-            <div class="relative ${severitySize} rounded-full flex items-center justify-center" 
-                 style="background-color: ${color}; margin: 2px;">
-              <i class="fas fa-exclamation-triangle text-white text-xs"></i>
+          <div class="report-marker-container" style="width: ${size}px; height: ${size}px;">
+            <div class="report-marker-bg" style="background-color: ${
+              config.bgColor
+            }; border: 2px solid ${config.color};"></div>
+            <div class="report-marker-icon" style="font-size: ${iconSize};">
+              ${config.icon}
             </div>
             ${
-              severity.toLowerCase() === "severe"
-                ? '<div class="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border border-white"></div>'
+              isSevere
+                ? `
+              <div class="severity-pulse" style="border-color: ${config.color};"></div>
+              <div class="severity-indicator" style="background-color: ${config.color};"></div>
+            `
                 : ""
             }
           </div>
@@ -1882,20 +1902,25 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     });
 
     // Create popup content with improved styling
-    const severityColorClass = 
-      report.severity.toLowerCase().includes("severe") || report.severity.toLowerCase().includes("critical")
+    const severityColorClass =
+      report.severity.toLowerCase().includes("severe") ||
+      report.severity.toLowerCase().includes("critical")
         ? "bg-red-100 text-red-800 border-red-200"
         : report.severity.toLowerCase().includes("moderate")
         ? "bg-yellow-100 text-yellow-800 border-yellow-200"
         : "bg-green-100 text-green-800 border-green-200";
 
-    const typeIcon = 
-      report.reportType.toLowerCase().includes("roadblock") ? "🚧" :
-      report.reportType.toLowerCase().includes("damage") ? "⚠️" :
-      report.reportType.toLowerCase().includes("flood") ? "🌊" :
-      report.reportType.toLowerCase().includes("traffic") ? "🚦" :
-      report.reportType.toLowerCase().includes("accident") ? "🚨" :
-      "📍";
+    const typeIcon = report.reportType.toLowerCase().includes("roadblock")
+      ? "🚧"
+      : report.reportType.toLowerCase().includes("damage")
+      ? "⚠️"
+      : report.reportType.toLowerCase().includes("flood")
+      ? "🌊"
+      : report.reportType.toLowerCase().includes("traffic")
+      ? "🚦"
+      : report.reportType.toLowerCase().includes("accident")
+      ? "🚨"
+      : "📍";
 
     const popupContent = `
       <div class="report-popup-container">
@@ -1929,7 +1954,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           
           <div class="report-field">
             <span class="field-label">📅 Date:</span> 
-            <span class="field-value">${new Date(report.created_at).toLocaleDateString()}</span>
+            <span class="field-value">${new Date(
+              report.created_at
+            ).toLocaleDateString()}</span>
           </div>
         </div>
         
@@ -9098,11 +9125,81 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         
         /* Community Report Marker Styles */
         .report-marker {
-          transition: transform 0.2s ease;
+          transition: all 0.3s ease;
+          cursor: pointer;
         }
         .report-marker:hover {
-          transform: scale(1.1);
+          transform: scale(1.15);
           z-index: 1000;
+        }
+        
+        .report-marker-container {
+          position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        
+        .report-marker-bg {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          border-radius: 50%;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        
+        .report-marker-icon {
+          position: relative;
+          z-index: 2;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+        }
+        
+        /* Severe report animations */
+        .severity-pulse {
+          position: absolute;
+          top: -2px;
+          left: -2px;
+          right: -2px;
+          bottom: -2px;
+          border: 2px solid;
+          border-radius: 50%;
+          animation: pulse-ring 2s infinite;
+        }
+        
+        .severity-indicator {
+          position: absolute;
+          top: -2px;
+          right: -2px;
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          border: 2px solid white;
+          animation: blink 1.5s infinite;
+        }
+        
+        @keyframes pulse-ring {
+          0% {
+            transform: scale(1);
+            opacity: 1;
+          }
+          100% {
+            transform: scale(1.6);
+            opacity: 0;
+          }
+        }
+        
+        @keyframes blink {
+          0%, 50% {
+            opacity: 1;
+          }
+          51%, 100% {
+            opacity: 0.3;
+          }
         }
         .report-popup .leaflet-popup-content-wrapper {
           border-radius: 12px;
@@ -9231,6 +9328,77 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           background-color: #f0fdf4 !important; 
           color: #166534 !important; 
           border-color: #bbf7d0 !important; 
+        }
+        
+        /* Action Buttons Styling */
+        .action-buttons-container {
+          position: fixed;
+          right: 0;
+          top: 50%;
+          transform: translateY(-50%);
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          z-index: 1000;
+        }
+        
+        .action-button {
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          color: white;
+          border: none;
+          padding: 12px 16px;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          border-radius: 8px 0 0 8px;
+          box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+          writing-mode: vertical-rl;
+          text-orientation: mixed;
+          min-height: 80px;
+          width: 40px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          backdrop-filter: blur(10px);
+          border-left: 3px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .action-button:hover {
+          transform: translateX(-10px) scale(1.05);
+          box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
+          background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+        }
+        
+        .weather-button {
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        }
+        
+        .weather-button:hover {
+          background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+          transform: translateX(-10px) scale(1.05);
+          box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
+        }
+        
+        .report-button {
+          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+        
+        .report-button:hover {
+          background: linear-gradient(135deg, #059669 0%, #047857 100%);
+          transform: translateX(-10px) scale(1.05);
+          box-shadow: 0 8px 25px rgba(16, 185, 129, 0.4);
+        }
+        
+        .emergency-button {
+          background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+        
+        .emergency-button:hover {
+          background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+          transform: translateX(-10px) scale(1.05);
+          box-shadow: 0 8px 25px rgba(239, 68, 68, 0.4);
         }
       `}</style>
 
@@ -9483,11 +9651,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             <button
               onClick={() => setShowWeatherDashboard(true)}
               className="action-button weather-button"
-              style={{
-                backgroundColor: "#3B82F6",
-                color: "white",
-                marginBottom: "10px",
-              }}
             >
               Weather Dashboard
             </button>
