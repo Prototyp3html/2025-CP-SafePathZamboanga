@@ -27,6 +27,63 @@ import math
 
 logger = logging.getLogger(__name__)
 
+
+def has_dead_end_segment(coordinates: List[List[float]], threshold_m: float = 50.0) -> bool:
+    """
+    Detect if a route has dead-end segments (goes out and comes back).
+    
+    A dead-end occurs when the route backtracks - going to a point and returning
+    along a similar path. This creates "leaking" colored segments on the map.
+    
+    Args:
+        coordinates: List of [lng, lat] coordinate pairs
+        threshold_m: Distance threshold to consider as backtracking (meters)
+        
+    Returns:
+        True if dead-end detected, False otherwise
+    """
+    if len(coordinates) < 4:
+        return False
+    
+    # Check if any segment comes within threshold of an earlier segment
+    # (indicating the route doubled back)
+    for i in range(len(coordinates) - 1):
+        p1_lng, p1_lat = coordinates[i]
+        p2_lng, p2_lat = coordinates[i + 1]
+        
+        # Check against segments at least 2 steps earlier (to avoid adjacent segments)
+        for j in range(max(0, i - 10), i - 1):
+            p3_lng, p3_lat = coordinates[j]
+            p4_lng, p4_lat = coordinates[j + 1]
+            
+            # Calculate distance between segment midpoints
+            mid1_lng = (p1_lng + p2_lng) / 2
+            mid1_lat = (p1_lat + p2_lat) / 2
+            mid2_lng = (p3_lng + p4_lng) / 2
+            mid2_lat = (p3_lat + p4_lat) / 2
+            
+            # Simple distance calculation (approximate for short distances)
+            dx = (mid1_lng - mid2_lng) * 111320 * math.cos(math.radians(mid1_lat))
+            dy = (mid1_lat - mid2_lat) * 110540
+            distance = math.sqrt(dx*dx + dy*dy)
+            
+            # Check if segments are moving in opposite directions (backtracking)
+            if distance < threshold_m:
+                # Calculate direction vectors
+                dir1_lng = p2_lng - p1_lng
+                dir1_lat = p2_lat - p1_lat
+                dir2_lng = p4_lng - p3_lng
+                dir2_lat = p4_lat - p3_lat
+                
+                # Dot product: negative means opposite directions
+                dot_product = dir1_lng * dir2_lng + dir1_lat * dir2_lat
+                
+                if dot_product < -0.5:  # Moving in opposite directions
+                    logger.warning(f"Dead-end detected: segment {i} backtracks to segment {j}")
+                    return True
+    
+    return False
+
 router = APIRouter(prefix="/api/routing", tags=["flood-routing"])
 
 class FloodRouteRequest(BaseModel):
@@ -109,6 +166,11 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                             coordinates = geometry.get("coordinates", [])
                             
                             if coordinates:
+                                # Validate: Skip routes with dead-end segments
+                                if has_dead_end_segment(coordinates, threshold_m=50.0):
+                                    logger.info(f"Skipping OSRM route: contains dead-end segment")
+                                    continue
+                                
                                 # Analyze flood risk
                                 flood_analysis = analyze_route_flood_risk(
                                     coordinates,
@@ -189,6 +251,11 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                 # This filters out routes with dead-end segments or unreasonable detours
                                 if baseline_distance > 0 and route_distance > baseline_distance * 1.5:
                                     logger.info(f"Skipping waypoint route with offset {offset_factor}: too long ({route_distance:.0f}m vs baseline {baseline_distance:.0f}m)")
+                                    continue
+                                
+                                # Validate: Skip routes with dead-end segments (backtracking)
+                                if has_dead_end_segment(coordinates, threshold_m=50.0):
+                                    logger.info(f"Skipping waypoint route with offset {offset_factor}: contains dead-end segment")
                                     continue
                                 
                                 if coordinates:

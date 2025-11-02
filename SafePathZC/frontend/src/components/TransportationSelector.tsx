@@ -3,10 +3,9 @@ import { Car, Wind, User, Bus, Truck, Navigation } from "lucide-react";
 
 export type TransportationMode =
   | "car"
-  | "motorcycle"
+  | "motorcycle"  // Backend uses this, but UI combines it with bicycle
   | "walking"
   | "public_transport"
-  | "bicycle"
   | "truck";
 
 interface TransportationModeConfig {
@@ -45,8 +44,8 @@ export const TRANSPORTATION_MODES: Record<
   },
   motorcycle: {
     id: "motorcycle",
-    name: "Motorcycle",
-    icon: Wind, // Using Wind as motorcycle alternative (represents speed/movement)
+    name: "Bicycle/Motorcycle",
+    icon: Wind,
     description: "Two-wheeler - lower flood tolerance",
     groundClearance: 15,
     maxFloodDepth: 10,
@@ -84,20 +83,6 @@ export const TRANSPORTATION_MODES: Record<
     speedFactor: 0.6,
     osrmProfile: "driving",
     color: "#8B5CF6",
-  },
-  bicycle: {
-    id: "bicycle",
-    name: "Bicycle",
-    icon: Navigation, // Using Navigation as bicycle alternative (represents movement/direction)
-    description: "Cycling - very low flood tolerance",
-    groundClearance: 5,
-    maxFloodDepth: 5,
-    canUseFootpaths: true,
-    canUseMainRoads: true,
-    canUseHighways: false,
-    speedFactor: 0.3,
-    osrmProfile: "cycling",
-    color: "#F59E0B",
   },
   truck: {
     id: "truck",

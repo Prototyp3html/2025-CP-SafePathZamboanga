@@ -874,6 +874,7 @@ async def get_route(
         routes = []
         route_metadata = []  # Track how each route was generated
         snapped_waypoints = []  # Store OSRM-snapped waypoint coordinates
+        snapped_wp_coords = []  # Initialize empty list for snapped waypoint coordinates
         
         try:
             print("🔄 Generating route variations...")

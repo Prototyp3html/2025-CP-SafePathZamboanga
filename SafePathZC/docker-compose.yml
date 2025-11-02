@@ -29,17 +29,6 @@ services:
       - ./backend/osrm-data:/data
     command: osrm-routed --algorithm mld /data/zamboanga-driving.osrm
     restart: unless-stopped
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-f",
-          "http://localhost:5000/route/v1/driving/122.079,6.9214;122.08,6.92",
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   # OSRM Walking Profile (Pedestrians)
   osrm-walking:
@@ -51,19 +40,8 @@ services:
       - ./backend/osrm-data:/data
     command: osrm-routed --algorithm mld /data/zamboanga-foot.osrm
     restart: unless-stopped
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-f",
-          "http://localhost:5000/route/v1/foot/122.079,6.9214;122.08,6.92",
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
-  # OSRM Bicycle Profile (Motorcycles/Bicycles) - NEW!
+  # OSRM Bicycle Profile (Motorcycles/Bicycles)
   osrm-bicycle:
     image: osrm/osrm-backend
     container_name: safepath-osrm-bicycle
@@ -73,19 +51,28 @@ services:
       - ./backend/osrm-data:/data
     command: osrm-routed --algorithm mld /data/zamboanga-bicycle.osrm
     restart: unless-stopped
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-f",
-          "http://localhost:5000/route/v1/bicycle/122.079,6.9214;122.08,6.92",
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    # Note: This will fail to start until you generate zamboanga-bicycle.osrm files
-    # See EXTRACT_BICYCLE_PROFILE.md for instructions
+
+  # OSRM Truck Profile (Heavy vehicles)
+  osrm-truck:
+    image: osrm/osrm-backend
+    container_name: safepath-osrm-truck
+    ports:
+      - "5003:5000"
+    volumes:
+      - ./backend/osrm-data:/data
+    command: osrm-routed --algorithm mld /data/zamboanga-truck.osrm
+    restart: unless-stopped
+
+  # OSRM Jeepney Profile (Public transport)
+  osrm-jeepney:
+    image: osrm/osrm-backend
+    container_name: safepath-osrm-jeepney
+    ports:
+      - "5004:5000"
+    volumes:
+      - ./backend/osrm-data:/data
+    command: osrm-routed --algorithm mld /data/zamboanga-jeepney.osrm
+    restart: unless-stopped
 
   # Optional: Local tile server for offline maps
   tile-server:
