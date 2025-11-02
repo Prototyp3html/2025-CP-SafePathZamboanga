@@ -147,10 +147,12 @@ const CommunityForum = () => {
         params.append("search", searchTerm.trim());
       }
 
+      const apiBaseUrl = 
+        import.meta.env.VITE_API_BASE_URL ||
+        `${import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || "http://localhost:8001"}/api`;
+      
       const response = await fetch(
-        `${
-          import.meta.env.VITE_API_BASE_URL || "http://localhost:8001/api"
-        }/forum/posts?${params}`,
+        `${apiBaseUrl}/forum/posts?${params}`,
         {
           headers: getAuthHeaders(),
         }
@@ -161,6 +163,9 @@ const CommunityForum = () => {
       }
 
       const data = await response.json();
+      console.log("Forum posts fetched:", data.posts?.length || 0);
+      console.log("Reports found:", data.posts?.filter(p => p.category === 'reports')?.length || 0);
+      console.log("All categories:", data.posts?.map(p => p.category) || []);
       setForumPosts(data.posts || []);
       setError(null);
     } catch (err) {
@@ -174,10 +179,12 @@ const CommunityForum = () => {
 
   const fetchStats = async () => {
     try {
+      const apiBaseUrl = 
+        import.meta.env.VITE_API_BASE_URL ||
+        `${import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || "http://localhost:8001"}/api`;
+      
       const response = await fetch(
-        `${
-          import.meta.env.VITE_API_BASE_URL || "http://localhost:8001/api"
-        }/forum/stats`,
+        `${apiBaseUrl}/forum/stats`,
         {
           headers: getAuthHeaders(),
         }
@@ -198,7 +205,10 @@ const CommunityForum = () => {
     }
 
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
+      const apiUrl = 
+        import.meta.env.VITE_API_URL || 
+        import.meta.env.VITE_BACKEND_URL || 
+        "http://localhost:8001";
       const response = await fetch(`${apiUrl}/api/forum/posts/${postId}/like`, {
         method: "POST",
         headers: getAuthHeaders(),
@@ -264,7 +274,10 @@ const CommunityForum = () => {
 
       if (!confirmed) return;
 
-      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
+      const apiUrl = 
+        import.meta.env.VITE_API_URL || 
+        import.meta.env.VITE_BACKEND_URL || 
+        "http://localhost:8001";
       const response = await fetch(
         `${apiUrl}/api/forum/admin/posts/${postId}`,
         {

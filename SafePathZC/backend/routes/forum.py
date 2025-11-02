@@ -287,8 +287,8 @@ def create_post(post_data: PostCreate, current_user: User = Depends(get_current_
     """Create a new forum post"""
     
     # Determine if post needs approval
-    # Critical categories like alerts and reports need admin approval
-    needs_approval = post_data.category in ["alerts", "reports"] or post_data.is_urgent
+    # Only urgent alerts need admin approval, reports are auto-approved
+    needs_approval = post_data.category in ["alerts"] and post_data.is_urgent
     
     # Admins can auto-approve their own posts
     is_auto_approved = current_user.role == "admin" or not needs_approval
