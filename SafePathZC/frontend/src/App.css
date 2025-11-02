@@ -34,6 +34,25 @@
   padding: 0 !important;
 }
 
+/* Responsive adjustments for tablets */
+@media (max-width: 1024px) {
+  .leaflet-container[style] {
+    top: 48px !important;
+  }
+}
+
+/* Responsive adjustments for mobile devices */
+@media (max-width: 768px) {
+  #root > div {
+    height: calc(100vh - 48px) !important;
+  }
+
+  .leaflet-container[style] {
+    height: calc(100vh - 48px) !important;
+    top: 48px !important;
+  }
+}
+
 .leaflet-routing-alternatives-container {
   display: none !important;
 }
@@ -50,6 +69,40 @@
   background-color: rgb(255, 255, 255) !important; /* Blue background */
   color: rgb(19, 148, 207) !important; /* White text/symbol */
   border: 2px solid rgb(255, 255, 255) !important; /* Blue border */
+}
+
+/* Responsive Leaflet Controls */
+@media (max-width: 768px) {
+  .leaflet-control-zoom {
+    margin-top: 10px !important;
+    margin-right: 10px !important;
+  }
+  
+  .leaflet-control-zoom a {
+    width: 28px !important;
+    height: 28px !important;
+    line-height: 28px !important;
+    font-size: 16px !important;
+  }
+  
+  .leaflet-control-attribution {
+    font-size: 9px !important;
+    padding: 1px 3px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .leaflet-control-zoom {
+    margin-top: 8px !important;
+    margin-right: 8px !important;
+  }
+  
+  .leaflet-control-zoom a {
+    width: 26px !important;
+    height: 26px !important;
+    line-height: 26px !important;
+    font-size: 14px !important;
+  }
 }
 
 .logo {
@@ -137,6 +190,7 @@
   min-height: 120px;
   width: 40px;
   letter-spacing: 1px;
+  transition: transform 0.2s ease;
 }
 
 .report-button {
@@ -161,11 +215,59 @@
 
 .action-button:hover {
   transform: translateX(-5px);
-  transition: transform 0.2s ease;
 }
 
-/* Responsive design for mobile devices */
-@media (max-width: 768px) {
+/* Responsive design for tablets (landscape) */
+@media (max-width: 1024px) and (orientation: landscape) {
+  .action-buttons-container {
+    top: 55vh;
+    right: 0;
+    gap: 12px;
+  }
+
+  .action-button {
+    width: 38px;
+    min-height: 110px;
+    padding: 18px 11px;
+    font-size: 13px;
+  }
+}
+
+/* Responsive design for tablets (portrait) */
+@media (max-width: 1024px) and (orientation: portrait) {
+  .action-buttons-container {
+    top: 60vh;
+    right: 0;
+    gap: 12px;
+  }
+
+  .action-button {
+    width: 38px;
+    min-height: 105px;
+    padding: 16px 10px;
+    font-size: 13px;
+  }
+}
+
+/* Responsive design for mobile devices (landscape) */
+@media (max-width: 768px) and (orientation: landscape) {
+  .action-buttons-container {
+    top: 50vh;
+    right: 2px;
+    gap: 8px;
+  }
+
+  .action-button {
+    width: 32px;
+    min-height: 85px;
+    padding: 12px 8px;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+  }
+}
+
+/* Responsive design for mobile devices (portrait) */
+@media (max-width: 768px) and (orientation: portrait) {
   .action-buttons-container {
     top: 65vh;
     right: 2px;
@@ -177,6 +279,21 @@
     min-height: 100px;
     padding: 15px 10px;
     font-size: 12px;
+  }
+}
+
+/* Extra small mobile devices */
+@media (max-width: 480px) {
+  .action-buttons-container {
+    right: 4px;
+    gap: 8px;
+  }
+
+  .action-button {
+    width: 32px;
+    min-height: 90px;
+    padding: 12px 8px;
+    font-size: 11px;
   }
 }
 
@@ -314,6 +431,32 @@
   position: relative;
 }
 
+/* Responsive marker sizing */
+@media (max-width: 768px) {
+  .map-place-icon-inner {
+    width: 22px;
+    height: 22px;
+    border: 2px solid #ffffff;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.22);
+  }
+  
+  .map-place-icon-glyph {
+    font-size: 0.8rem !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .map-place-icon-inner {
+    width: 20px;
+    height: 20px;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.2);
+  }
+  
+  .map-place-icon-glyph {
+    font-size: 0.7rem !important;
+  }
+}
+
 .map-place-icon-inner::after {
   content: "";
   position: absolute;
@@ -352,6 +495,79 @@
   min-width: 220px;
   max-width: 280px;
   color: #0f172a;
+}
+
+/* Responsive place popup for tablets */
+@media (max-width: 1024px) {
+  .place-popup-card {
+    padding: 14px 16px;
+    min-width: 200px;
+    max-width: 260px;
+    font-size: 14px;
+  }
+
+  .place-popup-emoji {
+    font-size: 18px;
+    width: 32px;
+    height: 32px;
+  }
+
+  .place-popup-name {
+    font-size: 14px;
+  }
+
+  .place-popup-action {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+/* Responsive place popup for mobile */
+@media (max-width: 768px) {
+  .place-popup-card {
+    padding: 12px 14px;
+    min-width: 180px;
+    max-width: 240px;
+    font-size: 13px;
+  }
+
+  .place-popup-emoji {
+    font-size: 16px;
+    width: 28px;
+    height: 28px;
+  }
+
+  .place-popup-name {
+    font-size: 13px;
+  }
+
+  .place-popup-description {
+    font-size: 12px;
+  }
+
+  .place-popup-action {
+    width: 36px;
+    height: 36px;
+  }
+
+  .place-popup-action-icon {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+/* Extra small mobile devices */
+@media (max-width: 480px) {
+  .place-popup-card {
+    padding: 10px 12px;
+    min-width: 160px;
+    max-width: 200px;
+  }
+
+  .place-popup-header {
+    gap: 8px;
+    margin-bottom: 8px;
+  }
 }
 
 .place-popup-row {

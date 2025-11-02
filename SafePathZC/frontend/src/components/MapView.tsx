@@ -955,11 +955,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     const avgSpeedKmh =
       mode === "walking"
         ? 5
-        : mode === "bicycle"
-        ? 15
-        : mode === "motorcycle"
-        ? 45
-        : 50;
+        : mode === "motorcycle"  // motorcycle includes bicycle now
+        ? 35  // Average speed for bicycle/motorcycle
+        : mode === "car"
+        ? 50
+        : mode === "truck"
+        ? 40
+        : 45;  // public_transport default
     const adjustedSpeed = avgSpeedKmh * modeConfig.speedFactor;
     const duration = (baseDistance / adjustedSpeed) * 60; // in minutes
 
@@ -7347,7 +7349,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     },
   };
 
-  // Create clean terrain heatmap overlay
+  // Create terrain overlay using terrain tile layer (like Google Maps)
   const createTerrainOverlay = () => {
     if (!mapRef.current) return;
 
@@ -7356,266 +7358,22 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       mapRef.current.removeLayer(terrainOverlayRef.current);
     }
 
-    const bounds = mapRef.current.getBounds();
-    const zoom = mapRef.current.getZoom();
-    const terrainLayer = L.layerGroup();
-
-    // Moderate grid for clean heatmap without excessive overlap
-    const gridSize = Math.max(12, Math.min(24, zoom * 2));
-    const latStep = (bounds.getNorth() - bounds.getSouth()) / gridSize;
-    const lngStep = (bounds.getEast() - bounds.getWest()) / gridSize;
-
-    // Create non-overlapping cells for clean appearance
-    for (let i = 0; i < gridSize; i++) {
-      for (let j = 0; j < gridSize; j++) {
-        const lat = bounds.getSouth() + i * latStep;
-        const lng = bounds.getWest() + j * lngStep;
-
-        // Generate realistic elevation based on Zamboanga geography
-        const zamboCenterLat = 6.9111;
-        const zamboCenterLng = 122.0794;
-        const distanceFromCenter = Math.sqrt(
-          Math.pow((lat - zamboCenterLat) * 111, 2) +
-            Math.pow((lng - zamboCenterLng) * 85, 2)
-        );
-
-        // Simulate realistic Zamboanga terrain with smoother transitions
-        let elevation = 0;
-
-        // Coastal areas (0-5km) - very low elevation
-        if (distanceFromCenter < 5) {
-          elevation = 2 + Math.random() * 8 + Math.sin(lat * 20) * 2;
-        }
-        // Urban/suburban (5-15km) - gentle hills
-        else if (distanceFromCenter < 15) {
-          elevation =
-            10 +
-            Math.random() * 25 +
-            Math.sin(lat * 15) * Math.cos(lng * 15) * 6;
-        }
-        // Foothills (15-30km) - moderate elevation
-        else if (distanceFromCenter < 30) {
-          elevation =
-            35 +
-            Math.random() * 40 +
-            Math.sin(lat * 10) * Math.cos(lng * 10) * 12;
-        }
-        // Mountains (30km+) - high elevation
-        else {
-          elevation =
-            75 +
-            Math.random() * 70 +
-            Math.sin(lat * 6) * Math.cos(lng * 6) * 20;
-        }
-
-        elevation = Math.max(0, Math.min(200, elevation));
-
-        const color = getElevationColor(elevation);
-        const intensity = Math.min(1, elevation / 180);
-        const opacity = Math.max(0.2, Math.min(0.5, 0.25 + intensity * 0.25));
-
-        // Create clean, non-overlapping rectangles
-        const heatmapRect = L.rectangle(
-          [
-            [lat, lng],
-            [lat + latStep, lng + lngStep],
-          ],
-          {
-            fillColor: color,
-            color: color,
-            weight: 0,
-            fillOpacity: opacity,
-            stroke: false,
-          }
-        );
-
-        // Add hover functionality to show elevation data
-        const rectCenterLat = lat + latStep / 2;
-        const rectCenterLng = lng + lngStep / 2;
-
-        // Add debounced hover functionality
-        let hoverTimeout: NodeJS.Timeout;
-        let isTooltipShown = false;
-
-        heatmapRect.on("mouseover", (e) => {
-          if (isTooltipShown) return; // Prevent multiple tooltips
-
-          clearTimeout(hoverTimeout);
-          hoverTimeout = setTimeout(async () => {
-            try {
-              // Get real elevation data for this point
-              const elevationData = await getElevationData(
-                rectCenterLat,
-                rectCenterLng
-              );
-
-              // Use real data if available, otherwise use simulated data
-              const displayElevation = elevationData
-                ? elevationData.elevation
-                : elevation;
-              const slope = elevationData
-                ? elevationData.slope
-                : calculateSlope(elevation);
-              const floodRisk = calculateFloodRisk(
-                displayElevation,
-                rectCenterLat,
-                rectCenterLng
-              );
-              const riskColor =
-                floodRisk === "prone"
-                  ? "#e74c3c"
-                  : floodRisk === "manageable"
-                  ? "#f39c12"
-                  : "#27ae60";
-
-              // Only show tooltip if mouse is still over the element
-              if (!isTooltipShown) {
-                heatmapRect
-                  .bindTooltip(
-                    `<div style="
-                    background: white;
-                    padding: 10px;
-                    border-radius: 6px;
-                    border: 2px solid ${color};
-                    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-                    font-family: system-ui, -apple-system, sans-serif;
-                    min-width: 180px;
-                    max-width: 220px;
-                  ">
-                    <div style="margin-bottom: 4px; font-size: 12px;">
-                      <strong>Elevation:</strong> ${displayElevation.toFixed(
-                        1
-                      )}m
-                    </div>
-                    <div style="margin-bottom: 4px; font-size: 12px;">
-                      <strong>Slope:</strong> ${slope}°
-                    </div>
-                    <div style="color: ${riskColor}; font-size: 11px; margin-top: 6px; padding: 3px 6px; background: ${riskColor}15; border-radius: 3px;">
-                      Risk: ${
-                        floodRisk === "prone"
-                          ? "High"
-                          : floodRisk === "manageable"
-                          ? "Medium"
-                          : "Low"
-                      }
-                    </div>
-                  </div>`,
-                    {
-                      permanent: false,
-                      sticky: false,
-                      direction: "top",
-                      offset: L.point(0, -5),
-                      opacity: 0.95,
-                      className: "terrain-tooltip-compact",
-                    }
-                  )
-                  .openTooltip();
-                isTooltipShown = true;
-              }
-            } catch (error) {
-              console.warn("Error fetching terrain data for tooltip:", error);
-
-              // Show fallback tooltip with estimated data
-              if (!isTooltipShown) {
-                const fallbackFloodRisk = calculateFloodRisk(
-                  elevation,
-                  rectCenterLat,
-                  rectCenterLng
-                );
-                const fallbackRiskColor =
-                  fallbackFloodRisk === "prone"
-                    ? "#e74c3c"
-                    : fallbackFloodRisk === "manageable"
-                    ? "#f39c12"
-                    : "#27ae60";
-
-                heatmapRect
-                  .bindTooltip(
-                    `<div style="
-                    background: white;
-                    padding: 10px;
-                    border-radius: 6px;
-                    border: 2px solid ${color};
-                    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-                    font-family: system-ui, -apple-system, sans-serif;
-                    min-width: 180px;
-                  ">
-                    <div style="margin-bottom: 4px; font-size: 12px;">
-                      <strong>Elevation:</strong> ~${elevation.toFixed(1)}m
-                    </div>
-                    <div style="margin-bottom: 4px; font-size: 12px;">
-                      <strong>Slope:</strong> ~${calculateSlope(elevation)}°
-                    </div>
-                    <div style="color: ${fallbackRiskColor}; font-size: 11px; margin-top: 6px; padding: 3px 6px; background: ${fallbackRiskColor}15; border-radius: 3px;">
-                      Risk: ${
-                        fallbackFloodRisk === "prone"
-                          ? "High"
-                          : fallbackFloodRisk === "manageable"
-                          ? "Medium"
-                          : "Low"
-                      } (Estimated)
-                    </div>
-                  </div>`,
-                    {
-                      permanent: false,
-                      sticky: false,
-                      direction: "top",
-                      offset: L.point(0, -5),
-                      opacity: 0.95,
-                      className: "terrain-tooltip-compact",
-                    }
-                  )
-                  .openTooltip();
-                isTooltipShown = true;
-              }
-            }
-          }, 500); // Longer delay to prevent spam
-        });
-
-        heatmapRect.on("mouseout", () => {
-          clearTimeout(hoverTimeout);
-          if (isTooltipShown) {
-            heatmapRect.closeTooltip();
-            heatmapRect.unbindTooltip();
-            isTooltipShown = false;
-          }
-        });
-
-        heatmapRect.addTo(terrainLayer);
+    // Use terrain tile layer for Google Maps-style terrain view
+    const terrainTileLayer = L.tileLayer(
+      'https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}{r}.png',
+      {
+        attribution: '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>',
+        maxZoom: 18,
+        opacity: 0.7, // Semi-transparent overlay
       }
-    }
+    );
 
-    terrainOverlayRef.current = terrainLayer;
-    terrainLayer.addTo(mapRef.current);
+    terrainOverlayRef.current = L.layerGroup([terrainTileLayer]);
+    terrainOverlayRef.current.addTo(mapRef.current);
   };
 
-  // Update overlay when map moves (optimized for performance)
-  useEffect(() => {
-    if (!mapRef.current || !showTerrainOverlay) return;
-
-    let updateTimeout: NodeJS.Timeout;
-
-    const updateOverlay = () => {
-      // Debounce updates to avoid excessive re-rendering
-      clearTimeout(updateTimeout);
-      updateTimeout = setTimeout(() => {
-        if (showTerrainOverlay) {
-          createTerrainOverlay();
-        }
-      }, 300);
-    };
-
-    mapRef.current.on("moveend", updateOverlay);
-    mapRef.current.on("zoomend", updateOverlay);
-
-    return () => {
-      clearTimeout(updateTimeout);
-      if (mapRef.current) {
-        mapRef.current.off("moveend", updateOverlay);
-        mapRef.current.off("zoomend", updateOverlay);
-      }
-    };
-  }, [showTerrainOverlay]);
+  // DEM overlay doesn't need to update on map movement (it's a static image)
+  // Only toggle visibility based on showTerrainOverlay state
 
   // Handle terrain overlay toggle
   useEffect(() => {

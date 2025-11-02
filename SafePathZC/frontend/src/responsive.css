@@ -1,0 +1,543 @@
+/* ================================================================
+   SafePath ZC - Comprehensive Responsive Design System
+   Optimized for: Desktop, Laptop, Tablet, iPad, Mobile (iOS & Android)
+   ================================================================ */
+
+/* ===============================================
+   Base Responsive Styles
+   =============================================== */
+
+/* Ensure all elements use border-box */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* Root responsive font sizing */
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Mobile-first responsive font sizes */
+@media (max-width: 480px) {
+  html {
+    font-size: 14px;
+  }
+}
+
+@media (min-width: 1920px) {
+  html {
+    font-size: 18px;
+  }
+}
+
+/* ===============================================
+   Container Breakpoints
+   =============================================== */
+
+.responsive-container {
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+/* Small mobile (320px - 480px) */
+@media (min-width: 320px) {
+  .responsive-container {
+    max-width: 320px;
+  }
+}
+
+/* Mobile (480px - 640px) */
+@media (min-width: 480px) {
+  .responsive-container {
+    max-width: 480px;
+  }
+}
+
+/* Large mobile / Small tablet (640px - 768px) */
+@media (min-width: 640px) {
+  .responsive-container {
+    max-width: 640px;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+}
+
+/* Tablet / iPad (768px - 1024px) */
+@media (min-width: 768px) {
+  .responsive-container {
+    max-width: 768px;
+  }
+}
+
+/* Large tablet / iPad Pro / Small laptop (1024px - 1280px) */
+@media (min-width: 1024px) {
+  .responsive-container {
+    max-width: 1024px;
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
+}
+
+/* Laptop / Desktop (1280px - 1536px) */
+@media (min-width: 1280px) {
+  .responsive-container {
+    max-width: 1280px;
+  }
+}
+
+/* Large desktop (1536px+) */
+@media (min-width: 1536px) {
+  .responsive-container {
+    max-width: 1536px;
+  }
+}
+
+/* ===============================================
+   Modal & Dialog Responsive Styles
+   =============================================== */
+
+.responsive-modal {
+  width: 95vw;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+  margin: 1rem;
+}
+
+@media (min-width: 640px) {
+  .responsive-modal {
+    width: 90vw;
+    max-width: 600px;
+    margin: 2rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .responsive-modal {
+    width: 80vw;
+    max-width: 800px;
+  }
+}
+
+/* ===============================================
+   Card & Component Responsive Styles
+   =============================================== */
+
+.responsive-card {
+  padding: 1rem;
+  border-radius: 0.5rem;
+}
+
+@media (min-width: 640px) {
+  .responsive-card {
+    padding: 1.25rem;
+    border-radius: 0.75rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .responsive-card {
+    padding: 1.5rem;
+    border-radius: 1rem;
+  }
+}
+
+/* ===============================================
+   Button Responsive Styles
+   =============================================== */
+
+.responsive-button {
+  padding: 0.625rem 1.25rem;
+  font-size: 0.875rem;
+  border-radius: 0.5rem;
+  min-height: 44px; /* iOS touch target */
+  min-width: 44px;
+}
+
+@media (min-width: 640px) {
+  .responsive-button {
+    padding: 0.75rem 1.5rem;
+    font-size: 0.9375rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .responsive-button {
+    padding: 0.875rem 1.75rem;
+    font-size: 1rem;
+  }
+}
+
+/* ===============================================
+   Grid System Responsive
+   =============================================== */
+
+.responsive-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+  .responsive-grid {
+    gap: 1.25rem;
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .responsive-grid {
+    gap: 1.5rem;
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 1280px) {
+  .responsive-grid {
+    gap: 2rem;
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* ===============================================
+   Typography Responsive Styles
+   =============================================== */
+
+.responsive-heading-xl {
+  font-size: 1.875rem;
+  line-height: 2.25rem;
+  font-weight: 700;
+}
+
+@media (min-width: 640px) {
+  .responsive-heading-xl {
+    font-size: 2.25rem;
+    line-height: 2.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .responsive-heading-xl {
+    font-size: 3rem;
+    line-height: 1;
+  }
+}
+
+.responsive-heading-lg {
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 700;
+}
+
+@media (min-width: 640px) {
+  .responsive-heading-lg {
+    font-size: 1.875rem;
+    line-height: 2.25rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .responsive-heading-lg {
+    font-size: 2.25rem;
+    line-height: 2.5rem;
+  }
+}
+
+.responsive-text-base {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+@media (min-width: 640px) {
+  .responsive-text-base {
+    font-size: 1rem;
+    line-height: 1.5rem;
+  }
+}
+
+/* ===============================================
+   Navigation Responsive Styles
+   =============================================== */
+
+.responsive-nav {
+  height: 3rem;
+  padding: 0 1rem;
+}
+
+@media (min-width: 640px) {
+  .responsive-nav {
+    height: 3.5rem;
+    padding: 0 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .responsive-nav {
+    height: 4rem;
+    padding: 0 2rem;
+  }
+}
+
+/* ===============================================
+   Form Input Responsive Styles
+   =============================================== */
+
+.responsive-input {
+  padding: 0.625rem 0.875rem;
+  font-size: 1rem; /* Prevent iOS zoom on focus */
+  border-radius: 0.5rem;
+  min-height: 44px;
+}
+
+@media (min-width: 640px) {
+  .responsive-input {
+    padding: 0.75rem 1rem;
+    border-radius: 0.625rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .responsive-input {
+    padding: 0.875rem 1.125rem;
+    border-radius: 0.75rem;
+  }
+}
+
+/* ===============================================
+   Spacing Utilities
+   =============================================== */
+
+.responsive-spacing-sm {
+  padding: 0.5rem;
+}
+
+.responsive-spacing-md {
+  padding: 1rem;
+}
+
+.responsive-spacing-lg {
+  padding: 1.5rem;
+}
+
+@media (min-width: 640px) {
+  .responsive-spacing-sm {
+    padding: 0.75rem;
+  }
+  
+  .responsive-spacing-md {
+    padding: 1.25rem;
+  }
+  
+  .responsive-spacing-lg {
+    padding: 2rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .responsive-spacing-sm {
+    padding: 1rem;
+  }
+  
+  .responsive-spacing-md {
+    padding: 1.5rem;
+  }
+  
+  .responsive-spacing-lg {
+    padding: 2.5rem;
+  }
+}
+
+/* ===============================================
+   Touch Target Optimization
+   =============================================== */
+
+.touch-friendly {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.5rem;
+}
+
+@media (hover: hover) {
+  .touch-friendly:hover {
+    opacity: 0.8;
+  }
+}
+
+/* ===============================================
+   iOS Specific Fixes
+   =============================================== */
+
+@supports (-webkit-touch-callout: none) {
+  /* iOS safe area padding */
+  .ios-safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  
+  .ios-safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  
+  .ios-safe-left {
+    padding-left: env(safe-area-inset-left);
+  }
+  
+  .ios-safe-right {
+    padding-right: env(safe-area-inset-right);
+  }
+  
+  /* Prevent input zoom on iOS */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* ===============================================
+   Android Specific Fixes
+   =============================================== */
+
+@media screen and (-webkit-min-device-pixel-ratio: 0) and (max-width: 768px) {
+  /* Android viewport fix */
+  html {
+    height: -webkit-fill-available;
+  }
+  
+  body {
+    min-height: -webkit-fill-available;
+  }
+}
+
+/* ===============================================
+   Orientation Specific Styles
+   =============================================== */
+
+@media (orientation: landscape) and (max-height: 500px) {
+  /* Landscape mode optimizations for short screens */
+  .responsive-modal {
+    max-height: 85vh;
+  }
+  
+  .responsive-nav {
+    height: 2.5rem;
+  }
+}
+
+/* ===============================================
+   High DPI / Retina Display Optimization
+   =============================================== */
+
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  /* Sharper images and borders for retina displays */
+  img {
+    image-rendering: -webkit-optimize-contrast;
+  }
+}
+
+/* ===============================================
+   Print Styles
+   =============================================== */
+
+@media print {
+  .responsive-nav,
+  .action-buttons-container,
+  button {
+    display: none !important;
+  }
+  
+  * {
+    background: white !important;
+    color: black !important;
+  }
+}
+
+/* ===============================================
+   Accessibility - Reduced Motion
+   =============================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ===============================================
+   Dark Mode Support (if implemented)
+   =============================================== */
+
+@media (prefers-color-scheme: dark) {
+  /* Dark mode styles can be added here */
+  /* Currently SafePath ZC uses light mode */
+}
+
+/* ===============================================
+   Utility Classes for Hiding/Showing
+   =============================================== */
+
+.hide-mobile {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .hide-mobile {
+    display: block;
+  }
+}
+
+.show-mobile {
+  display: block;
+}
+
+@media (min-width: 768px) {
+  .show-mobile {
+    display: none;
+  }
+}
+
+.hide-tablet {
+  display: block;
+}
+
+@media (min-width: 768px) and (max-width: 1024px) {
+  .hide-tablet {
+    display: none;
+  }
+}
+
+.show-tablet {
+  display: none;
+}
+
+@media (min-width: 768px) and (max-width: 1024px) {
+  .show-tablet {
+    display: block;
+  }
+}
+
+.hide-desktop {
+  display: block;
+}
+
+@media (min-width: 1024px) {
+  .hide-desktop {
+    display: none;
+  }
+}
+
+.show-desktop {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .show-desktop {
+    display: block;
+  }
+}

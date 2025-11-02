@@ -1,98 +1,129 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 export const NavigationBar = () => {
   const location = useLocation();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const isActive = (path: string) => {
     return location.pathname === path;
   };
 
+  const navLinks = [
+    { to: "/map", label: "Map", icon: "fa-map" },
+    { to: "/my-routes", label: "Routes", icon: "fa-route" },
+    { to: "/alerts", label: "Alerts", icon: "fa-bell" },
+    { to: "/community", label: "Community", icon: "fa-users" },
+    { to: "/settings", label: "Settings", icon: "fa-cog" },
+  ];
+
   return (
-    <nav className="bg-gradient-to-r from-blue-400 to-blue-600 text-white h-12 flex items-center px-6 shadow-lg w-full rounded-b-3xl">
-      {/* Logo */}
-      <div className="flex items-center space-x-3">
-        <div className="flex items-center">
-          <img
-            src="/logo.png"
-            alt="SafePathZC Logo"
-            className="w-8 h-8 object-contain brightness-0 invert"
-          />
+    <>
+      {/* Desktop & Tablet Navigation */}
+      <nav className="bg-gradient-to-r from-blue-400 to-blue-600 text-white h-12 flex items-center px-4 md:px-6 shadow-lg w-full rounded-b-3xl">
+        {/* Logo */}
+        <div className="flex items-center space-x-2 md:space-x-3">
+          <div className="flex items-center">
+            <img
+              src="/logo.png"
+              alt="SafePathZC Logo"
+              className="w-7 h-7 md:w-8 md:h-8 object-contain brightness-0 invert"
+            />
+          </div>
+          <div className="text-white font-bold text-base md:text-lg tracking-wide hidden sm:block">
+            SAFEPATH ZC
+          </div>
+          <div className="text-white font-bold text-sm tracking-wide sm:hidden">
+            SAFEPATH
+          </div>
         </div>
-        <div className="text-white font-bold text-lg tracking-wide">
-          SAFEPATH ZC
-        </div>
-      </div>
 
-      {/* Navigation Links */}
-      <div className="flex-1 flex justify-center">
-        <div className="flex space-x-6">
+        {/* Desktop Navigation Links - Hidden on mobile */}
+        <div className="hidden lg:flex flex-1 justify-center">
+          <div className="flex space-x-4 xl:space-x-6">
+            {navLinks.map((link) => (
+              <Link
+                key={link.to}
+                to={link.to}
+                className={`px-3 xl:px-4 py-1 text-sm font-medium rounded transition-all duration-200 ${
+                  isActive(link.to)
+                    ? "bg-blue-700 text-white shadow-sm"
+                    : "text-white hover:bg-blue-500 hover:bg-opacity-40"
+                }`}
+              >
+                {link.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {/* Tablet Navigation Links - Visible on tablets only */}
+        <div className="hidden md:flex lg:hidden flex-1 justify-center">
+          <div className="flex space-x-2">
+            {navLinks.map((link) => (
+              <Link
+                key={link.to}
+                to={link.to}
+                className={`px-2 py-1 text-xs font-medium rounded transition-all duration-200 ${
+                  isActive(link.to)
+                    ? "bg-blue-700 text-white shadow-sm"
+                    : "text-white hover:bg-blue-500 hover:bg-opacity-40"
+                }`}
+              >
+                {link.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {/* Mobile: Hamburger Menu */}
+        <div className="flex md:hidden flex-1 justify-end mr-2">
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="text-white p-1.5 hover:bg-blue-500 hover:bg-opacity-40 rounded transition-all"
+            aria-label="Toggle menu"
+          >
+            <i className={`fas ${mobileMenuOpen ? 'fa-times' : 'fa-bars'} text-lg`}></i>
+          </button>
+        </div>
+
+        {/* User Icon */}
+        <div>
           <Link
-            to="/map"
-            className={`px-4 py-1 text-sm font-medium rounded transition-all duration-200 ${
-              isActive("/map")
-                ? "bg-blue-700 text-white shadow-sm"
-                : "text-white hover:bg-blue-500 hover:bg-opacity-40"
+            to="/profile"
+            className={`flex items-center justify-center w-7 h-7 md:w-8 md:h-8 rounded-full transition-all duration-200 ${
+              isActive("/profile")
+                ? "bg-blue-700 bg-opacity-80"
+                : "bg-white bg-opacity-20 hover:bg-opacity-30"
             }`}
           >
-            Map
-          </Link>
-          <Link
-            to="/my-routes"
-            className={`px-4 py-1 text-sm font-medium rounded transition-all duration-200 ${
-              isActive("/my-routes")
-                ? "bg-blue-700 text-white shadow-sm"
-                : "text-white hover:bg-blue-500 hover:bg-opacity-40"
-            }`}
-          >
-            My Routes
-          </Link>
-          <Link
-            to="/alerts"
-            className={`px-4 py-1 text-sm font-medium rounded transition-all duration-200 ${
-              isActive("/alerts")
-                ? "bg-blue-700 text-white shadow-sm"
-                : "text-white hover:bg-blue-500 hover:bg-opacity-40"
-            }`}
-          >
-            Alerts
-          </Link>
-          <Link
-            to="/community"
-            className={`px-4 py-1 text-sm font-medium rounded transition-all duration-200 ${
-              isActive("/community")
-                ? "bg-blue-700 text-white shadow-sm"
-                : "text-white hover:bg-blue-500 hover:bg-opacity-40"
-            }`}
-          >
-            Community
-          </Link>
-          <Link
-            to="/settings"
-            className={`px-4 py-1 text-sm font-medium rounded transition-all duration-200 ${
-              isActive("/settings")
-                ? "bg-blue-700 text-white shadow-sm"
-                : "text-white hover:bg-blue-500 hover:bg-opacity-40"
-            }`}
-          >
-            Settings
+            <i className="fas fa-user text-white text-xs md:text-sm"></i>
           </Link>
         </div>
-      </div>
+      </nav>
 
-      {/* User Icon */}
-      <div>
-        <Link
-          to="/profile"
-          className={`flex items-center justify-center w-8 h-8 rounded-full transition-all duration-200 ${
-            isActive("/profile")
-              ? "bg-blue-700 bg-opacity-80"
-              : "bg-white bg-opacity-20 hover:bg-opacity-30"
-          }`}
-        >
-          <i className="fas fa-user text-white text-sm"></i>
-        </Link>
-      </div>
-    </nav>
+      {/* Mobile Dropdown Menu */}
+      {mobileMenuOpen && (
+        <div className="md:hidden fixed top-12 left-0 right-0 bg-gradient-to-r from-blue-500 to-blue-700 shadow-lg z-50 rounded-b-2xl animate-slide-down">
+          <div className="flex flex-col space-y-1 p-3">
+            {navLinks.map((link) => (
+              <Link
+                key={link.to}
+                to={link.to}
+                onClick={() => setMobileMenuOpen(false)}
+                className={`flex items-center space-x-3 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 ${
+                  isActive(link.to)
+                    ? "bg-blue-800 text-white shadow-sm"
+                    : "text-white hover:bg-blue-600 hover:bg-opacity-60"
+                }`}
+              >
+                <i className={`fas ${link.icon} w-5`}></i>
+                <span>{link.label}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
   );
 };

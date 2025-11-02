@@ -58,16 +58,14 @@ const Index = () => {
     <div className="min-h-screen bg-gray-50 font-sans">
       <NavigationBar />
 
-      <main className="pt-16">
+      <main className="pt-12 md:pt-14 lg:pt-16">
         {/* Main Content Grid */}
-        <div className="container mx-auto px-4 py-4">
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 h-[calc(100vh-120px)]">
-            {/* Left Sidebar - Search and Controls */}
-
-            {/* Main Map Area - REPLACED InteractiveMap with MapView */}
-            <div className="lg:col-span-4">
-              {/* Your MapView component instead of InteractiveMap */}
-              <div className="h-full w-full">
+        <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-4">
+          <div className="grid grid-cols-1 gap-2 sm:gap-4 h-[calc(100vh-80px)] sm:h-[calc(100vh-100px)] lg:h-[calc(100vh-120px)]">
+            {/* Main Map Area - Full width on mobile, adjusted on larger screens */}
+            <div className="col-span-1">
+              {/* Your MapView component */}
+              <div className="h-full w-full rounded-lg overflow-hidden shadow-sm sm:shadow-md">
                 <MapView onModalOpen={setActiveModal} />
               </div>
             </div>
