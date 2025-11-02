@@ -3,12 +3,27 @@
 
 import os
 
-# Get OSRM URLs from environment variables
+# Get OSRM URLs from environment variables with Railway-friendly fallbacks
 OSRM_DRIVING_BASE = os.getenv("OSRM_DRIVING_URL", "http://localhost:5000")
 OSRM_WALKING_BASE = os.getenv("OSRM_WALKING_URL", "http://localhost:5001")
 OSRM_BICYCLE_BASE = os.getenv("OSRM_BICYCLE_URL", "http://localhost:5002")
 OSRM_TRUCK_BASE = os.getenv("OSRM_TRUCK_URL", "http://localhost:5003")  # NEW: Truck OSRM endpoint
 OSRM_JEEPNEY_BASE = os.getenv("OSRM_JEEPNEY_URL", "http://localhost:5004")  # NEW: Jeepney OSRM endpoint
+
+# Railway deployment fallbacks - use driving service for unavailable modes
+def get_fallback_osrm_url(preferred_url: str, fallback_url: str = None) -> str:
+    """Get OSRM URL with fallback for Railway deployment"""
+    if fallback_url is None:
+        fallback_url = OSRM_DRIVING_BASE
+    
+    # For Railway/production, if the specialized service URL is localhost, use fallback
+    # Check for Railway environment or if we're not in local development
+    is_production = os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("PORT") or not preferred_url.startswith("http://localhost:")
+    
+    if preferred_url.startswith("http://localhost:") and is_production:
+        print(f"🚨 Railway/Production detected: Using fallback {fallback_url} instead of {preferred_url}")
+        return fallback_url
+    return preferred_url
 
 TRANSPORTATION_MODES = {
     'car': {
@@ -31,7 +46,7 @@ TRANSPORTATION_MODES = {
         'can_use_highways': True,
         'speed_factor': 0.9,
         'osrm_profile': 'bicycle',  # CHANGED: Use bicycle profile for more flexible routing
-        'osrm_url': OSRM_BICYCLE_BASE,  # CHANGED: Use bicycle OSRM endpoint
+        'osrm_url': get_fallback_osrm_url(OSRM_BICYCLE_BASE, OSRM_DRIVING_BASE),  # Fallback to driving
     },
     'walking': {
         'name': 'Walking',
@@ -42,7 +57,7 @@ TRANSPORTATION_MODES = {
         'can_use_highways': False,
         'speed_factor': 0.1,
         'osrm_profile': 'foot',
-        'osrm_url': OSRM_WALKING_BASE,
+        'osrm_url': get_fallback_osrm_url(OSRM_WALKING_BASE, OSRM_DRIVING_BASE),  # Fallback to driving
     },
     'public_transport': {
         'name': 'Public Transport',
@@ -53,7 +68,7 @@ TRANSPORTATION_MODES = {
         'can_use_highways': True,
         'speed_factor': 0.6,
         'osrm_profile': 'jeepney',  # CHANGED: Use jeepney profile
-        'osrm_url': OSRM_JEEPNEY_BASE,  # CHANGED: Use jeepney OSRM endpoint
+        'osrm_url': get_fallback_osrm_url(OSRM_JEEPNEY_BASE, OSRM_DRIVING_BASE),  # Fallback to driving
     },
     'bicycle': {
         'name': 'Bicycle',
@@ -64,7 +79,7 @@ TRANSPORTATION_MODES = {
         'can_use_highways': False,
         'speed_factor': 0.3,
         'osrm_profile': 'bicycle',  # CHANGED: Use bicycle profile
-        'osrm_url': OSRM_BICYCLE_BASE,  # CHANGED: Use bicycle OSRM endpoint
+        'osrm_url': get_fallback_osrm_url(OSRM_BICYCLE_BASE, OSRM_DRIVING_BASE),  # Fallback to driving
     },
     'truck': {
         'name': 'Truck',
@@ -75,7 +90,7 @@ TRANSPORTATION_MODES = {
         'can_use_highways': True,
         'speed_factor': 0.7,
         'osrm_profile': 'truck',  # CHANGED: Use truck profile
-        'osrm_url': OSRM_TRUCK_BASE,  # CHANGED: Use truck OSRM endpoint
+        'osrm_url': get_fallback_osrm_url(OSRM_TRUCK_BASE, OSRM_DRIVING_BASE),  # Fallback to driving
     }
 }
 
