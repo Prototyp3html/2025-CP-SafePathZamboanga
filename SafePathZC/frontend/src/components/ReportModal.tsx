@@ -245,17 +245,14 @@ export const ReportModal = ({
       };
 
       const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
-      const reportResponse = await fetch(
-        `${apiUrl}/admin/reports`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(reportData),
-        }
-      );
+      const reportResponse = await fetch(`${apiUrl}/admin/reports`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(reportData),
+      });
 
       let reportId = null;
       if (reportResponse.ok) {

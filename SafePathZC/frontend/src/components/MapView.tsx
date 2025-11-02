@@ -955,13 +955,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     const avgSpeedKmh =
       mode === "walking"
         ? 5
-        : mode === "motorcycle"  // motorcycle includes bicycle now
-        ? 35  // Average speed for bicycle/motorcycle
+        : mode === "motorcycle" // motorcycle includes bicycle now
+        ? 35 // Average speed for bicycle/motorcycle
         : mode === "car"
         ? 50
         : mode === "truck"
         ? 40
-        : 45;  // public_transport default
+        : 45; // public_transport default
     const adjustedSpeed = avgSpeedKmh * modeConfig.speedFactor;
     const duration = (baseDistance / adjustedSpeed) * 60; // in minutes
 
@@ -1249,16 +1249,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const updateRouteStatus = async (routeId: number, status: string) => {
     try {
       const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
-      const response = await fetch(
-        `${apiUrl}/api/routes/history/${routeId}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ status }),
-        }
-      );
+      const response = await fetch(`${apiUrl}/api/routes/history/${routeId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status }),
+      });
 
       if (!response.ok) {
         throw new Error("Failed to update route status");
@@ -7362,12 +7359,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     // Use OpenTopoMap for free terrain visualization (no API key required)
     const terrainTileLayer = L.tileLayer(
-      'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+      "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
       {
-        attribution: '&copy; <a href="https://opentopomap.org">OpenTopoMap</a> contributors',
+        attribution:
+          '&copy; <a href="https://opentopomap.org">OpenTopoMap</a> contributors',
         maxZoom: 17,
         opacity: 0.6, // Semi-transparent overlay
-        subdomains: ['a', 'b', 'c']
+        subdomains: ["a", "b", "c"],
       }
     );
 

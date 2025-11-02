@@ -199,13 +199,10 @@ const CommunityForum = () => {
 
     try {
       const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
-      const response = await fetch(
-        `${apiUrl}/api/forum/posts/${postId}/like`,
-        {
-          method: "POST",
-          headers: getAuthHeaders(),
-        }
-      );
+      const response = await fetch(`${apiUrl}/api/forum/posts/${postId}/like`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
 
       if (response.ok) {
         const data = await response.json();
