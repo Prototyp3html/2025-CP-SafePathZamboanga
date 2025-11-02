@@ -915,9 +915,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       );
 
       const response = await fetch(
-        `${API_URL}/route?start=${start.lng},${start.lat}&end=${end.lng},${
-          end.lat
-        }&alternatives=true`,
+        `${API_URL}/route?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}&alternatives=true`,
         {
           method: "GET",
           headers: {
@@ -1019,16 +1017,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         waypoints: JSON.stringify(safeRoute.waypoints || []),
       };
 
-      const response = await fetch(
-        `${API_URL}/api/routes/history`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(historyData),
-        }
-      );
+      const response = await fetch(`${API_URL}/api/routes/history`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(historyData),
+      });
 
       if (response.ok) {
         const savedRoute = await response.json();
@@ -1650,16 +1645,39 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             console.log(`📋 Found ${forumData.posts.length} forum posts`);
             for (const post of forumData.posts) {
               try {
+                console.log(`🔍 Processing forum post ${post.id}:`, post.title);
                 const content = post.content;
-                const locationMatch = content.match(/\*\*Location:\*\* (.+)/);
-                const severityMatch = content.match(/\*\*Severity:\*\* (.+)/);
-                const typeMatch = content.match(/\*\*Issue Type:\*\* (.+)/);
+                console.log(`📄 Post content:`, content.substring(0, 200) + "...");
+                
+                // Try multiple location patterns
+                const locationMatch = 
+                  content.match(/📍\s*Location:\s*(.+?)(?:\n|\r|$)/i) ||
+                  content.match(/\*\*Location:\*\*\s*(.+?)(?:\n|\r|$)/i) ||
+                  content.match(/Location:\s*(.+?)(?:\n|\r|$)/i);
+                
+                // Try multiple severity patterns  
+                const severityMatch = 
+                  content.match(/⚠️\s*Severity:\s*(.+?)(?:\n|\r|$)/i) ||
+                  content.match(/\*\*Severity:\*\*\s*(.+?)(?:\n|\r|$)/i) ||
+                  content.match(/Severity:\s*(.+?)(?:\n|\r|$)/i);
+                
+                // Try multiple type patterns - extract from title or content
+                const typeMatch = 
+                  post.title.match(/(Roadblock|Damage|Flood|Traffic|Accident|Construction)/i) ||
+                  content.match(/🚨\s*(.+?)\s*ALERT/i) ||
+                  content.match(/\*\*Issue Type:\*\*\s*(.+?)(?:\n|\r|$)/i) ||
+                  content.match(/Type:\s*(.+?)(?:\n|\r|$)/i);
+
+                console.log(`🎯 Location match:`, locationMatch);
+                console.log(`⚠️ Severity match:`, severityMatch);
+                console.log(`🏷️ Type match:`, typeMatch);
 
                 if (locationMatch) {
                   const location = locationMatch[1].trim();
                   console.log(`📍 Forum post location: ${location}`);
 
                   const coordinates = await geocodeLocation(location);
+                  console.log(`🗺️ Geocoded coordinates:`, coordinates);
 
                   if (coordinates && coordinates.lat && coordinates.lng) {
                     reports.push({
@@ -1712,13 +1730,16 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           15000
         ); // 15 second timeout
 
-        const reportsResponse = await fetch(`${API_URL}/api/reports?limit=100`, {
-          signal: reportsController.signal,
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
-        });
+        const reportsResponse = await fetch(
+          `${API_URL}/api/reports?limit=100`,
+          {
+            signal: reportsController.signal,
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "application/json",
+            },
+          }
+        );
 
         clearTimeout(reportsTimeoutId);
 
@@ -8372,18 +8393,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           });
         };
 
-        // Add double-click to refresh reports
-        btn.ondblclick = (e: Event) => {
-          e.stopPropagation();
-          console.log("🔄 Refreshing reports...");
-          text.innerText = "Refreshing...";
-          fetchCommunityReports().then(() => {
-            console.log("✅ Reports refreshed");
-          });
-        };
-
         // Add tooltip
-        btn.title = "Click to show/hide reports, Double-click to refresh";
+        btn.title = "Click to show/hide reports";
 
         return btn;
       },
