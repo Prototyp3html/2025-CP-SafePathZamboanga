@@ -417,33 +417,18 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                     request.end_lat, request.end_lng
                 )
                 
-                # Simple direct route
+                # Simple direct route (no artificial waypoints)
                 direct_coords = [[request.start_lng, request.start_lat], [request.end_lng, request.end_lat]]
                 
-                # Generate 3 route variants with slight offset
-                for i, route_name in enumerate(["Direct", "Alternate North", "Alternate South"]):
+                # Generate 3 simple route variants (just with different risk assessments)
+                for i, (route_name, risk_factor) in enumerate([
+                    ("Safe Route", 0.8),
+                    ("Balanced Route", 1.0), 
+                    ("Direct Route", 1.2)
+                ]):
                     try:
+                        # Use same direct coordinates - only vary the risk assessment
                         coords = direct_coords.copy()
-                        
-                        # Add slight offset for alternate routes
-                        if i > 0:
-                            # Calculate midpoint
-                            mid_lng = (request.start_lng + request.end_lng) / 2
-                            mid_lat = (request.start_lat + request.end_lat) / 2
-                            
-                            # Add perpendicular offset (North/South)
-                            offset_factor = 0.01 if i == 1 else -0.01  # ~1km offset
-                            bearing = math.atan2(request.end_lng - request.start_lng, request.end_lat - request.start_lat)
-                            perp_bearing = bearing + math.pi/2  # Perpendicular
-                            
-                            offset_lng = mid_lng + offset_factor * math.cos(perp_bearing)
-                            offset_lat = mid_lat + offset_factor * math.sin(perp_bearing)
-                            
-                            coords = [
-                                [request.start_lng, request.start_lat],
-                                [offset_lng, offset_lat],
-                                [request.end_lng, request.end_lat]
-                            ]
                         
                         # Basic flood analysis for fallback route
                         try:
@@ -453,27 +438,29 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                 weather_data=request.weather_data
                             )
                         except Exception:
-                            # Ultimate fallback - assume minimal flood risk
+                            # Ultimate fallback - vary the assumed risk by route type
+                            base_risk = 5.0 + (i * 10)  # 5%, 15%, 25%
                             flood_analysis = {
-                                "flooded_percentage": 5.0 + (i * 10),  # Vary the risk slightly
-                                "flooded_distance_m": direct_distance * 0.05,
-                                "risk_level": "low",
+                                "flooded_percentage": base_risk * risk_factor,
+                                "flooded_distance_m": direct_distance * (base_risk / 100),
+                                "risk_level": ["low", "moderate", "high"][min(i, 2)],
                                 "weather_impact": "none"
                             }
                         
-                        # Create route info
+                        # Create route info with minimal variations
                         route_info = {
                             "geometry": {
                                 "type": "LineString",
                                 "coordinates": coords
                             },
-                            "distance": direct_distance * (1.0 + i * 0.1),  # Slight distance variation
-                            "duration": (direct_distance / 1000) * 120 + (i * 300),  # ~30 km/h + variation
+                            "distance": direct_distance,  # Same distance for all fallback routes
+                            "duration": (direct_distance / 1000) * 120,  # ~30 km/h base speed
                             "flood_percentage": flood_analysis["flooded_percentage"],
                             "flooded_distance": flood_analysis["flooded_distance_m"],
                             "risk_level": flood_analysis["risk_level"],
                             "weather_impact": flood_analysis.get("weather_impact", "none"),
-                            "fallback": True  # Mark as fallback route
+                            "fallback": True,  # Mark as fallback route
+                            "route_name": route_name
                         }
                         
                         # Adjust for transportation mode
