@@ -411,6 +411,14 @@ async def delete_report(
         
         # Delete the original report
         db.delete(report)
+        
+        # Update the user's report count if the report had a user_id
+        if report.user_id:
+            user = db.query(User).filter(User.id == report.user_id).first()
+            if user and user.reports_submitted > 0:
+                user.reports_submitted -= 1
+                print(f"📉 Decremented user {user.name}'s report count to {user.reports_submitted}")
+        
         db.commit()
         
         print(f"✅ Successfully deleted report {report_id}")
@@ -481,6 +489,47 @@ async def cleanup_orphaned_forum_posts(
         db.rollback()
         print(f"❌ Error during cleanup: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to cleanup: {str(e)}")
+
+@router.post("/users/recalculate-report-counts")
+async def recalculate_user_report_counts(
+    user_id: int = Depends(verify_admin_token),
+    db: Session = Depends(get_db)
+):
+    """Recalculate all users' report counts based on actual reports in database"""
+    try:
+        print("🔄 Recalculating user report counts...")
+        
+        # Get all users
+        all_users = db.query(User).all()
+        updated_users = []
+        
+        for user in all_users:
+            # Count actual reports for this user
+            actual_count = db.query(Report).filter(Report.user_id == user.id).count()
+            old_count = user.reports_submitted
+            
+            if actual_count != old_count:
+                user.reports_submitted = actual_count
+                updated_users.append({
+                    "user_id": user.id,
+                    "name": user.name,
+                    "old_count": old_count,
+                    "new_count": actual_count
+                })
+                print(f"📊 Updated {user.name}: {old_count} → {actual_count} reports")
+        
+        db.commit()
+        
+        return {
+            "message": f"Successfully recalculated report counts for {len(updated_users)} users",
+            "updated_users": updated_users,
+            "total_users_checked": len(all_users)
+        }
+        
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Error recalculating report counts: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to recalculate: {str(e)}")
 
 @router.patch("/reports/{report_id}/urgency")
 async def update_report_urgency(
