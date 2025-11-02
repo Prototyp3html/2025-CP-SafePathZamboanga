@@ -279,6 +279,53 @@ app.include_router(forum_router)
 app.include_router(flood_routing_router)  # Flood-aware routing with 3 distinct routes
 app.include_router(geocoding_router, prefix="/api/geocoding", tags=["geocoding"])
 
+# Public Reports API for map markers
+@app.get("/api/reports", tags=["reports"])
+async def get_public_reports(
+    limit: int = 100,
+    status: str = None,
+    db: Session = Depends(get_db)
+):
+    """Get public reports for map display (no authentication required)"""
+    try:
+        query = db.query(Report)
+        
+        # Only show approved and visible reports for public access
+        query = query.filter(Report.status == "approved", Report.is_visible == True)
+        
+        # Optional status filter
+        if status:
+            query = query.filter(Report.status == status)
+        
+        reports = query.order_by(Report.created_at.desc()).limit(limit).all()
+        
+        # Format response with minimal data needed for map markers
+        formatted_reports = []
+        for report in reports:
+            formatted_reports.append({
+                "id": report.id,
+                "title": report.title,
+                "description": report.description,
+                "category": report.category,
+                "urgency": report.urgency,
+                "status": report.status,
+                "location": {
+                    "address": report.location_address,
+                    "coordinates": {
+                        "lat": float(report.latitude) if report.latitude else None,
+                        "lng": float(report.longitude) if report.longitude else None
+                    }
+                },
+                "created_at": report.created_at.isoformat() if report.created_at else None,
+                "is_visible": report.is_visible
+            })
+        
+        return formatted_reports
+        
+    except Exception as e:
+        print(f"❌ Error fetching public reports: {e}")
+        return []
+
 # Dependency to get DB session
 def get_db():
     db = SessionLocal()

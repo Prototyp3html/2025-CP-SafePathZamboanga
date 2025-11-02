@@ -217,10 +217,18 @@ async def update_report_status(
                 from models import Post
                 # Find forum post that contains this report ID
                 forum_post = db.query(Post).filter(
-                    Post.content.contains(f"Report ID:** #{report_id}"),
+                    Post.content.contains(f"📋 Report ID: #{report_id}"),
                     Post.category == "reports",
                     Post.is_approved == False
                 ).first()
+                
+                # Try legacy format if not found
+                if not forum_post:
+                    forum_post = db.query(Post).filter(
+                        Post.content.contains(f"Report ID:** #{report_id}"),
+                        Post.category == "reports",
+                        Post.is_approved == False
+                    ).first()
                 
                 if forum_post:
                     forum_post.is_approved = True
@@ -252,9 +260,16 @@ async def sync_reports_with_forum_posts(
         for report in approved_reports:
             # Find corresponding forum post
             forum_post = db.query(Post).filter(
-                Post.content.contains(f"Report ID:** #{report.id}"),
+                Post.content.contains(f"📋 Report ID: #{report.id}"),
                 Post.category == "reports"
             ).first()
+            
+            # Try legacy format if not found
+            if not forum_post:
+                forum_post = db.query(Post).filter(
+                    Post.content.contains(f"Report ID:** #{report.id}"),
+                    Post.category == "reports"
+                ).first()
             
             if forum_post and not forum_post.is_approved:
                 forum_post.is_approved = True
@@ -292,9 +307,16 @@ async def toggle_report_visibility(
     # Also update the corresponding forum post visibility
     try:
         forum_post = db.query(Post).filter(
-            Post.content.contains(f"Report ID:** #{report.id}"),
+            Post.content.contains(f"📋 Report ID: #{report.id}"),
             Post.category == "reports"
         ).first()
+        
+        # Try legacy format if not found
+        if not forum_post:
+            forum_post = db.query(Post).filter(
+                Post.content.contains(f"Report ID:** #{report.id}"),
+                Post.category == "reports"
+            ).first()
         
         if forum_post:
             forum_post.is_approved = is_visible  # Show/hide in forum based on visibility
@@ -328,19 +350,50 @@ async def delete_report(
     
     try:
         # Find and delete the associated forum post
+        # Try multiple possible formats to ensure we find the post
+        forum_post = None
+        
+        # Format 1: Current frontend format
         forum_post = db.query(Post).filter(
-            Post.content.contains(f"Report ID:** #{report.id}"),
+            Post.content.contains(f"📋 Report ID: #{report.id}"),
             Post.category == "reports"
         ).first()
         
+        # Format 2: Legacy format (if any exist)
+        if not forum_post:
+            forum_post = db.query(Post).filter(
+                Post.content.contains(f"Report ID:** #{report.id}"),
+                Post.category == "reports"
+            ).first()
+        
+        # Format 3: Alternative format (just in case)
+        if not forum_post:
+            forum_post = db.query(Post).filter(
+                Post.content.contains(f"Report ID: #{report.id}"),
+                Post.category == "reports"
+            ).first()
+        
+        print(f"🔍 Searching for forum post with report ID {report.id}")
+        
         if forum_post:
+            print(f"🔍 Found forum post {forum_post.id} for report {report.id}")
+            
             # Delete associated forum post data (likes, comments)
-            db.query(PostLike).filter(PostLike.post_id == forum_post.id).delete()
-            db.query(Comment).filter(Comment.post_id == forum_post.id).delete()
+            likes_deleted = db.query(PostLike).filter(PostLike.post_id == forum_post.id).delete()
+            comments_deleted = db.query(Comment).filter(Comment.post_id == forum_post.id).delete()
+            
+            print(f"🗑️ Deleted {likes_deleted} likes and {comments_deleted} comments")
             
             # Delete the forum post
             db.delete(forum_post)
             print(f"🗑️ Deleted associated forum post {forum_post.id}")
+        else:
+            print(f"⚠️ No forum post found for report {report.id}")
+            # Let's also check what posts exist for debugging
+            all_report_posts = db.query(Post).filter(Post.category == "reports").all()
+            print(f"🔍 Found {len(all_report_posts)} total report posts")
+            for post in all_report_posts[:3]:  # Show first 3 for debugging
+                print(f"🔍 Post {post.id}: {post.content[:100]}...")
         
         # Delete the original report
         db.delete(report)
@@ -353,6 +406,67 @@ async def delete_report(
         db.rollback()
         print(f"❌ Error deleting report {report_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete report: {str(e)}")
+
+@router.post("/reports/cleanup-orphaned-posts")
+async def cleanup_orphaned_forum_posts(
+    user_id: int = Depends(verify_admin_token),
+    db: Session = Depends(get_db)
+):
+    """Clean up forum posts that reference non-existent reports"""
+    try:
+        # Find all forum posts in the reports category
+        all_report_posts = db.query(Post).filter(Post.category == "reports").all()
+        
+        orphaned_posts = []
+        cleaned_count = 0
+        
+        for post in all_report_posts:
+            # Extract report ID from content using different possible formats
+            report_id = None
+            
+            # Try current format: 📋 Report ID: #123
+            import re
+            match = re.search(r'📋 Report ID: #(\d+)', post.content)
+            if not match:
+                # Try legacy format: Report ID:** #123
+                match = re.search(r'Report ID:\*\* #(\d+)', post.content)
+            if not match:
+                # Try alternative format: Report ID: #123
+                match = re.search(r'Report ID: #(\d+)', post.content)
+            
+            if match:
+                report_id = int(match.group(1))
+                
+                # Check if the report still exists
+                report_exists = db.query(Report).filter(Report.id == report_id).first()
+                
+                if not report_exists:
+                    # This is an orphaned post - delete it
+                    print(f"🧹 Found orphaned post {post.id} referencing non-existent report {report_id}")
+                    
+                    # Delete associated data
+                    db.query(PostLike).filter(PostLike.post_id == post.id).delete()
+                    db.query(Comment).filter(Comment.post_id == post.id).delete()
+                    
+                    # Delete the post
+                    db.delete(post)
+                    orphaned_posts.append({"post_id": post.id, "report_id": report_id})
+                    cleaned_count += 1
+            else:
+                print(f"⚠️ Could not extract report ID from post {post.id}")
+        
+        db.commit()
+        
+        return {
+            "message": f"Successfully cleaned up {cleaned_count} orphaned forum posts",
+            "cleaned_posts": orphaned_posts,
+            "total_checked": len(all_report_posts)
+        }
+        
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Error during cleanup: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to cleanup: {str(e)}")
 
 @router.patch("/reports/{report_id}/urgency")
 async def update_report_urgency(

@@ -1621,42 +1621,151 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const fetchCommunityReports = useCallback(async () => {
     try {
       const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
-      const response = await fetch(
-        `${apiUrl}/api/forum/posts?category=reports&limit=100`
-      );
-      if (!response.ok) return;
+      console.log("🔍 Fetching community reports...");
 
-      const data = await response.json();
+      // Try to fetch from both sources for better coverage
       const reports: CommunityReport[] = [];
 
-      for (const post of data.posts) {
-        // Extract report data from post content
-        const content = post.content;
-        const locationMatch = content.match(/\*\*Location:\*\* (.+)/);
-        const severityMatch = content.match(/\*\*Severity:\*\* (.+)/);
-        const typeMatch = content.match(/\*\*Issue Type:\*\* (.+)/);
+      // Method 1: Fetch from forum posts (existing approved reports)
+      try {
+        console.log("📋 Fetching from forum posts...");
+        const forumResponse = await fetch(
+          `${apiUrl}/api/forum/posts?category=reports&limit=100`
+        );
 
-        if (locationMatch) {
-          const location = locationMatch[1].trim();
-          const coordinates = await geocodeLocation(location);
+        if (forumResponse.ok) {
+          const forumData = await forumResponse.json();
+          console.log("📋 Forum posts data:", forumData);
 
-          reports.push({
-            id: post.id,
-            title: post.title,
-            content: post.content,
-            location: location,
-            reportType: typeMatch ? typeMatch[1].trim() : "Unknown",
-            severity: severityMatch ? severityMatch[1].trim() : "Moderate",
-            author: post.author_name,
-            created_at: post.created_at,
-            coordinates: coordinates,
-          });
+          if (forumData.posts && Array.isArray(forumData.posts)) {
+            for (const post of forumData.posts) {
+              try {
+                const content = post.content;
+                const locationMatch = content.match(/\*\*Location:\*\* (.+)/);
+                const severityMatch = content.match(/\*\*Severity:\*\* (.+)/);
+                const typeMatch = content.match(/\*\*Issue Type:\*\* (.+)/);
+
+                if (locationMatch) {
+                  const location = locationMatch[1].trim();
+                  console.log(`📍 Forum post location: ${location}`);
+
+                  const coordinates = await geocodeLocation(location);
+
+                  if (coordinates && coordinates.lat && coordinates.lng) {
+                    reports.push({
+                      id: post.id,
+                      title: post.title,
+                      content: post.content,
+                      location: location,
+                      reportType: typeMatch ? typeMatch[1].trim() : "Unknown",
+                      severity: severityMatch
+                        ? severityMatch[1].trim()
+                        : "Moderate",
+                      author: post.author_name,
+                      created_at: post.created_at,
+                      coordinates: coordinates,
+                    });
+                    console.log(`✅ Added forum report ${post.id}`);
+                  }
+                }
+              } catch (error) {
+                console.error(
+                  `❌ Error processing forum post ${post.id}:`,
+                  error
+                );
+              }
+            }
+          }
         }
+      } catch (error) {
+        console.error("❌ Error fetching forum posts:", error);
       }
 
+      // Method 2: Fetch directly from reports API (including non-approved reports)
+      try {
+        console.log("📊 Fetching from reports API...");
+        const reportsResponse = await fetch(`${apiUrl}/api/reports?limit=100`);
+
+        if (reportsResponse.ok) {
+          const reportsData = await reportsResponse.json();
+          console.log("📊 Reports API data:", reportsData);
+
+          if (reportsData && Array.isArray(reportsData)) {
+            for (const report of reportsData) {
+              try {
+                // Check if we already have this report from forum posts
+                const existingReport = reports.find(
+                  (r) =>
+                    r.location === report.location?.address &&
+                    r.title === report.title
+                );
+
+                if (
+                  !existingReport &&
+                  report.location &&
+                  report.location.address
+                ) {
+                  console.log(
+                    `📍 Direct report location: ${report.location.address}`
+                  );
+
+                  // Use coordinates from the API if available, otherwise geocode
+                  let coordinates;
+                  if (
+                    report.location.coordinates &&
+                    report.location.coordinates.lat &&
+                    report.location.coordinates.lng
+                  ) {
+                    coordinates = {
+                      lat: report.location.coordinates.lat,
+                      lng: report.location.coordinates.lng,
+                    };
+                    console.log(`🗺️ Using stored coordinates:`, coordinates);
+                  } else {
+                    coordinates = await geocodeLocation(
+                      report.location.address
+                    );
+                    console.log(`🗺️ Geocoded coordinates:`, coordinates);
+                  }
+
+                  if (coordinates && coordinates.lat && coordinates.lng) {
+                    reports.push({
+                      id: report.id + 10000, // Add offset to distinguish from forum post IDs
+                      title: report.title,
+                      content: report.description,
+                      location: report.location.address,
+                      reportType: report.category || "Unknown",
+                      severity: report.urgency || "Moderate",
+                      author: "SafePath User",
+                      created_at: report.created_at,
+                      coordinates: coordinates,
+                    });
+                    console.log(`✅ Added direct report ${report.id}`);
+                  }
+                }
+              } catch (error) {
+                console.error(
+                  `❌ Error processing direct report ${report.id}:`,
+                  error
+                );
+              }
+            }
+          }
+        } else {
+          console.error(
+            "❌ Reports API failed:",
+            reportsResponse.status,
+            reportsResponse.statusText
+          );
+        }
+      } catch (error) {
+        console.error("❌ Error fetching direct reports:", error);
+      }
+
+      console.log(`🎯 Total reports for map: ${reports.length}`);
       setCommunityReports(reports);
     } catch (error) {
-      console.error("Failed to fetch community reports:", error);
+      console.error("❌ Failed to fetch community reports:", error);
     }
   }, [geocodeLocation]);
 
@@ -8222,6 +8331,19 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             return newState;
           });
         };
+
+        // Add double-click to refresh reports
+        btn.ondblclick = (e: Event) => {
+          e.stopPropagation();
+          console.log("🔄 Refreshing reports...");
+          text.innerText = "Refreshing...";
+          fetchCommunityReports().then(() => {
+            console.log("✅ Reports refreshed");
+          });
+        };
+
+        // Add tooltip
+        btn.title = "Click to show/hide reports, Double-click to refresh";
 
         return btn;
       },

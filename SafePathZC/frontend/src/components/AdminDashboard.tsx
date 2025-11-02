@@ -451,16 +451,25 @@ export const AdminDashboard: React.FC = () => {
           reportTitle: "",
         });
 
-        // Show success notification (you can customize this)
-        alert("Report deleted successfully");
+        // Show success notification with enhanced UI
+        notification.success(
+          "Report Deleted",
+          "The report and associated forum post have been permanently deleted."
+        );
       } else {
         const errorData = await response.json();
         console.error("Failed to delete report:", response.status, errorData);
-        alert("Failed to delete report. Please try again.");
+        notification.error(
+          "Delete Failed",
+          "Failed to delete the report. Please try again or contact support if the problem persists."
+        );
       }
     } catch (error) {
       console.error("Error deleting report:", error);
-      alert("An error occurred while deleting the report.");
+      notification.error(
+        "Delete Error",
+        "An unexpected error occurred while deleting the report. Please check your connection and try again."
+      );
     }
   };
 
