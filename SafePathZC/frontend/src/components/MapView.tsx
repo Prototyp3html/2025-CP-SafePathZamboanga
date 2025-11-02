@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect, useRef, useCallback } from "react";
 import { notification } from "@/utils/notifications";
 import { useConfirmation } from "@/components/ui/confirmation-dialog";
+import { API_URL } from "@/config/api";
 
 declare global {
   interface Window {
@@ -812,8 +813,7 @@ const pickTerrainWaypoint = (
 
 export const MapView = ({ onModalOpen }: MapViewProps) => {
   // Configuration for routing services
-  const BACKEND_URL =
-    import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
+  const BACKEND_URL = API_URL;
   const USE_LOCAL_OSRM = import.meta.env.VITE_USE_LOCAL_OSRM === "true"; // Use environment variable to control local OSRM
 
   // Only log configuration once per session and load terrain data
@@ -915,9 +915,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       );
 
       const response = await fetch(
-        `${
-          import.meta.env.VITE_BACKEND_URL || "http://localhost:8001"
-        }/route?start=${start.lng},${start.lat}&end=${end.lng},${
+        `${API_URL}/route?start=${start.lng},${start.lat}&end=${end.lng},${
           end.lat
         }&alternatives=true`,
         {
@@ -1022,9 +1020,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       };
 
       const response = await fetch(
-        `${
-          import.meta.env.VITE_API_BASE_URL || "http://localhost:8001/api"
-        }/routes/history`,
+        `${API_URL}/api/routes/history`,
         {
           method: "POST",
           headers: {
@@ -1248,8 +1244,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   // Update route status in backend
   const updateRouteStatus = async (routeId: number, status: string) => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
-      const response = await fetch(`${apiUrl}/api/routes/history/${routeId}`, {
+      const response = await fetch(`${API_URL}/api/routes/history/${routeId}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -1620,8 +1615,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
   const fetchCommunityReports = useCallback(async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
       console.log("🔍 Fetching community reports...");
+      console.log("🌐 Using API URL:", API_URL);
 
       // Try to fetch from both sources for better coverage
       const reports: CommunityReport[] = [];
@@ -1635,7 +1630,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
         const forumResponse = await fetch(
-          `${apiUrl}/api/forum/posts?category=reports&limit=100`,
+          `${API_URL}/api/forum/posts?category=reports&limit=100`,
           {
             signal: controller.signal,
             headers: {
@@ -1717,7 +1712,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           15000
         ); // 15 second timeout
 
-        const reportsResponse = await fetch(`${apiUrl}/api/reports?limit=100`, {
+        const reportsResponse = await fetch(`${API_URL}/api/reports?limit=100`, {
           signal: reportsController.signal,
           headers: {
             Accept: "application/json",
@@ -7671,9 +7666,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       const timeoutMs = 1500; // Reduced timeout for faster fallback
 
       // Try backend elevation API
-      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
       const response = await Promise.race([
-        fetch(`${apiUrl}/elevation?locations=${lat},${lng}`, {
+        fetch(`${API_URL}/elevation?locations=${lat},${lng}`, {
           method: "GET",
           headers: {
             Accept: "application/json",
