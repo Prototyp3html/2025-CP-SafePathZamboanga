@@ -25,7 +25,6 @@ from services.transportation_modes import (
     adjust_route_for_transportation_mode,
     get_flood_safety_for_mode
 )
-import math
 
 logger = logging.getLogger(__name__)
 
@@ -401,8 +400,6 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
             logger.info("Strategy 4: Generating ultimate fallback direct routes...")
             try:
                 # Generate simple direct route variants with basic flood analysis
-                import math
-                
                 def haversine_distance(lat1, lon1, lat2, lon2):
                     """Calculate distance between two points in meters"""
                     R = 6371000  # Earth radius in meters

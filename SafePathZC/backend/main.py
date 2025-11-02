@@ -2119,6 +2119,116 @@ async def fetch_zamboanga_weather() -> dict:
             "condition_code": 1000
         }
 
+@app.get("/api/weather/warnings")
+async def get_weather_warnings():
+    """Get weather warnings and forecast for the weather dashboard"""
+    WEATHER_API_KEY = "11b60f9fe8df4418a12152441251310"
+    LOCATION = "Zamboanga City, Philippines"
+    
+    try:
+        # Make request with longer timeout and error handling
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(
+                "https://api.weatherapi.com/v1/forecast.json",
+                params={
+                    "key": WEATHER_API_KEY,
+                    "q": LOCATION,
+                    "days": 1,
+                    "aqi": "no",
+                    "alerts": "yes"  # Include alerts
+                }
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Extract relevant data for the dashboard
+                current = data.get("current", {})
+                forecast = data.get("forecast", {}).get("forecastday", [{}])[0] if data.get("forecast", {}).get("forecastday") else {}
+                alerts = data.get("alerts", {}).get("alert", [])
+                
+                return {
+                    "success": True,
+                    "current": {
+                        "temperature_c": current.get("temp_c", 28),
+                        "condition": current.get("condition", {}).get("text", "Clear"),
+                        "precipitation_mm": current.get("precip_mm", 0),
+                        "wind_kph": current.get("wind_kph", 10),
+                        "humidity": current.get("humidity", 70),
+                        "pressure_mb": current.get("pressure_mb", 1013),
+                        "uv": current.get("uv", 5)
+                    },
+                    "forecast": {
+                        "max_temp_c": forecast.get("day", {}).get("maxtemp_c", 32),
+                        "min_temp_c": forecast.get("day", {}).get("mintemp_c", 24),
+                        "condition": forecast.get("day", {}).get("condition", {}).get("text", "Partly cloudy"),
+                        "chance_of_rain": forecast.get("day", {}).get("daily_chance_of_rain", 20),
+                        "total_precip_mm": forecast.get("day", {}).get("totalprecip_mm", 0)
+                    },
+                    "alerts": [
+                        {
+                            "headline": alert.get("headline", ""),
+                            "desc": alert.get("desc", ""),
+                            "severity": alert.get("severity", ""),
+                            "areas": alert.get("areas", "")
+                        } for alert in alerts
+                    ],
+                    "last_updated": current.get("last_updated", "")
+                }
+            else:
+                raise Exception(f"WeatherAPI returned status {response.status_code}")
+                
+    except httpx.TimeoutException:
+        logger.warning("Weather API timeout, returning fallback data")
+        return {
+            "success": False,
+            "error": "timeout",
+            "fallback": True,
+            "current": {
+                "temperature_c": 28,
+                "condition": "Data unavailable",
+                "precipitation_mm": 0,
+                "wind_kph": 10,
+                "humidity": 70,
+                "pressure_mb": 1013,
+                "uv": 5
+            },
+            "forecast": {
+                "max_temp_c": 32,
+                "min_temp_c": 24,
+                "condition": "Partly cloudy",
+                "chance_of_rain": 20,
+                "total_precip_mm": 0
+            },
+            "alerts": [],
+            "last_updated": "Service unavailable"
+        }
+    except Exception as e:
+        logger.error(f"Weather warnings API error: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "fallback": True,
+            "current": {
+                "temperature_c": 28,
+                "condition": "Service error",
+                "precipitation_mm": 0,
+                "wind_kph": 10,
+                "humidity": 70,
+                "pressure_mb": 1013,
+                "uv": 5
+            },
+            "forecast": {
+                "max_temp_c": 32,
+                "min_temp_c": 24,
+                "condition": "Partly cloudy",
+                "chance_of_rain": 20,
+                "total_precip_mm": 0
+            },
+            "alerts": [],
+            "last_updated": "Service error"
+        }
+
 async def fetch_pagasa_bulletin() -> dict:
     """Fetch PAGASA bulletin data using web scraping - ZAMBOANGA/MINDANAO FOCUSED"""
     try:
