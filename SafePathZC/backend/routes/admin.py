@@ -531,6 +531,37 @@ async def recalculate_user_report_counts(
         print(f"❌ Error recalculating report counts: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to recalculate: {str(e)}")
 
+@router.patch("/users/{target_user_id}/reset-reports")
+async def reset_user_report_count(
+    target_user_id: int,
+    admin_user_id: int = Depends(verify_admin_token),
+    db: Session = Depends(get_db)
+):
+    """Reset a specific user's report count to 0 (Admin only)"""
+    try:
+        user = db.query(User).filter(User.id == target_user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        old_count = user.reports_submitted
+        user.reports_submitted = 0
+        
+        db.commit()
+        
+        print(f"🗑️ Admin reset {user.name}'s report count from {old_count} to 0")
+        
+        return {
+            "message": f"Successfully reset {user.name}'s report count to 0",
+            "user_name": user.name,
+            "old_count": old_count,
+            "new_count": 0
+        }
+        
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Error resetting user report count: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to reset report count: {str(e)}")
+
 @router.patch("/reports/{report_id}/urgency")
 async def update_report_urgency(
     report_id: int,
@@ -573,6 +604,33 @@ async def get_users(
         })
     
     return {"users": formatted_users}
+
+@router.get("/users/search")
+async def search_users_by_name(
+    name: str,
+    admin_user_id: int = Depends(verify_admin_token),
+    db: Session = Depends(get_db)
+):
+    """Search users by name (Admin only)"""
+    try:
+        users = db.query(User).filter(User.name.ilike(f"%{name}%")).all()
+        
+        return {
+            "users": [
+                {
+                    "id": user.id,
+                    "name": user.name,
+                    "email": user.email,
+                    "reports_submitted": user.reports_submitted,
+                    "community_points": user.community_points,
+                    "routes_used": user.routes_used
+                }
+                for user in users
+            ]
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to search users: {str(e)}")
 
 @router.post("/reports")
 async def create_report(

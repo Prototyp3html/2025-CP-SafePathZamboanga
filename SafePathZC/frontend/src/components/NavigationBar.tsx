@@ -1,9 +1,32 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 export const NavigationBar = () => {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [profilePicture, setProfilePicture] = useState<string | null>(null);
+  const [user, setUser] = useState<any>(null);
+
+  // Load user data and profile picture
+  useEffect(() => {
+    const userData = localStorage.getItem("user_data");
+    if (userData) {
+      const parsedUser = JSON.parse(userData);
+      setUser(parsedUser);
+      
+      // Check for profile picture in user data first
+      if (parsedUser.profilePicture) {
+        setProfilePicture(parsedUser.profilePicture);
+      } else {
+        // Fall back to user-specific localStorage
+        const userKey = parsedUser.id || parsedUser.email;
+        const userProfilePicture = localStorage.getItem(`user_profile_picture_${userKey}`);
+        if (userProfilePicture) {
+          setProfilePicture(userProfilePicture);
+        }
+      }
+    }
+  }, []);
 
   const isActive = (path: string) => {
     return location.pathname === path;
@@ -91,13 +114,21 @@ export const NavigationBar = () => {
         <div>
           <Link
             to="/profile"
-            className={`flex items-center justify-center w-7 h-7 md:w-8 md:h-8 rounded-full transition-all duration-200 ${
+            className={`flex items-center justify-center w-7 h-7 md:w-8 md:h-8 rounded-full transition-all duration-200 overflow-hidden ${
               isActive("/profile")
                 ? "bg-blue-700 bg-opacity-80"
                 : "bg-white bg-opacity-20 hover:bg-opacity-30"
             }`}
           >
-            <i className="fas fa-user text-white text-xs md:text-sm"></i>
+            {profilePicture ? (
+              <img
+                src={profilePicture}
+                alt="Profile"
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <i className="fas fa-user text-white text-xs md:text-sm"></i>
+            )}
           </Link>
         </div>
       </nav>

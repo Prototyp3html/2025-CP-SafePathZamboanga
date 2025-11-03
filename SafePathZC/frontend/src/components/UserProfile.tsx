@@ -46,6 +46,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onAdminAccess }) => {
     phone: "",
     location: "",
   });
+  const [profilePicture, setProfilePicture] = useState<string | null>(null);
 
   const BACKEND_URL =
     import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
@@ -59,6 +60,18 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onAdminAccess }) => {
       try {
         const parsedUser = JSON.parse(userData);
         setUser(parsedUser);
+        
+        // Load profile picture
+        if (parsedUser.profilePicture) {
+          setProfilePicture(parsedUser.profilePicture);
+        } else {
+          const userKey = parsedUser.id || parsedUser.email;
+          const userProfilePicture = localStorage.getItem(`user_profile_picture_${userKey}`);
+          if (userProfilePicture) {
+            setProfilePicture(userProfilePicture);
+          }
+        }
+        
         fetchUserProfile(token);
       } catch (error) {
         console.error("Error parsing user data:", error);
@@ -224,8 +237,16 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onAdminAccess }) => {
             {/* Profile Header */}
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-8">
               <div className="flex items-center space-x-6 mb-6 lg:mb-0">
-                <div className="w-24 h-24 bg-blue-600 rounded-full flex items-center justify-center">
-                  <User className="w-12 h-12 text-white" />
+                <div className="w-24 h-24 bg-blue-600 rounded-full flex items-center justify-center overflow-hidden">
+                  {profilePicture ? (
+                    <img
+                      src={profilePicture}
+                      alt="Profile"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <User className="w-12 h-12 text-white" />
+                  )}
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-gray-900">

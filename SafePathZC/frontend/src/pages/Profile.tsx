@@ -9,6 +9,7 @@ const Profile = () => {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [activeTab, setActiveTab] = useState("personal");
+  const [profilePicture, setProfilePicture] = useState<string | null>(null);
   const { preferences, updatePreference, savePreferences } = usePreferences();
 
   // Check if user is already logged in
@@ -17,7 +18,19 @@ const Profile = () => {
     const userData = localStorage.getItem("user_data");
     if (token && userData) {
       setIsLoggedIn(true);
-      setUser(JSON.parse(userData));
+      const parsedUser = JSON.parse(userData);
+      setUser(parsedUser);
+      
+      // Load profile picture
+      if (parsedUser.profilePicture) {
+        setProfilePicture(parsedUser.profilePicture);
+      } else {
+        const userKey = parsedUser.id || parsedUser.email;
+        const userProfilePicture = localStorage.getItem(`user_profile_picture_${userKey}`);
+        if (userProfilePicture) {
+          setProfilePicture(userProfilePicture);
+        }
+      }
     }
   }, []);
 
@@ -182,20 +195,28 @@ const Profile = () => {
             <div className="lg:col-span-1">
               <div className="bg-white rounded-lg shadow-md p-6 text-center">
                 {/* Profile Picture */}
-                <div className="w-32 h-32 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg
-                    className="w-16 h-16 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                <div className="w-32 h-32 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 overflow-hidden">
+                  {profilePicture ? (
+                    <img
+                      src={profilePicture}
+                      alt="Profile"
+                      className="w-full h-full object-cover"
                     />
-                  </svg>
+                  ) : (
+                    <svg
+                      className="w-16 h-16 text-white"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                      />
+                    </svg>
+                  )}
                 </div>
 
                 {/* User Info */}
