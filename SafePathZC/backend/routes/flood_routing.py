@@ -145,8 +145,13 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                 coords_str = ";".join([f"{lng},{lat}" for lng, lat in coords_list])
                 
                 # Use transportation mode-specific OSRM endpoint
-                osrm_base = get_osrm_endpoint_for_mode(request.transport_mode)
-                osrm_url = f"{osrm_base}/{coords_str}"
+                osrm_endpoint = get_osrm_endpoint_for_mode(request.transport_mode)
+                osrm_url = f"{osrm_endpoint}/{coords_str}"
+                
+                # Debug logging
+                logger.info(f"🔗 OSRM URL: {osrm_url}")
+                logger.info(f"📍 Coordinates: {coords_str}")
+                
                 params = {
                     "overview": "full",
                     "geometries": "geojson",
@@ -155,6 +160,11 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                 }
                 
                 response = await client.get(osrm_url, params=params)
+                
+                # Debug logging
+                logger.info(f"📡 OSRM Response Status: {response.status_code}")
+                if response.status_code != 200:
+                    logger.error(f"❌ OSRM Error Response: {response.text}")
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -229,8 +239,8 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                         coords_str = ";".join([f"{lng},{lat}" for lng, lat in coords_list])
                         
                         # Use transportation mode-specific OSRM endpoint
-                        osrm_base = get_osrm_endpoint_for_mode(request.transport_mode)
-                        osrm_url = f"{osrm_base}/{coords_str}"
+                        osrm_endpoint = get_osrm_endpoint_for_mode(request.transport_mode)
+                        osrm_url = f"{osrm_endpoint}/{coords_str}"
                         params = {
                             "overview": "full",
                             "geometries": "geojson",
