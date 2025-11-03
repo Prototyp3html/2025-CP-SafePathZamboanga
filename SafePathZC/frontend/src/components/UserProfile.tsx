@@ -85,6 +85,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onAdminAccess }) => {
 
   const fetchUserProfile = async (token: string) => {
     try {
+      console.log("🔄 Fetching fresh user profile data from backend...");
       const response = await fetch(`${BACKEND_URL}/auth/profile`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -94,6 +95,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onAdminAccess }) => {
 
       if (response.ok) {
         const userData = await response.json();
+        console.log("✅ Fresh user data received:", userData);
         setUser(userData);
         localStorage.setItem("user_data", JSON.stringify(userData));
       } else if (response.status === 401) {

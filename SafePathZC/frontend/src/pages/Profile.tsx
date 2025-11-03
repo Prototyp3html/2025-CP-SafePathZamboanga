@@ -33,8 +33,33 @@ const Profile = () => {
           setProfilePicture(userProfilePicture);
         }
       }
+
+      // Fetch fresh data from backend
+      fetchFreshUserData(token);
     }
   }, []);
+
+  const fetchFreshUserData = async (token: string) => {
+    try {
+      console.log("🔄 Fetching fresh user data for Profile page...");
+      const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
+      const response = await fetch(`${BACKEND_URL}/auth/profile`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        const freshUserData = await response.json();
+        console.log("✅ Fresh user data for Profile:", freshUserData);
+        setUser(freshUserData);
+        localStorage.setItem("user_data", JSON.stringify(freshUserData));
+      }
+    } catch (error) {
+      console.error("Error fetching fresh user data:", error);
+    }
+  };
 
   const handleLoginSuccess = (userData: any) => {
     setIsLoggedIn(true);
