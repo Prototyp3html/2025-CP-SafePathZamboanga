@@ -247,6 +247,7 @@ const Settings = () => {
         // Map frontend profile fields to backend expected fields
         const backendProfile = {
           name: profile.name,
+          email: profile.email,
           phone: profile.phone,
           location: profile.address, // address maps to location in backend
           emergencyContact: profile.emergencyContact,
@@ -271,6 +272,7 @@ const Settings = () => {
         const updatedUser = {
           ...user,
           name: profile.name,
+          email: profile.email,
           phone: profile.phone,
           location: profile.address,
           emergencyContact: profile.emergencyContact,

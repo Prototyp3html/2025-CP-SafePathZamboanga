@@ -41,6 +41,7 @@ class UserLogin(BaseModel):
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
+    email: Optional[str] = None
     phone: Optional[str] = None
     location: Optional[str] = None
     emergencyContact: Optional[str] = None
@@ -363,6 +364,12 @@ async def update_user_profile(
         # Update user fields
         if profile_data.name:
             user.name = profile_data.name
+        if profile_data.email:
+            # Check if email is already taken by another user
+            existing_user = db.query(User).filter(User.email == profile_data.email, User.id != user.id).first()
+            if existing_user:
+                raise HTTPException(status_code=400, detail="Email already in use")
+            user.email = profile_data.email
         if profile_data.phone:
             user.phone = profile_data.phone
         if profile_data.location:
