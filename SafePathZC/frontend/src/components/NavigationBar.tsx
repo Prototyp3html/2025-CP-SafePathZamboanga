@@ -13,14 +13,16 @@ export const NavigationBar = () => {
     if (userData) {
       const parsedUser = JSON.parse(userData);
       setUser(parsedUser);
-      
+
       // Check for profile picture in user data first
       if (parsedUser.profilePicture) {
         setProfilePicture(parsedUser.profilePicture);
       } else {
         // Fall back to user-specific localStorage
         const userKey = parsedUser.id || parsedUser.email;
-        const userProfilePicture = localStorage.getItem(`user_profile_picture_${userKey}`);
+        const userProfilePicture = localStorage.getItem(
+          `user_profile_picture_${userKey}`
+        );
         if (userProfilePicture) {
           setProfilePicture(userProfilePicture);
         }
@@ -106,7 +108,11 @@ export const NavigationBar = () => {
             className="text-white p-1.5 hover:bg-blue-500 hover:bg-opacity-40 rounded transition-all"
             aria-label="Toggle menu"
           >
-            <i className={`fas ${mobileMenuOpen ? 'fa-times' : 'fa-bars'} text-lg`}></i>
+            <i
+              className={`fas ${
+                mobileMenuOpen ? "fa-times" : "fa-bars"
+              } text-lg`}
+            ></i>
           </button>
         </div>
 

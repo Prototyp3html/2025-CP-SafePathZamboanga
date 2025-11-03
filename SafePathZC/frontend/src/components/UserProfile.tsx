@@ -60,18 +60,20 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onAdminAccess }) => {
       try {
         const parsedUser = JSON.parse(userData);
         setUser(parsedUser);
-        
+
         // Load profile picture
         if (parsedUser.profilePicture) {
           setProfilePicture(parsedUser.profilePicture);
         } else {
           const userKey = parsedUser.id || parsedUser.email;
-          const userProfilePicture = localStorage.getItem(`user_profile_picture_${userKey}`);
+          const userProfilePicture = localStorage.getItem(
+            `user_profile_picture_${userKey}`
+          );
           if (userProfilePicture) {
             setProfilePicture(userProfilePicture);
           }
         }
-        
+
         fetchUserProfile(token);
       } catch (error) {
         console.error("Error parsing user data:", error);
