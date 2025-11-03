@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException, Depends, Security, Request
+from fastapi import APIRouter, HTTPException, Depends, Security, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime, timedelta

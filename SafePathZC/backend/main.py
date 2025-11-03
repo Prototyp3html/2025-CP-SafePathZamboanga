@@ -256,11 +256,15 @@ app = FastAPI(title="SafePathZC Routes API", version="1.0.0")
 origins = [
     "https://safepath-zamboanga-city.vercel.app",  # Your actual Vercel URL
     "https://safepath-zc.vercel.app",             # Alternative Vercel URL
+    "https://safepathzc-production.up.railway.app",  # Railway backend URL
+    "https://safepath-zc-production.up.railway.app", # Alternative Railway URL
+    "https://safepath-zamboanga-city-production.up.railway.app", # Another possible Railway URL
     "http://localhost:5173",                      # Local development
     "http://localhost:5174",                      # Local development (Vite alternate port)
     "http://localhost:3000",                      # Alternative local
     "http://127.0.0.1:5173",                     # Local IP
     "http://127.0.0.1:5174",                     # Local IP (alternate port)
+    "*"  # Allow all origins temporarily for admin access
 ]
 
 # CORS middleware
