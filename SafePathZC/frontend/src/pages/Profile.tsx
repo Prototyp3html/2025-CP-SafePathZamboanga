@@ -42,7 +42,8 @@ const Profile = () => {
   const fetchFreshUserData = async (token: string) => {
     try {
       console.log("🔄 Fetching fresh user data for Profile page...");
-      const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
+      const BACKEND_URL =
+        import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
       const response = await fetch(`${BACKEND_URL}/auth/profile`, {
         headers: {
           Authorization: `Bearer ${token}`,
