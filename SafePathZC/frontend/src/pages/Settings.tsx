@@ -83,17 +83,21 @@ const Settings = () => {
         emergencyContact: parsedUser.emergencyContact || "",
       });
 
-      // Load profile picture from user data or user-specific localStorage
-      if (parsedUser.profilePicture) {
+      // Load profile picture - prioritize email as consistent key
+      const userKey = parsedUser.email; // Use email as primary key for consistency
+      const userProfilePicture = localStorage.getItem(
+        `user_profile_picture_${userKey}`
+      );
+      
+      if (userProfilePicture) {
+        setProfilePicture(userProfilePicture);
+      } else if (parsedUser.profilePicture) {
+        // If found in user data but not in user-specific key, migrate it
         setProfilePicture(parsedUser.profilePicture);
-      } else {
-        // Use user-specific profile picture key
-        const userProfilePicture = localStorage.getItem(
-          `user_profile_picture_${parsedUser.id || parsedUser.email}`
+        localStorage.setItem(
+          `user_profile_picture_${userKey}`,
+          parsedUser.profilePicture
         );
-        if (userProfilePicture) {
-          setProfilePicture(userProfilePicture);
-        }
       }
 
       // Load 2FA status
@@ -137,9 +141,9 @@ const Settings = () => {
           const imageDataUrl = e.target?.result as string;
           setProfilePicture(imageDataUrl);
 
-          // Save to user-specific localStorage key
+          // Save to user-specific localStorage key using email for consistency
           if (user) {
-            const userKey = user.id || user.email;
+            const userKey = user.email; // Always use email as key for consistency
             localStorage.setItem(
               `user_profile_picture_${userKey}`,
               imageDataUrl
@@ -149,6 +153,8 @@ const Settings = () => {
             const updatedUser = { ...user, profilePicture: imageDataUrl };
             localStorage.setItem("user_data", JSON.stringify(updatedUser));
             setUser(updatedUser);
+
+            console.log(`✅ Profile picture saved to localStorage with key: user_profile_picture_${userKey}`);
           }
 
           // Try to save to backend
@@ -169,11 +175,13 @@ const Settings = () => {
                 }
               );
 
-              if (!response.ok) {
-                console.warn("Failed to save profile picture to backend");
+              if (response.ok) {
+                console.log("✅ Profile picture saved to backend");
+              } else {
+                console.warn("⚠️ Failed to save profile picture to backend");
               }
             } catch (error) {
-              console.warn("Backend not available, saved locally only");
+              console.warn("⚠️ Backend not available, saved locally only");
             }
           }
 
@@ -196,9 +204,9 @@ const Settings = () => {
   const handleRemoveProfilePicture = async () => {
     setProfilePicture(null);
 
-    // Remove from user-specific localStorage
+    // Remove from user-specific localStorage using email as key
     if (user) {
-      const userKey = user.id || user.email;
+      const userKey = user.email; // Always use email as key for consistency
       localStorage.removeItem(`user_profile_picture_${userKey}`);
 
       // Update user data
@@ -206,6 +214,8 @@ const Settings = () => {
       delete updatedUser.profilePicture;
       localStorage.setItem("user_data", JSON.stringify(updatedUser));
       setUser(updatedUser);
+
+      console.log(`✅ Profile picture removed from localStorage key: user_profile_picture_${userKey}`);
     }
 
     // Try to remove from backend
@@ -221,11 +231,13 @@ const Settings = () => {
           },
         });
 
-        if (!response.ok) {
-          console.warn("Failed to remove profile picture from backend");
+        if (response.ok) {
+          console.log("✅ Profile picture removed from backend");
+        } else {
+          console.warn("⚠️ Failed to remove profile picture from backend");
         }
       } catch (error) {
-        console.warn("Backend not available, removed locally only");
+        console.warn("⚠️ Backend not available, removed locally only");
       }
     }
 
@@ -592,11 +604,17 @@ Type "DELETE" to confirm:`;
       });
 
       if (response.ok) {
-        // Clear all local storage
+        // Clear all user-specific local storage items
+        if (user) {
+          const userKey = user.id || user.email;
+          localStorage.removeItem(`user_profile_picture_${userKey}`);
+        }
         localStorage.removeItem("user_token");
         localStorage.removeItem("user_data");
         localStorage.removeItem("user_profile_picture");
         localStorage.removeItem("user_preferences");
+        localStorage.removeItem("admin_token");
+        localStorage.removeItem("admin_data");
 
         toast({
           title: "Account deleted",
@@ -1086,21 +1104,50 @@ Type "DELETE" to confirm:`;
 
                     <div>
                       <Label htmlFor="theme">Theme</Label>
-                      <Select
-                        value={preferences.theme}
-                        onValueChange={(value) =>
-                          handlePreferenceChange("theme", value)
-                        }
-                      >
-                        <SelectTrigger className="mt-1">
-                          <SelectValue placeholder="Select theme" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="light">Light</SelectItem>
-                          <SelectItem value="dark">Dark</SelectItem>
-                          <SelectItem value="auto">Auto (System)</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handlePreferenceChange("theme", "light")}
+                          className={`flex-1 px-4 py-2.5 rounded-lg border-2 transition-all ${
+                            preferences.theme === "light"
+                              ? "border-blue-600 bg-blue-50 text-blue-700 font-medium"
+                              : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
+                          }`}
+                        >
+                          <div className="flex items-center justify-center gap-2">
+                            <i className="fas fa-sun"></i>
+                            <span>Light</span>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handlePreferenceChange("theme", "dark")}
+                          className={`flex-1 px-4 py-2.5 rounded-lg border-2 transition-all ${
+                            preferences.theme === "dark"
+                              ? "border-blue-600 bg-blue-50 text-blue-700 font-medium"
+                              : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
+                          }`}
+                        >
+                          <div className="flex items-center justify-center gap-2">
+                            <i className="fas fa-moon"></i>
+                            <span>Dark</span>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handlePreferenceChange("theme", "auto")}
+                          className={`flex-1 px-4 py-2.5 rounded-lg border-2 transition-all ${
+                            preferences.theme === "auto"
+                              ? "border-blue-600 bg-blue-50 text-blue-700 font-medium"
+                              : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
+                          }`}
+                        >
+                          <div className="flex items-center justify-center gap-2">
+                            <i className="fas fa-adjust"></i>
+                            <span>Auto</span>
+                          </div>
+                        </button>
+                      </div>
                     </div>
 
                     <div>

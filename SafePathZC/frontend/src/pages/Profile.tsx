@@ -21,17 +21,21 @@ const Profile = () => {
       const parsedUser = JSON.parse(userData);
       setUser(parsedUser);
 
-      // Load profile picture
-      if (parsedUser.profilePicture) {
+      // Load profile picture using email as consistent key
+      const userKey = parsedUser.email; // Always use email for consistency
+      const userProfilePicture = localStorage.getItem(
+        `user_profile_picture_${userKey}`
+      );
+      
+      if (userProfilePicture) {
+        setProfilePicture(userProfilePicture);
+      } else if (parsedUser.profilePicture) {
+        // Migrate from user data to user-specific key
         setProfilePicture(parsedUser.profilePicture);
-      } else {
-        const userKey = parsedUser.id || parsedUser.email;
-        const userProfilePicture = localStorage.getItem(
-          `user_profile_picture_${userKey}`
+        localStorage.setItem(
+          `user_profile_picture_${userKey}`,
+          parsedUser.profilePicture
         );
-        if (userProfilePicture) {
-          setProfilePicture(userProfilePicture);
-        }
       }
 
       // Fetch fresh data from backend
@@ -69,12 +73,20 @@ const Profile = () => {
   };
 
   const handleLogout = () => {
+    // Remove user-specific profile picture before clearing user data
+    if (user?.email) {
+      localStorage.removeItem(`user_profile_picture_${user.email}`);
+    }
+    
     localStorage.removeItem("user_token");
     localStorage.removeItem("user_data");
     localStorage.removeItem("admin_token");
     localStorage.removeItem("admin_data");
+    // Don't remove user_preferences as they can be reused
+    
     setIsLoggedIn(false);
     setUser(null);
+    setProfilePicture(null);
   };
 
   const handleLoginClick = () => {
