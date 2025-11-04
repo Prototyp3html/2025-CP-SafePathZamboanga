@@ -45,8 +45,8 @@ TRANSPORTATION_MODES = {
         'can_use_main_roads': True,
         'can_use_highways': True,
         'speed_factor': 0.9,
-        'osrm_profile': 'driving',  # CHANGED: Use driving profile for better compatibility
-        'osrm_url': get_fallback_osrm_url(OSRM_BICYCLE_BASE, OSRM_DRIVING_BASE),  # Fallback to driving
+        'osrm_profile': 'bicycle',  # Use bicycle profile (motorcycles can navigate smaller roads)
+        'osrm_url': OSRM_BICYCLE_BASE,
     },
     'walking': {
         'name': 'Walking',
@@ -56,8 +56,8 @@ TRANSPORTATION_MODES = {
         'can_use_main_roads': False,  # Prefer sidewalks
         'can_use_highways': False,
         'speed_factor': 0.1,
-        'osrm_profile': 'driving',  # CHANGED: Use driving profile for now
-        'osrm_url': get_fallback_osrm_url(OSRM_WALKING_BASE, OSRM_DRIVING_BASE),  # Fallback to driving
+        'osrm_profile': 'foot',  # Use foot profile for pedestrian routing
+        'osrm_url': OSRM_WALKING_BASE,
     },
     'public_transport': {
         'name': 'Public Transport',
@@ -67,8 +67,8 @@ TRANSPORTATION_MODES = {
         'can_use_main_roads': True,
         'can_use_highways': True,
         'speed_factor': 0.6,
-        'osrm_profile': 'driving',  # CHANGED: Use driving profile instead of jeepney
-        'osrm_url': get_fallback_osrm_url(OSRM_JEEPNEY_BASE, OSRM_DRIVING_BASE),  # Fallback to driving
+        'osrm_profile': 'jeepney',  # Use jeepney profile for public transport routing
+        'osrm_url': OSRM_JEEPNEY_BASE,
     },
     'bicycle': {
         'name': 'Bicycle',
@@ -78,8 +78,8 @@ TRANSPORTATION_MODES = {
         'can_use_main_roads': True,
         'can_use_highways': False,
         'speed_factor': 0.3,
-        'osrm_profile': 'driving',  # CHANGED: Use driving profile for better compatibility
-        'osrm_url': get_fallback_osrm_url(OSRM_BICYCLE_BASE, OSRM_DRIVING_BASE),  # Fallback to driving
+        'osrm_profile': 'bicycle',  # Use bicycle profile
+        'osrm_url': OSRM_BICYCLE_BASE,
     },
     'truck': {
         'name': 'Truck',
@@ -89,8 +89,8 @@ TRANSPORTATION_MODES = {
         'can_use_main_roads': True,
         'can_use_highways': True,
         'speed_factor': 0.7,
-        'osrm_profile': 'driving',  # CHANGED: Use driving profile instead of truck
-        'osrm_url': get_fallback_osrm_url(OSRM_TRUCK_BASE, OSRM_DRIVING_BASE),  # Fallback to driving
+        'osrm_profile': 'truck',  # Use truck profile (trucks have road restrictions)
+        'osrm_url': OSRM_TRUCK_BASE,
     }
 }
 
