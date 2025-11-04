@@ -7,6 +7,7 @@ from datetime import datetime, date
 from typing import List, Optional, Tuple, Dict
 import os
 import requests
+import httpx  # Added for async HTTP requests
 import math
 import json
 import time
@@ -692,64 +693,120 @@ def calculate_risk_score(elevation: float, slope: float, weather: dict, lat: flo
     
     return min(risk_score, 10.0)  # Cap at 10
 
-def remove_dead_ends(coordinates: List[List[float]], dead_end_threshold: float = 0.0003) -> List[List[float]]:
+def remove_dead_ends(coordinates: List[List[float]], dead_end_threshold: float = 0.00005) -> List[List[float]]:
     """
-    AGGRESSIVE dead-end removal: Detect and cut out "there and back" patterns.
+    ULTRA-AGGRESSIVE dead-end removal with multi-pass progressive cleaning.
     
-    A dead-end is when the route goes somewhere, then returns close to where it diverged.
-    This commonly happens when OSRM explores side streets.
+    Removes "there and back" patterns where route goes somewhere then returns close to origin.
+    Uses multiple passes with increasingly strict thresholds to catch dead-ends at all scales.
     
     Args:
         coordinates: List of [lng, lat] coordinate pairs
-        dead_end_threshold: Distance threshold for considering a point "returned" (degrees, ~30m)
+        dead_end_threshold: Base distance threshold (degrees, ~5m)
     
     Returns:
-        Route with dead-ends removed
+        Route with dead-ends aggressively removed
     """
     if len(coordinates) < 5:
         return coordinates
     
     cleaned = coordinates.copy()
-    changes_made = True
-    iterations = 0
-    max_iterations = 10  # Prevent infinite loops
     
-    while changes_made and iterations < max_iterations:
-        changes_made = False
-        iterations += 1
-        i = 0
+    # MULTI-PASS APPROACH: Start with VERY strict threshold, progressively loosen
+    # This catches tight loops first, then progressively larger dead-ends
+    # Reduced thresholds from previous version for MORE aggressive cleaning
+    thresholds = [
+        0.00003,  # ~3m - catch tiny loops
+        0.00005,  # ~5m - catch very small dead-ends
+        0.00008,  # ~8m - catch small dead-ends
+        0.0001,   # ~10m - catch medium dead-ends
+        0.00015,  # ~15m - catch larger dead-ends
+    ]
+    
+    for threshold in thresholds:
+        changes_made = True
+        iterations = 0
+        max_iterations = 30  # Increased from 20 for more thorough cleaning
         
-        while i < len(cleaned) - 4:
-            current = cleaned[i]
+        while changes_made and iterations < max_iterations:
+            changes_made = False
+            iterations += 1
+            i = 0
             
-            # Look ahead to find if we return close to current position
-            for j in range(i + 4, len(cleaned)):
-                next_point = cleaned[j]
+            while i < len(cleaned) - 4:
+                current = cleaned[i]
                 
-                # Calculate distance between current and future point
-                dist = ((next_point[0] - current[0])**2 + (next_point[1] - current[1])**2) ** 0.5
-                
-                # If we return close to where we were, it's likely a dead-end
-                if dist < dead_end_threshold:
-                    # Calculate total detour distance
-                    detour_dist = 0
-                    for k in range(i, j):
-                        p1 = cleaned[k]
-                        p2 = cleaned[k + 1]
-                        detour_dist += ((p2[0] - p1[0])**2 + (p2[1] - p1[1])**2) ** 0.5
+                # Look ahead to find if we return close to current position
+                # Start checking from i+3 (reduced from i+4) to catch tighter loops
+                for j in range(i + 3, len(cleaned)):
+                    next_point = cleaned[j]
                     
-                    # If detour is significant but returns to same spot, it's a dead-end
-                    if detour_dist > dead_end_threshold * 3:
-                        # Remove the dead-end section
-                        cleaned = cleaned[:i+1] + cleaned[j:]
-                        changes_made = True
-                        break
-            
-            if changes_made:
-                break
-            i += 1
+                    # Calculate distance between current and future point
+                    dist = ((next_point[0] - current[0])**2 + (next_point[1] - current[1])**2) ** 0.5
+                    
+                    # If we return close to where we were, it's likely a dead-end
+                    if dist < threshold:
+                        # Calculate total detour distance
+                        detour_dist = 0
+                        for k in range(i, j):
+                            p1 = cleaned[k]
+                            p2 = cleaned[k + 1]
+                            detour_dist += ((p2[0] - p1[0])**2 + (p2[1] - p1[1])**2) ** 0.5
+                        
+                        # ULTRA STRICT: If detour is ANY amount but returns close, it's a dead-end
+                        # Changed from "2x threshold" to "1.5x threshold" for maximum strictness
+                        if detour_dist > threshold * 1.5:
+                            # Remove the dead-end section
+                            cleaned = cleaned[:i+1] + cleaned[j:]
+                            changes_made = True
+                            break
+                
+                if changes_made:
+                    break
+                i += 1
     
-    return cleaned
+    # ADDITIONAL PASS: Remove sharp U-turns (180-degree turns)
+    # This catches dead-ends that might have been missed by distance checking
+    final_cleaned = [cleaned[0]] if cleaned else []
+    
+    for i in range(1, len(cleaned) - 1):
+        if len(final_cleaned) < 2:
+            final_cleaned.append(cleaned[i])
+            continue
+            
+        prev = final_cleaned[-1]
+        curr = cleaned[i]
+        next_point = cleaned[i + 1]
+        
+        # Calculate vectors
+        vec1_x = curr[0] - prev[0]
+        vec1_y = curr[1] - prev[1]
+        vec2_x = next_point[0] - curr[0]
+        vec2_y = next_point[1] - curr[1]
+        
+        # Normalize vectors
+        len1 = (vec1_x**2 + vec1_y**2) ** 0.5
+        len2 = (vec2_x**2 + vec2_y**2) ** 0.5
+        
+        if len1 > 0 and len2 > 0:
+            vec1_x /= len1
+            vec1_y /= len1
+            vec2_x /= len2
+            vec2_y /= len2
+            
+            # Dot product: -1 = opposite directions (180° turn)
+            dot = vec1_x * vec2_x + vec1_y * vec2_y
+            
+            # If angle > 135 degrees (dot < -0.7), skip this point (it's a sharp U-turn)
+            if dot > -0.7:
+                final_cleaned.append(curr)
+        else:
+            final_cleaned.append(curr)
+    
+    if cleaned:
+        final_cleaned.append(cleaned[-1])
+    
+    return final_cleaned
 
 def simplify_route(coordinates: List[List[float]], tolerance: float = 0.00003, waypoints: List[List[float]] = None) -> List[List[float]]:
     """
