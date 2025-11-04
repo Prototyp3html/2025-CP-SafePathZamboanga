@@ -104,7 +104,7 @@ TRANSPORTATION_MODES = {
         'can_use_main_roads': True,
         'can_use_highways': True,
         'speed_factor': 0.6,
-        'osrm_profile': 'jeepney',  # Use jeepney profile for public transport routing
+        'osrm_profile': 'driving',  # Use driving profile (jeepney routing comes from data file)
         'osrm_url': OSRM_JEEPNEY_BASE,
     },
     'bicycle': {
@@ -126,7 +126,7 @@ TRANSPORTATION_MODES = {
         'can_use_main_roads': True,
         'can_use_highways': True,
         'speed_factor': 0.7,
-        'osrm_profile': 'truck',  # Use truck profile (trucks have road restrictions)
+        'osrm_profile': 'driving',  # Use driving profile (truck routing comes from data file)
         'osrm_url': OSRM_TRUCK_BASE,
     }
 }
