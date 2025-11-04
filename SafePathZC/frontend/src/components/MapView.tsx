@@ -9616,21 +9616,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
       <div style={{ position: "relative" }}>
         {/* Alert Banner */}
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            zIndex: 9999,
-            borderRadius: "1px 1px 0 0",
-            backgroundColor: "#d7913cff",
-            overflow: "hidden",
-            color: "#000000",
-          }}
-        >
-          <AlertBanner />
-        </div>
+        {/* AlertBanner with proper styling */}
+        <AlertBanner />
 
         <div style={{ position: "relative", marginTop: "60px" }}>
           <div

@@ -450,13 +450,13 @@ export const AlertBanner = () => {
         <div
           className={`${getSeverityColor(
             alert.severity
-          )} alert-banner-responsive relative z-40 shadow-lg transition-all duration-500 ease-in-out animate-slide-in`}
+          )} alert-banner-responsive alert-banner-enhanced relative z-40 shadow-lg transition-all duration-500 ease-in-out animate-slide-in`}
         >
           <div className="absolute inset-0 bg-gradient-to-r from-black/10 to-transparent"></div>
           <div className="alert-banner-content relative py-4 px-4 sm:px-6 lg:px-8">
             <div className="flex items-center space-x-4 flex-1 min-w-0">
-              `{/* Enhanced Icon with Background */}
-              <div className="flex-shrink-0 w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
+              {/* Enhanced Icon with Background */}
+              <div className="flex-shrink-0 w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm alert-icon-glow">
                 <i
                   className={`${getSeverityIcon(
                     alert.type
@@ -476,7 +476,7 @@ export const AlertBanner = () => {
                 </div>
               </div>
               <div className="flex items-center space-x-3 flex-shrink-0">
-                `{/* Action Button */}
+                {/* Action Button */}
                 <button
                   onClick={() => setShowDetails(true)}
                   className="hidden md:inline-flex items-center space-x-2 bg-white/20 hover:bg-white/30 text-white font-medium text-sm px-4 py-2 rounded-lg backdrop-blur-sm transition-all duration-200 hover:scale-105"
@@ -740,13 +740,13 @@ export const AlertBanner = () => {
             weatherStatus === "safe"
               ? "bg-gradient-to-r from-green-500 to-green-600"
               : "bg-gradient-to-r from-orange-500 to-red-500"
-          } alert-banner-responsive relative z-40 shadow-lg transition-all duration-500 ease-in-out animate-slide-in`}
+          } alert-banner-responsive alert-banner-enhanced relative z-40 shadow-lg transition-all duration-500 ease-in-out animate-slide-in`}
         >
           <div className="absolute inset-0 bg-gradient-to-r from-black/10 to-transparent"></div>
           <div className="alert-banner-content relative py-4 px-4 sm:px-6 lg:px-8">
             <div className="flex items-center space-x-4 flex-1 min-w-0">
-              `{/* Enhanced Status Icon */}
-              <div className="flex-shrink-0 w-12 h-12 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
+              {/* Enhanced Status Icon */}
+              <div className="flex-shrink-0 w-12 h-12 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm alert-icon-glow">
                 <i
                   className={`${
                     weatherStatus === "safe"
@@ -771,7 +771,6 @@ export const AlertBanner = () => {
                 </div>
               </div>
               <div className="flex items-center space-x-3 flex-shrink-0">
-                `
                 {weatherStatus === "risk" && (
                   <>
                     {/* Desktop View Details Button */}
