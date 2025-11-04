@@ -206,7 +206,7 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[95vh] overflow-y-auto">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[95vh] overflow-y-auto">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-6 rounded-t-2xl">
           <div className="flex items-center justify-between">
@@ -258,17 +258,17 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
-              <span className="ml-3 text-gray-600">
+              <span className="ml-3 text-gray-600 dark:text-gray-300">
                 Loading weather data...
               </span>
             </div>
           ) : error ? (
             <div className="text-center py-12">
               <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-              <p className="text-red-600 font-medium text-lg">
+              <p className="text-red-600 dark:text-red-400 font-medium text-lg">
                 Failed to load weather data
               </p>
-              <p className="text-gray-500 text-sm mt-2">{error}</p>
+              <p className="text-gray-500 dark:text-gray-400 text-sm mt-2">{error}</p>
               <Button onClick={fetchWeatherData} className="mt-4">
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Try Again
@@ -277,7 +277,7 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
           ) : weatherData ? (
             <div className="space-y-6">
               {/* Current Weather */}
-              <Card className="bg-gradient-to-br from-blue-50 to-indigo-100 border-0 shadow-lg">
+              <Card className="bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-700 dark:to-gray-600 border-0 shadow-lg">
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-4">
@@ -287,10 +287,10 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
                         weatherData.current.is_day === 1
                       )}
                       <div>
-                        <h3 className="font-semibold text-xl text-gray-800">
+                        <h3 className="font-semibold text-xl text-gray-800 dark:text-gray-100">
                           {weatherData.current.condition.text}
                         </h3>
-                        <p className="text-sm text-gray-600">
+                        <p className="text-sm text-gray-600 dark:text-gray-300">
                           {weatherData.current.precip_mm > 0.1
                             ? `${weatherData.current.precip_mm.toFixed(1)} mm/hr`
                             : "No precipitation"}
@@ -298,10 +298,10 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-4xl font-bold text-gray-800">
+                      <div className="text-4xl font-bold text-gray-800 dark:text-gray-100">
                         {Math.round(weatherData.current.temp_c)}°C
                       </div>
-                      <div className="text-sm text-gray-600">Temperature</div>
+                      <div className="text-sm text-gray-600 dark:text-gray-300">Temperature</div>
                     </div>
                   </div>
                 </CardContent>
@@ -309,22 +309,22 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
 
               {/* Weather Details */}
               <div className="grid grid-cols-2 gap-4">
-                <div className="bg-gray-50 rounded-lg p-3">
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
                   <div className="flex items-center gap-2 mb-1">
-                    <Droplets className="w-4 h-4 text-blue-500" />
-                    <span className="text-sm font-medium">Humidity</span>
+                    <Droplets className="w-4 h-4 text-blue-500 dark:text-blue-400" />
+                    <span className="text-sm font-medium dark:text-gray-200">Humidity</span>
                   </div>
-                  <div className="text-lg font-semibold">
+                  <div className="text-lg font-semibold dark:text-gray-100">
                     {weatherData.current.humidity}%
                   </div>
                 </div>
 
-                <div className="bg-gray-50 rounded-lg p-3">
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
                   <div className="flex items-center gap-2 mb-1">
-                    <Wind className="w-4 h-4 text-green-500" />
-                    <span className="text-sm font-medium">Wind Speed</span>
+                    <Wind className="w-4 h-4 text-green-500 dark:text-green-400" />
+                    <span className="text-sm font-medium dark:text-gray-200">Wind Speed</span>
                   </div>
-                  <div className="text-lg font-semibold">
+                  <div className="text-lg font-semibold dark:text-gray-100">
                     {Math.round(weatherData.current.wind_kph)} km/h
                   </div>
                 </div>
@@ -348,17 +348,17 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
 
                   return (
                     <Card>
-                      <CardContent className="p-4">
-                        <h4 className="font-semibold mb-3">3-Hour Forecast</h4>
+                      <CardContent className="p-4 dark:bg-gray-700">
+                        <h4 className="font-semibold mb-3 dark:text-gray-100">3-Hour Forecast</h4>
                         <div className="space-y-2">
                           <div className="flex justify-between">
-                            <span className="text-sm text-gray-600">
+                            <span className="text-sm text-gray-600 dark:text-gray-300">
                               Increase to {forecast.maxRain.toFixed(1)} mm/hr by{" "}
                               {endTime}
                             </span>
                           </div>
                           <div className="flex justify-between items-center">
-                            <span className="text-sm font-medium">
+                            <span className="text-sm font-medium dark:text-gray-200">
                               Risk Level:
                             </span>
                             <span
@@ -376,14 +376,14 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
               })()}
 
               {/* Weather Advisory */}
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
                 <div className="flex items-start gap-3">
-                  <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5" />
+                  <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-500 mt-0.5" />
                   <div>
-                    <h4 className="font-semibold text-yellow-800 mb-1">
+                    <h4 className="font-semibold text-yellow-800 dark:text-yellow-300 mb-1">
                       Weather Advisory
                     </h4>
-                    <p className="text-sm text-yellow-700">
+                    <p className="text-sm text-yellow-700 dark:text-yellow-200">
                       {getWeatherAdvisory(
                         weatherData.current.precip_mm,
                         weatherData.current.wind_kph
@@ -395,7 +395,7 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
 
               {/* Last Updated */}
               <div className="text-center">
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
                   Last Updated: {lastUpdated}
                 </p>
               </div>

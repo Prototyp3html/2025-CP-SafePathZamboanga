@@ -8429,11 +8429,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           "leaflet-bar leaflet-control leaflet-control-custom"
         );
 
-        const isDarkMode = document.documentElement.classList.contains('dark');
-
         btn.style.cssText = `
-            background: ${isDarkMode ? '#1f2937' : '#ffffff'};
-            border: 2px solid ${isDarkMode ? '#4b5563' : '#000000'};
+            background: #ffffff;
+            border: 2px solid #000000;
             width: 160px;
             height: 37px;
             cursor: pointer;
@@ -8479,12 +8477,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           );
           setShowTerrainOverlay((prev) => {
             const newState = !prev;
-            const isDarkMode = document.documentElement.classList.contains('dark');
             console.log("🔄 Setting terrain overlay to:", newState);
             text.innerText = newState ? "Hide Terrain" : "Show Terrain";
-           btn.style.background = newState 
-              ? (isDarkMode ? '#374151' : '#f0f0f0')
-              : (isDarkMode ? '#1f2937' : '#ffffff');
+            btn.style.background = newState ? "#f0f0f0" : "#ffffff";
             return newState;
           });
         };
@@ -9781,7 +9776,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               position: "fixed",
               bottom: "30px",
               left: "20px",
-              background: "rgba(255, 255, 255, 0.95)",
+              background: document.documentElement.classList.contains('dark') 
+                ? "rgba(31, 41, 55, 0.95)" 
+                : "rgba(255, 255, 255, 0.95)",
               padding: "12px",
               borderRadius: "8px",
               boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
@@ -9789,12 +9786,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               zIndex: 1000,
               minWidth: "200px",
               fontFamily: "system-ui, -apple-system, sans-serif",
+              color: document.documentElement.classList.contains('dark') ? "#f3f4f6" : "#000",
             }}
           >
             <h4
               style={{
                 margin: "0 0 10px 0",
-                color: "#2c3e50",
+                color: document.documentElement.classList.contains('dark') ? "#f3f4f6" : "#2c3e50",
                 fontSize: "14px",
                 fontWeight: "600",
               }}
