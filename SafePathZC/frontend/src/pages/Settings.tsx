@@ -353,10 +353,19 @@ const Settings = () => {
 
   const handlePreferenceChange = (key: string, value: any) => {
     updatePreference(key as any, value);
-    toast({
-      title: "Preferences updated",
-      description: "Your preferences have been saved.",
-    });
+    
+    // Special handling for theme changes
+    if (key === "theme") {
+      toast({
+        title: "Theme updated",
+        description: `Switched to ${value} mode. ${value === "auto" ? "Following system preferences." : ""}`,
+      });
+    } else {
+      toast({
+        title: "Preferences updated",
+        description: "Your preferences have been saved.",
+      });
+    }
   };
 
   const handleSecurityChange = (key: string, value: string) => {
@@ -1065,21 +1074,37 @@ Type "DELETE" to confirm:`;
                   <CardContent className="space-y-4">
                     <div>
                       <Label htmlFor="language">Language</Label>
-                      <Select
-                        value={preferences.language}
-                        onValueChange={(value) =>
-                          handlePreferenceChange("language", value)
-                        }
-                      >
-                        <SelectTrigger className="mt-1">
-                          <SelectValue placeholder="Select language" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="english">English</SelectItem>
-                          <SelectItem value="filipino">Filipino</SelectItem>
-                          <SelectItem value="chavacano">Chavacano</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <div className="mt-1 relative">
+                        <Select
+                          value={preferences.language}
+                          onValueChange={(value) => {
+                            handlePreferenceChange("language", value);
+                            if (value !== "english") {
+                              toast({
+                                title: "🚧 Feature In Development",
+                                description: "Language translations are being prepared. Currently only English is fully supported.",
+                                variant: "default",
+                                duration: 5000,
+                              });
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="mt-1">
+                            <SelectValue placeholder="Select language" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="english">English ✅</SelectItem>
+                            <SelectItem value="filipino">Filipino 🚧</SelectItem>
+                            <SelectItem value="chavacano">Chavacano 🚧</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {preferences.language !== "english" && (
+                          <p className="text-xs text-orange-600 mt-1 flex items-center gap-1">
+                            <i className="fas fa-info-circle"></i>
+                            Translation in progress
+                          </p>
+                        )}
+                      </div>
                     </div>
 
                     <div>

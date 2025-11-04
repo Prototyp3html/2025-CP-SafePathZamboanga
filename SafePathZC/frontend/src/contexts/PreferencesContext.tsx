@@ -98,6 +98,37 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
+  // Apply theme changes to document
+  useEffect(() => {
+    const applyTheme = () => {
+      const root = document.documentElement;
+      
+      if (preferences.theme === "dark") {
+        root.classList.add("dark");
+      } else if (preferences.theme === "light") {
+        root.classList.remove("dark");
+      } else if (preferences.theme === "auto") {
+        // Check system preference
+        const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        if (prefersDark) {
+          root.classList.add("dark");
+        } else {
+          root.classList.remove("dark");
+        }
+      }
+    };
+
+    applyTheme();
+
+    // Listen for system theme changes when in auto mode
+    if (preferences.theme === "auto") {
+      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+      const handleChange = () => applyTheme();
+      mediaQuery.addEventListener("change", handleChange);
+      return () => mediaQuery.removeEventListener("change", handleChange);
+    }
+  }, [preferences.theme]);
+
   // Load preferences from backend if user is logged in
   useEffect(() => {
     const token = localStorage.getItem("user_token");
