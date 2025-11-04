@@ -659,15 +659,15 @@ Type "DELETE" to confirm:`;
       {isAdmin ? (
         <AdminSettings />
       ) : user ? (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
           <NavigationBar />
 
           <main className="pt-20 container mx-auto px-4 py-8 max-w-4xl">
             <div className="mb-8">
-              <h1 className="text-3xl font-bold text-wmsu-blue mb-2">
+              <h1 className="text-3xl font-bold text-wmsu-blue dark:text-blue-400 mb-2">
                 Settings
               </h1>
-              <p className="text-gray-600">
+              <p className="text-gray-600 dark:text-gray-400">
                 Manage your account, preferences, and notifications
               </p>
             </div>
@@ -693,10 +693,10 @@ Type "DELETE" to confirm:`;
               </TabsList>
 
               <TabsContent value="profile" className="space-y-6">
-                <Card>
+                <Card className="dark:bg-gray-800 dark:border-gray-700">
                   <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <i className="fas fa-user mr-2 text-wmsu-blue"></i>
+                    <CardTitle className="flex items-center dark:text-gray-100">
+                      <i className="fas fa-user mr-2 text-wmsu-blue dark:text-blue-400"></i>
                       Personal Information
                     </CardTitle>
                     <CardDescription>
@@ -821,10 +821,10 @@ Type "DELETE" to confirm:`;
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="dark:bg-gray-800 dark:border-gray-700">
                   <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <i className="fas fa-camera mr-2 text-wmsu-blue"></i>
+                    <CardTitle className="flex items-center dark:text-gray-100">
+                      <i className="fas fa-camera mr-2 text-wmsu-blue dark:text-blue-400"></i>
                       Profile Picture
                     </CardTitle>
                     <CardDescription>
@@ -878,10 +878,10 @@ Type "DELETE" to confirm:`;
               </TabsContent>
 
               <TabsContent value="notifications" className="space-y-6">
-                <Card>
+                <Card className="dark:bg-gray-800 dark:border-gray-700">
                   <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <i className="fas fa-bell mr-2 text-wmsu-blue"></i>
+                    <CardTitle className="flex items-center dark:text-gray-100">
+                      <i className="fas fa-bell mr-2 text-wmsu-blue dark:text-blue-400"></i>
                       Notification Preferences
                     </CardTitle>
                     <CardDescription>
@@ -1030,17 +1030,19 @@ Type "DELETE" to confirm:`;
                             className="rounded"
                           />
                           <Label htmlFor="email-notifications">
-                            Email notifications
+                            Email notifications ✅
                           </Label>
                         </div>
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center space-x-2 opacity-50 cursor-not-allowed">
                           <input
                             type="checkbox"
                             id="sms-notifications"
                             className="rounded"
+                            disabled
+                            title="SMS notifications require Twilio/SMS service integration"
                           />
-                          <Label htmlFor="sms-notifications">
-                            SMS notifications
+                          <Label htmlFor="sms-notifications" className="cursor-not-allowed">
+                            SMS notifications 🚧 (Coming soon)
                           </Label>
                         </div>
                         <div className="flex items-center space-x-2">
@@ -1051,20 +1053,24 @@ Type "DELETE" to confirm:`;
                             className="rounded"
                           />
                           <Label htmlFor="push-notifications">
-                            Browser push notifications
+                            Browser push notifications ✅
                           </Label>
                         </div>
                       </div>
+                      <p className="text-xs text-gray-500 mt-3 flex items-start gap-2">
+                        <i className="fas fa-info-circle mt-0.5"></i>
+                        <span>SMS notifications require SMS service integration (Twilio, Vonage, etc.). Currently, notifications are shown in-app and via browser.</span>
+                      </p>
                     </div>
                   </CardContent>
                 </Card>
               </TabsContent>
 
               <TabsContent value="preferences" className="space-y-6">
-                <Card>
+                <Card className="dark:bg-gray-800 dark:border-gray-700">
                   <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <i className="fas fa-cog mr-2 text-wmsu-blue"></i>
+                    <CardTitle className="flex items-center dark:text-gray-100">
+                      <i className="fas fa-cog mr-2 text-wmsu-blue dark:text-blue-400"></i>
                       App Preferences
                     </CardTitle>
                     <CardDescription>
@@ -1196,10 +1202,10 @@ Type "DELETE" to confirm:`;
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="dark:bg-gray-800 dark:border-gray-700">
                   <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <i className="fas fa-route mr-2 text-wmsu-blue"></i>
+                    <CardTitle className="flex items-center dark:text-gray-100">
+                      <i className="fas fa-route mr-2 text-wmsu-blue dark:text-blue-400"></i>
                       Route Preferences
                     </CardTitle>
                     <CardDescription>
@@ -1278,10 +1284,10 @@ Type "DELETE" to confirm:`;
               </TabsContent>
 
               <TabsContent value="security" className="space-y-6">
-                <Card>
+                <Card className="dark:bg-gray-800 dark:border-gray-700">
                   <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <i className="fas fa-shield-alt mr-2 text-wmsu-blue"></i>
+                    <CardTitle className="flex items-center dark:text-gray-100">
+                      <i className="fas fa-shield-alt mr-2 text-wmsu-blue dark:text-blue-400"></i>
                       Account Security
                     </CardTitle>
                     <CardDescription>
@@ -1348,10 +1354,10 @@ Type "DELETE" to confirm:`;
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="dark:bg-gray-800 dark:border-gray-700">
                   <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <i className="fas fa-mobile-alt mr-2 text-wmsu-blue"></i>
+                    <CardTitle className="flex items-center dark:text-gray-100">
+                      <i className="fas fa-mobile-alt mr-2 text-wmsu-blue dark:text-blue-400"></i>
                       Two-Factor Authentication
                     </CardTitle>
                     <CardDescription>
@@ -1379,10 +1385,10 @@ Type "DELETE" to confirm:`;
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="dark:bg-gray-800 dark:border-gray-700">
                   <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <i className="fas fa-history mr-2 text-wmsu-blue"></i>
+                    <CardTitle className="flex items-center dark:text-gray-100">
+                      <i className="fas fa-history mr-2 text-wmsu-blue dark:text-blue-400"></i>
                       Login Activity
                     </CardTitle>
                     <CardDescription>
@@ -1417,9 +1423,9 @@ Type "DELETE" to confirm:`;
                   </CardContent>
                 </Card>
 
-                <Card className="border-red-200">
+                <Card className="border-red-200 dark:border-red-900 dark:bg-gray-800">
                   <CardHeader>
-                    <CardTitle className="flex items-center text-red-600">
+                    <CardTitle className="flex items-center text-red-600 dark:text-red-400">
                       <i className="fas fa-exclamation-triangle mr-2"></i>
                       Danger Zone
                     </CardTitle>
@@ -1447,13 +1453,13 @@ Type "DELETE" to confirm:`;
             </Tabs>
 
             {/* Global Save Button */}
-            <div className="mt-8 p-4 bg-gray-50 rounded-lg border">
+            <div className="mt-8 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border dark:border-gray-700">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-semibold text-gray-900">
+                  <h3 className="font-semibold text-gray-900 dark:text-gray-100">
                     Save All Settings
                   </h3>
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
                     Save all your changes including preferences, notifications,
                     and profile.
                   </p>
@@ -1497,19 +1503,19 @@ Type "DELETE" to confirm:`;
         </div>
       ) : (
         // Show login prompt when no user is logged in
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
           <NavigationBar />
           <main className="pt-20 container mx-auto px-4 py-8 max-w-4xl">
             <div className="text-center">
-              <div className="bg-white rounded-lg shadow-md p-8 max-w-md mx-auto">
-                <i className="fas fa-user-circle text-gray-400 text-6xl mb-4"></i>
-                <h2 className="text-2xl font-bold text-gray-800 mb-4">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 max-w-md mx-auto">
+                <i className="fas fa-user-circle text-gray-400 dark:text-gray-500 text-6xl mb-4"></i>
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">
                   Please Log In
                 </h2>
-                <p className="text-gray-600 mb-6">
+                <p className="text-gray-600 dark:text-gray-400 mb-6">
                   You need to be logged in to access your settings.
                 </p>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
                   Click the profile icon in the navigation bar to log in.
                 </p>
               </div>

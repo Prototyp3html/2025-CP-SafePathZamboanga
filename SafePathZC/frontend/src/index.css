@@ -57,7 +57,54 @@
     color: hsl(var(--foreground));
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
       sans-serif;
+    transition: background-color 0.3s ease, color 0.3s ease;
   }
+}
+
+/* Dark mode global overrides for common patterns */
+.dark {
+  color-scheme: dark;
+}
+
+.dark body {
+  @apply bg-gray-900 text-gray-100;
+}
+
+/* Auto dark mode for common components */
+.dark .bg-white:not(.dark-ignore) {
+  @apply bg-gray-800 !important;
+}
+
+.dark .bg-gray-50:not(.dark-ignore) {
+  @apply bg-gray-900 !important;
+}
+
+.dark .bg-gray-100:not(.dark-ignore) {
+  @apply bg-gray-800 !important;
+}
+
+.dark .text-gray-900:not(.dark-ignore) {
+  @apply text-gray-100 !important;
+}
+
+.dark .text-gray-800:not(.dark-ignore) {
+  @apply text-gray-100 !important;
+}
+
+.dark .text-gray-600:not(.dark-ignore) {
+  @apply text-gray-400 !important;
+}
+
+.dark .text-gray-700:not(.dark-ignore) {
+  @apply text-gray-300 !important;
+}
+
+.dark .border-gray-200:not(.dark-ignore) {
+  @apply border-gray-700 !important;
+}
+
+.dark .border-gray-300:not(.dark-ignore) {
+  @apply border-gray-600 !important;
 }
 
 @layer components {
