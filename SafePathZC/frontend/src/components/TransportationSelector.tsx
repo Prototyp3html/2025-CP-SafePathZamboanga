@@ -113,9 +113,9 @@ export const TransportationSelector: React.FC<TransportationSelectorProps> = ({
 }) => {
   return (
     <div
-      className={`bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-4 ${className}`}
+      className={`bg-white rounded-lg shadow-lg border border-gray-200 p-4 ${className}`}
     >
-      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3 flex items-center">
+      <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
         <Car className="w-4 h-4 mr-2" />
         Transportation Mode
       </h3>
@@ -134,21 +134,21 @@ export const TransportationSelector: React.FC<TransportationSelectorProps> = ({
                 hover:shadow-md group relative
                 ${
                   isSelected
-                    ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 shadow-md"
-                    : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+                    ? "border-blue-500 bg-blue-50 shadow-md"
+                    : "border-gray-200 bg-white hover:border-gray-300"
                 }
               `}
               title={mode.description}
             >
               <IconComponent
                 className={`w-6 h-6 mb-1 ${
-                  isSelected ? "text-blue-600 dark:text-blue-400" : "text-gray-600 dark:text-gray-300"
+                  isSelected ? "text-blue-600" : "text-gray-600"
                 }`}
                 style={{ color: isSelected ? mode.color : undefined }}
               />
               <span
                 className={`text-xs font-medium ${
-                  isSelected ? "text-blue-900 dark:text-blue-200" : "text-gray-700 dark:text-gray-200"
+                  isSelected ? "text-blue-900" : "text-gray-700"
                 }`}
               >
                 {mode.name}
@@ -158,10 +158,10 @@ export const TransportationSelector: React.FC<TransportationSelectorProps> = ({
               <div
                 className={`text-xs mt-1 px-2 py-0.5 rounded-full ${
                   mode.maxFloodDepth > 20
-                    ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+                    ? "bg-green-100 text-green-700"
                     : mode.maxFloodDepth > 10
-                    ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300"
-                    : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300"
+                    ? "bg-yellow-100 text-yellow-700"
+                    : "bg-red-100 text-red-700"
                 }`}
               >
                 {mode.maxFloodDepth}cm flood
@@ -172,12 +172,12 @@ export const TransportationSelector: React.FC<TransportationSelectorProps> = ({
       </div>
 
       {/* Selected mode details */}
-      <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-        <div className="text-xs text-gray-600 dark:text-gray-300">
+      <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+        <div className="text-xs text-gray-600">
           <strong>{TRANSPORTATION_MODES[selectedMode].name}:</strong>{" "}
           {TRANSPORTATION_MODES[selectedMode].description}
         </div>
-        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+        <div className="text-xs text-gray-500 mt-1">
           Max safe flood depth:{" "}
           <strong>{TRANSPORTATION_MODES[selectedMode].maxFloodDepth}cm</strong>
         </div>

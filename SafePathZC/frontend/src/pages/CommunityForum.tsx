@@ -432,7 +432,7 @@ const CommunityForum = () => {
     <>
       {/* Check if user is logged in */}
       {user ? (
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 dark:from-gray-900 dark:to-gray-800">
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
           {/* Header Section - Starts from top */}
           <div className="relative bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-700 overflow-hidden">
             {/* Navbar positioned absolutely on top */}
@@ -631,7 +631,7 @@ const CommunityForum = () => {
                     filteredPosts.map((post) => (
                       <div
                         key={post.id}
-                        className={`bg-white dark:bg-gray-800 rounded-2xl shadow-xl border transition-all duration-300 hover:shadow-2xl hover:scale-[1.02] ${
+                        className={`bg-white rounded-2xl shadow-xl border transition-all duration-300 hover:shadow-2xl hover:scale-[1.02] ${
                           post.is_urgent
                             ? "border-l-4 border-l-red-500 bg-gradient-to-r from-red-50 to-white"
                             : "border-gray-100 hover:border-blue-200"
@@ -810,16 +810,16 @@ const CommunityForum = () => {
         </div>
       ) : (
         // Show login prompt when no user is logged in
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="min-h-screen bg-gray-50">
           <NavigationBar />
           <main className="pt-20 container mx-auto px-4 py-8 max-w-4xl">
             <div className="text-center">
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 max-w-md mx-auto">
-                <MessageSquare className="text-gray-400 dark:text-gray-500 text-6xl mb-4 mx-auto" />
-                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">
+              <div className="bg-white rounded-lg shadow-md p-8 max-w-md mx-auto">
+                <MessageSquare className="text-gray-400 text-6xl mb-4 mx-auto" />
+                <h2 className="text-2xl font-bold text-gray-800 mb-4">
                   Join the Community
                 </h2>
-                <p className="text-gray-600 dark:text-gray-400 mb-6">
+                <p className="text-gray-600 mb-6">
                   You need to be logged in to access the community forum and
                   participate in discussions.
                 </p>

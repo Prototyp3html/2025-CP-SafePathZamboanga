@@ -83,21 +83,17 @@ const Settings = () => {
         emergencyContact: parsedUser.emergencyContact || "",
       });
 
-      // Load profile picture - prioritize email as consistent key
-      const userKey = parsedUser.email; // Use email as primary key for consistency
-      const userProfilePicture = localStorage.getItem(
-        `user_profile_picture_${userKey}`
-      );
-      
-      if (userProfilePicture) {
-        setProfilePicture(userProfilePicture);
-      } else if (parsedUser.profilePicture) {
-        // If found in user data but not in user-specific key, migrate it
+      // Load profile picture from user data or user-specific localStorage
+      if (parsedUser.profilePicture) {
         setProfilePicture(parsedUser.profilePicture);
-        localStorage.setItem(
-          `user_profile_picture_${userKey}`,
-          parsedUser.profilePicture
+      } else {
+        // Use user-specific profile picture key
+        const userProfilePicture = localStorage.getItem(
+          `user_profile_picture_${parsedUser.id || parsedUser.email}`
         );
+        if (userProfilePicture) {
+          setProfilePicture(userProfilePicture);
+        }
       }
 
       // Load 2FA status
@@ -141,9 +137,9 @@ const Settings = () => {
           const imageDataUrl = e.target?.result as string;
           setProfilePicture(imageDataUrl);
 
-          // Save to user-specific localStorage key using email for consistency
+          // Save to user-specific localStorage key
           if (user) {
-            const userKey = user.email; // Always use email as key for consistency
+            const userKey = user.id || user.email;
             localStorage.setItem(
               `user_profile_picture_${userKey}`,
               imageDataUrl
@@ -153,8 +149,6 @@ const Settings = () => {
             const updatedUser = { ...user, profilePicture: imageDataUrl };
             localStorage.setItem("user_data", JSON.stringify(updatedUser));
             setUser(updatedUser);
-
-            console.log(`✅ Profile picture saved to localStorage with key: user_profile_picture_${userKey}`);
           }
 
           // Try to save to backend
@@ -175,13 +169,11 @@ const Settings = () => {
                 }
               );
 
-              if (response.ok) {
-                console.log("✅ Profile picture saved to backend");
-              } else {
-                console.warn("⚠️ Failed to save profile picture to backend");
+              if (!response.ok) {
+                console.warn("Failed to save profile picture to backend");
               }
             } catch (error) {
-              console.warn("⚠️ Backend not available, saved locally only");
+              console.warn("Backend not available, saved locally only");
             }
           }
 
@@ -204,9 +196,9 @@ const Settings = () => {
   const handleRemoveProfilePicture = async () => {
     setProfilePicture(null);
 
-    // Remove from user-specific localStorage using email as key
+    // Remove from user-specific localStorage
     if (user) {
-      const userKey = user.email; // Always use email as key for consistency
+      const userKey = user.id || user.email;
       localStorage.removeItem(`user_profile_picture_${userKey}`);
 
       // Update user data
@@ -214,8 +206,6 @@ const Settings = () => {
       delete updatedUser.profilePicture;
       localStorage.setItem("user_data", JSON.stringify(updatedUser));
       setUser(updatedUser);
-
-      console.log(`✅ Profile picture removed from localStorage key: user_profile_picture_${userKey}`);
     }
 
     // Try to remove from backend
@@ -231,13 +221,11 @@ const Settings = () => {
           },
         });
 
-        if (response.ok) {
-          console.log("✅ Profile picture removed from backend");
-        } else {
-          console.warn("⚠️ Failed to remove profile picture from backend");
+        if (!response.ok) {
+          console.warn("Failed to remove profile picture from backend");
         }
       } catch (error) {
-        console.warn("⚠️ Backend not available, removed locally only");
+        console.warn("Backend not available, removed locally only");
       }
     }
 
@@ -353,19 +341,10 @@ const Settings = () => {
 
   const handlePreferenceChange = (key: string, value: any) => {
     updatePreference(key as any, value);
-    
-    // Special handling for theme changes
-    if (key === "theme") {
-      toast({
-        title: "Theme updated",
-        description: `Switched to ${value} mode. ${value === "auto" ? "Following system preferences." : ""}`,
-      });
-    } else {
-      toast({
-        title: "Preferences updated",
-        description: "Your preferences have been saved.",
-      });
-    }
+    toast({
+      title: "Preferences updated",
+      description: "Your preferences have been saved.",
+    });
   };
 
   const handleSecurityChange = (key: string, value: string) => {
@@ -613,17 +592,11 @@ Type "DELETE" to confirm:`;
       });
 
       if (response.ok) {
-        // Clear all user-specific local storage items
-        if (user) {
-          const userKey = user.id || user.email;
-          localStorage.removeItem(`user_profile_picture_${userKey}`);
-        }
+        // Clear all local storage
         localStorage.removeItem("user_token");
         localStorage.removeItem("user_data");
         localStorage.removeItem("user_profile_picture");
         localStorage.removeItem("user_preferences");
-        localStorage.removeItem("admin_token");
-        localStorage.removeItem("admin_data");
 
         toast({
           title: "Account deleted",
@@ -659,15 +632,15 @@ Type "DELETE" to confirm:`;
       {isAdmin ? (
         <AdminSettings />
       ) : user ? (
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="min-h-screen bg-gray-50">
           <NavigationBar />
 
           <main className="pt-20 container mx-auto px-4 py-8 max-w-4xl">
             <div className="mb-8">
-              <h1 className="text-3xl font-bold text-wmsu-blue dark:text-blue-400 mb-2">
+              <h1 className="text-3xl font-bold text-wmsu-blue mb-2">
                 Settings
               </h1>
-              <p className="text-gray-600 dark:text-gray-400">
+              <p className="text-gray-600">
                 Manage your account, preferences, and notifications
               </p>
             </div>
@@ -693,10 +666,10 @@ Type "DELETE" to confirm:`;
               </TabsList>
 
               <TabsContent value="profile" className="space-y-6">
-                <Card className="dark:bg-gray-800 dark:border-gray-700">
+                <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center dark:text-gray-100">
-                      <i className="fas fa-user mr-2 text-wmsu-blue dark:text-blue-400"></i>
+                    <CardTitle className="flex items-center">
+                      <i className="fas fa-user mr-2 text-wmsu-blue"></i>
                       Personal Information
                     </CardTitle>
                     <CardDescription>
@@ -821,10 +794,10 @@ Type "DELETE" to confirm:`;
                   </CardContent>
                 </Card>
 
-                <Card className="dark:bg-gray-800 dark:border-gray-700">
+                <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center dark:text-gray-100">
-                      <i className="fas fa-camera mr-2 text-wmsu-blue dark:text-blue-400"></i>
+                    <CardTitle className="flex items-center">
+                      <i className="fas fa-camera mr-2 text-wmsu-blue"></i>
                       Profile Picture
                     </CardTitle>
                     <CardDescription>
@@ -878,10 +851,10 @@ Type "DELETE" to confirm:`;
               </TabsContent>
 
               <TabsContent value="notifications" className="space-y-6">
-                <Card className="dark:bg-gray-800 dark:border-gray-700">
+                <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center dark:text-gray-100">
-                      <i className="fas fa-bell mr-2 text-wmsu-blue dark:text-blue-400"></i>
+                    <CardTitle className="flex items-center">
+                      <i className="fas fa-bell mr-2 text-wmsu-blue"></i>
                       Notification Preferences
                     </CardTitle>
                     <CardDescription>
@@ -1030,19 +1003,17 @@ Type "DELETE" to confirm:`;
                             className="rounded"
                           />
                           <Label htmlFor="email-notifications">
-                            Email notifications ✅
+                            Email notifications
                           </Label>
                         </div>
-                        <div className="flex items-center space-x-2 opacity-50 cursor-not-allowed">
+                        <div className="flex items-center space-x-2">
                           <input
                             type="checkbox"
                             id="sms-notifications"
                             className="rounded"
-                            disabled
-                            title="SMS notifications require Twilio/SMS service integration"
                           />
-                          <Label htmlFor="sms-notifications" className="cursor-not-allowed">
-                            SMS notifications 🚧 (Coming soon)
+                          <Label htmlFor="sms-notifications">
+                            SMS notifications
                           </Label>
                         </div>
                         <div className="flex items-center space-x-2">
@@ -1053,24 +1024,20 @@ Type "DELETE" to confirm:`;
                             className="rounded"
                           />
                           <Label htmlFor="push-notifications">
-                            Browser push notifications ✅
+                            Browser push notifications
                           </Label>
                         </div>
                       </div>
-                      <p className="text-xs text-gray-500 mt-3 flex items-start gap-2">
-                        <i className="fas fa-info-circle mt-0.5"></i>
-                        <span>SMS notifications require SMS service integration (Twilio, Vonage, etc.). Currently, notifications are shown in-app and via browser.</span>
-                      </p>
                     </div>
                   </CardContent>
                 </Card>
               </TabsContent>
 
               <TabsContent value="preferences" className="space-y-6">
-                <Card className="dark:bg-gray-800 dark:border-gray-700">
+                <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center dark:text-gray-100">
-                      <i className="fas fa-cog mr-2 text-wmsu-blue dark:text-blue-400"></i>
+                    <CardTitle className="flex items-center">
+                      <i className="fas fa-cog mr-2 text-wmsu-blue"></i>
                       App Preferences
                     </CardTitle>
                     <CardDescription>
@@ -1080,37 +1047,21 @@ Type "DELETE" to confirm:`;
                   <CardContent className="space-y-4">
                     <div>
                       <Label htmlFor="language">Language</Label>
-                      <div className="mt-1 relative">
-                        <Select
-                          value={preferences.language}
-                          onValueChange={(value) => {
-                            handlePreferenceChange("language", value);
-                            if (value !== "english") {
-                              toast({
-                                title: "🚧 Feature In Development",
-                                description: "Language translations are being prepared. Currently only English is fully supported.",
-                                variant: "default",
-                                duration: 5000,
-                              });
-                            }
-                          }}
-                        >
-                          <SelectTrigger className="mt-1">
-                            <SelectValue placeholder="Select language" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="english">English ✅</SelectItem>
-                            <SelectItem value="filipino">Filipino 🚧</SelectItem>
-                            <SelectItem value="chavacano">Chavacano 🚧</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        {preferences.language !== "english" && (
-                          <p className="text-xs text-orange-600 mt-1 flex items-center gap-1">
-                            <i className="fas fa-info-circle"></i>
-                            Translation in progress
-                          </p>
-                        )}
-                      </div>
+                      <Select
+                        value={preferences.language}
+                        onValueChange={(value) =>
+                          handlePreferenceChange("language", value)
+                        }
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Select language" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="english">English</SelectItem>
+                          <SelectItem value="filipino">Filipino</SelectItem>
+                          <SelectItem value="chavacano">Chavacano</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     <div>
@@ -1135,50 +1086,21 @@ Type "DELETE" to confirm:`;
 
                     <div>
                       <Label htmlFor="theme">Theme</Label>
-                      <div className="mt-3 flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handlePreferenceChange("theme", "light")}
-                          className={`flex-1 px-4 py-2.5 rounded-lg border-2 transition-all ${
-                            preferences.theme === "light"
-                              ? "border-blue-600 bg-blue-50 text-blue-700 font-medium"
-                              : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
-                          }`}
-                        >
-                          <div className="flex items-center justify-center gap-2">
-                            <i className="fas fa-sun"></i>
-                            <span>Light</span>
-                          </div>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handlePreferenceChange("theme", "dark")}
-                          className={`flex-1 px-4 py-2.5 rounded-lg border-2 transition-all ${
-                            preferences.theme === "dark"
-                              ? "border-blue-600 bg-blue-50 text-blue-700 font-medium"
-                              : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
-                          }`}
-                        >
-                          <div className="flex items-center justify-center gap-2">
-                            <i className="fas fa-moon"></i>
-                            <span>Dark</span>
-                          </div>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handlePreferenceChange("theme", "auto")}
-                          className={`flex-1 px-4 py-2.5 rounded-lg border-2 transition-all ${
-                            preferences.theme === "auto"
-                              ? "border-blue-600 bg-blue-50 text-blue-700 font-medium"
-                              : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
-                          }`}
-                        >
-                          <div className="flex items-center justify-center gap-2">
-                            <i className="fas fa-adjust"></i>
-                            <span>Auto</span>
-                          </div>
-                        </button>
-                      </div>
+                      <Select
+                        value={preferences.theme}
+                        onValueChange={(value) =>
+                          handlePreferenceChange("theme", value)
+                        }
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Select theme" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="light">Light</SelectItem>
+                          <SelectItem value="dark">Dark</SelectItem>
+                          <SelectItem value="auto">Auto (System)</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     <div>
@@ -1202,10 +1124,10 @@ Type "DELETE" to confirm:`;
                   </CardContent>
                 </Card>
 
-                <Card className="dark:bg-gray-800 dark:border-gray-700">
+                <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center dark:text-gray-100">
-                      <i className="fas fa-route mr-2 text-wmsu-blue dark:text-blue-400"></i>
+                    <CardTitle className="flex items-center">
+                      <i className="fas fa-route mr-2 text-wmsu-blue"></i>
                       Route Preferences
                     </CardTitle>
                     <CardDescription>
@@ -1284,10 +1206,10 @@ Type "DELETE" to confirm:`;
               </TabsContent>
 
               <TabsContent value="security" className="space-y-6">
-                <Card className="dark:bg-gray-800 dark:border-gray-700">
+                <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center dark:text-gray-100">
-                      <i className="fas fa-shield-alt mr-2 text-wmsu-blue dark:text-blue-400"></i>
+                    <CardTitle className="flex items-center">
+                      <i className="fas fa-shield-alt mr-2 text-wmsu-blue"></i>
                       Account Security
                     </CardTitle>
                     <CardDescription>
@@ -1354,10 +1276,10 @@ Type "DELETE" to confirm:`;
                   </CardContent>
                 </Card>
 
-                <Card className="dark:bg-gray-800 dark:border-gray-700">
+                <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center dark:text-gray-100">
-                      <i className="fas fa-mobile-alt mr-2 text-wmsu-blue dark:text-blue-400"></i>
+                    <CardTitle className="flex items-center">
+                      <i className="fas fa-mobile-alt mr-2 text-wmsu-blue"></i>
                       Two-Factor Authentication
                     </CardTitle>
                     <CardDescription>
@@ -1385,10 +1307,10 @@ Type "DELETE" to confirm:`;
                   </CardContent>
                 </Card>
 
-                <Card className="dark:bg-gray-800 dark:border-gray-700">
+                <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center dark:text-gray-100">
-                      <i className="fas fa-history mr-2 text-wmsu-blue dark:text-blue-400"></i>
+                    <CardTitle className="flex items-center">
+                      <i className="fas fa-history mr-2 text-wmsu-blue"></i>
                       Login Activity
                     </CardTitle>
                     <CardDescription>
@@ -1423,9 +1345,9 @@ Type "DELETE" to confirm:`;
                   </CardContent>
                 </Card>
 
-                <Card className="border-red-200 dark:border-red-900 dark:bg-gray-800">
+                <Card className="border-red-200">
                   <CardHeader>
-                    <CardTitle className="flex items-center text-red-600 dark:text-red-400">
+                    <CardTitle className="flex items-center text-red-600">
                       <i className="fas fa-exclamation-triangle mr-2"></i>
                       Danger Zone
                     </CardTitle>
@@ -1453,13 +1375,13 @@ Type "DELETE" to confirm:`;
             </Tabs>
 
             {/* Global Save Button */}
-            <div className="mt-8 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border dark:border-gray-700">
+            <div className="mt-8 p-4 bg-gray-50 rounded-lg border">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-semibold text-gray-900 dark:text-gray-100">
+                  <h3 className="font-semibold text-gray-900">
                     Save All Settings
                   </h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                  <p className="text-sm text-gray-600">
                     Save all your changes including preferences, notifications,
                     and profile.
                   </p>
@@ -1503,19 +1425,19 @@ Type "DELETE" to confirm:`;
         </div>
       ) : (
         // Show login prompt when no user is logged in
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="min-h-screen bg-gray-50">
           <NavigationBar />
           <main className="pt-20 container mx-auto px-4 py-8 max-w-4xl">
             <div className="text-center">
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 max-w-md mx-auto">
-                <i className="fas fa-user-circle text-gray-400 dark:text-gray-500 text-6xl mb-4"></i>
-                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">
+              <div className="bg-white rounded-lg shadow-md p-8 max-w-md mx-auto">
+                <i className="fas fa-user-circle text-gray-400 text-6xl mb-4"></i>
+                <h2 className="text-2xl font-bold text-gray-800 mb-4">
                   Please Log In
                 </h2>
-                <p className="text-gray-600 dark:text-gray-400 mb-6">
+                <p className="text-gray-600 mb-6">
                   You need to be logged in to access your settings.
                 </p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
+                <p className="text-sm text-gray-500">
                   Click the profile icon in the navigation bar to log in.
                 </p>
               </div>

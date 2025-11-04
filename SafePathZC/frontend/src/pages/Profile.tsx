@@ -21,21 +21,17 @@ const Profile = () => {
       const parsedUser = JSON.parse(userData);
       setUser(parsedUser);
 
-      // Load profile picture using email as consistent key
-      const userKey = parsedUser.email; // Always use email for consistency
-      const userProfilePicture = localStorage.getItem(
-        `user_profile_picture_${userKey}`
-      );
-      
-      if (userProfilePicture) {
-        setProfilePicture(userProfilePicture);
-      } else if (parsedUser.profilePicture) {
-        // Migrate from user data to user-specific key
+      // Load profile picture
+      if (parsedUser.profilePicture) {
         setProfilePicture(parsedUser.profilePicture);
-        localStorage.setItem(
-          `user_profile_picture_${userKey}`,
-          parsedUser.profilePicture
+      } else {
+        const userKey = parsedUser.id || parsedUser.email;
+        const userProfilePicture = localStorage.getItem(
+          `user_profile_picture_${userKey}`
         );
+        if (userProfilePicture) {
+          setProfilePicture(userProfilePicture);
+        }
       }
 
       // Fetch fresh data from backend
@@ -73,20 +69,12 @@ const Profile = () => {
   };
 
   const handleLogout = () => {
-    // Remove user-specific profile picture before clearing user data
-    if (user?.email) {
-      localStorage.removeItem(`user_profile_picture_${user.email}`);
-    }
-    
     localStorage.removeItem("user_token");
     localStorage.removeItem("user_data");
     localStorage.removeItem("admin_token");
     localStorage.removeItem("admin_data");
-    // Don't remove user_preferences as they can be reused
-    
     setIsLoggedIn(false);
     setUser(null);
-    setProfilePicture(null);
   };
 
   const handleLoginClick = () => {
@@ -105,10 +93,10 @@ const Profile = () => {
           <div className="max-w-6xl mx-auto px-4 py-8">
             {/* Admin Header */}
             <div className="text-center mb-8">
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">
                 Admin Dashboard
               </h1>
-              <p className="text-gray-600 dark:text-gray-400">
+              <p className="text-gray-600">
                 Welcome, {user?.name || "Administrator"}
               </p>
               <div className="mt-4">
@@ -134,9 +122,9 @@ const Profile = () => {
     return (
       <>
         <NavigationBar />
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-20">
+        <div className="min-h-screen bg-gray-50 pt-20">
           <div className="max-w-4xl mx-auto px-4 py-8">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 text-center">
+            <div className="bg-white rounded-lg shadow-md p-8 text-center">
               <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
                 <svg
                   className="w-12 h-12 text-blue-600"
@@ -152,10 +140,10 @@ const Profile = () => {
                   />
                 </svg>
               </div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">
                 My Profile
               </h2>
-              <p className="text-gray-600 dark:text-gray-400 mb-8">
+              <p className="text-gray-600 mb-8">
                 Please log in to view your profile and manage your account
               </p>
               <button
@@ -182,14 +170,14 @@ const Profile = () => {
   return (
     <>
       <NavigationBar />
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-20">
+      <div className="min-h-screen bg-gray-50 pt-20">
         <div className="max-w-6xl mx-auto px-4 py-8">
           {/* Header */}
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">
               My Profile
             </h1>
-            <p className="text-gray-600 dark:text-gray-400">
+            <p className="text-gray-600">
               Manage your account settings and view your activity
             </p>
           </div>
@@ -233,7 +221,7 @@ const Profile = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Left Profile Card */}
             <div className="lg:col-span-1">
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 text-center">
+              <div className="bg-white rounded-lg shadow-md p-6 text-center">
                 {/* Profile Picture */}
                 <div className="w-32 h-32 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 overflow-hidden">
                   {profilePicture ? (
@@ -260,15 +248,15 @@ const Profile = () => {
                 </div>
 
                 {/* User Info */}
-                <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">
+                <h2 className="text-xl font-bold text-gray-900 mb-1">
                   {user?.name || "User"}
                 </h2>
-                <p className="text-gray-600 dark:text-gray-400 mb-4">
+                <p className="text-gray-600 mb-4">
                   {user?.location || "Location not set"}
                 </p>
 
                 {/* Member Since Badge */}
-                <div className="bg-gray-900 dark:bg-blue-600 text-white px-4 py-2 rounded-full text-sm mb-6 inline-block">
+                <div className="bg-gray-900 text-white px-4 py-2 rounded-full text-sm mb-6 inline-block">
                   Member since{" "}
                   {user?.created_at
                     ? new Date(user.created_at).toLocaleDateString("en-US", {
@@ -280,25 +268,25 @@ const Profile = () => {
 
                 {/* Community Points */}
                 <div className="mb-6">
-                  <div className="text-3xl font-bold text-blue-600 dark:text-blue-400 mb-1">
+                  <div className="text-3xl font-bold text-blue-600 mb-1">
                     {user?.communityPoints || user?.community_points || 0}
                   </div>
-                  <div className="text-gray-600 dark:text-gray-400 text-sm">Community Points</div>
+                  <div className="text-gray-600 text-sm">Community Points</div>
                 </div>
 
                 {/* Stats */}
                 <div className="grid grid-cols-2 gap-4 text-center">
                   <div>
-                    <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                    <div className="text-2xl font-bold text-gray-900">
                       {user?.routesUsed || user?.routes_used || 0}
                     </div>
-                    <div className="text-gray-600 dark:text-gray-400 text-sm">Routes Used</div>
+                    <div className="text-gray-600 text-sm">Routes Used</div>
                   </div>
                   <div>
-                    <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                    <div className="text-2xl font-bold text-gray-900">
                       {user?.reportsSubmitted || user?.reports_submitted || 0}
                     </div>
-                    <div className="text-gray-600 dark:text-gray-400 text-sm">Reports</div>
+                    <div className="text-gray-600 text-sm">Reports</div>
                   </div>
                 </div>
 
@@ -315,11 +303,11 @@ const Profile = () => {
             {/* Right Content */}
             <div className="lg:col-span-2">
               {activeTab === "personal" && (
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                  <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <h3 className="text-xl font-bold text-gray-900 mb-1">
                     Personal Information
                   </h3>
-                  <p className="text-gray-600 dark:text-gray-400 mb-6">
+                  <p className="text-gray-600 mb-6">
                     Update your personal details
                   </p>
 
@@ -381,11 +369,11 @@ const Profile = () => {
               )}
 
               {activeTab === "activity" && (
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                  <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <h3 className="text-xl font-bold text-gray-900 mb-1">
                     Recent Activity
                   </h3>
-                  <p className="text-gray-600 dark:text-gray-400 mb-6">
+                  <p className="text-gray-600 mb-6">
                     Your recent routes and interactions
                   </p>
 
@@ -409,14 +397,14 @@ const Profile = () => {
                             />
                           </svg>
                         </div>
-                        <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                        <h4 className="text-lg font-medium text-gray-900 mb-2">
                           No Activity Yet
                         </h4>
-                        <p className="text-gray-600 dark:text-gray-400 mb-4">
+                        <p className="text-gray-600 mb-4">
                           Start using SafePath to see your recent routes and
                           activities here.
                         </p>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                        <p className="text-sm text-gray-500">
                           Use the map to plan routes, submit reports, or engage
                           with the community.
                         </p>
@@ -448,18 +436,18 @@ const Profile = () => {
               )}
 
               {activeTab === "preferences" && (
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                  <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <h3 className="text-xl font-bold text-gray-900 mb-1">
                     Preferences
                   </h3>
-                  <p className="text-gray-600 dark:text-gray-400 mb-6">
+                  <p className="text-gray-600 mb-6">
                     Customize your SafePath experience
                   </p>
 
                   <div className="space-y-6">
                     {/* Route Preferences */}
                     <div>
-                      <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                      <h4 className="text-lg font-semibold text-gray-900 mb-3">
                         Route Preferences
                       </h4>
                       <div className="space-y-3">
@@ -516,7 +504,7 @@ const Profile = () => {
 
                     {/* Notifications */}
                     <div>
-                      <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                      <h4 className="text-lg font-semibold text-gray-900 mb-3">
                         Notifications
                       </h4>
                       <div className="space-y-3">
@@ -570,7 +558,7 @@ const Profile = () => {
 
                     {/* Privacy */}
                     <div>
-                      <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                      <h4 className="text-lg font-semibold text-gray-900 mb-3">
                         Privacy
                       </h4>
                       <div className="space-y-3">

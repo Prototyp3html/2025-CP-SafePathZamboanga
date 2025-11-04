@@ -9,48 +9,25 @@ export const NavigationBar = () => {
 
   // Load user data and profile picture
   useEffect(() => {
-    const loadUserProfile = () => {
-      const userData = localStorage.getItem("user_data");
-      if (userData) {
-        const parsedUser = JSON.parse(userData);
-        setUser(parsedUser);
+    const userData = localStorage.getItem("user_data");
+    if (userData) {
+      const parsedUser = JSON.parse(userData);
+      setUser(parsedUser);
 
-        // Check for profile picture using email as consistent key
-        const userKey = parsedUser.email; // Always use email for consistency
+      // Check for profile picture in user data first
+      if (parsedUser.profilePicture) {
+        setProfilePicture(parsedUser.profilePicture);
+      } else {
+        // Fall back to user-specific localStorage
+        const userKey = parsedUser.id || parsedUser.email;
         const userProfilePicture = localStorage.getItem(
           `user_profile_picture_${userKey}`
         );
-        
         if (userProfilePicture) {
           setProfilePicture(userProfilePicture);
-        } else if (parsedUser.profilePicture) {
-          // Migrate from user data to user-specific key
-          setProfilePicture(parsedUser.profilePicture);
-          localStorage.setItem(
-            `user_profile_picture_${userKey}`,
-            parsedUser.profilePicture
-          );
-        } else {
-          setProfilePicture(null);
         }
-      } else {
-        setUser(null);
-        setProfilePicture(null);
       }
-    };
-
-    // Load on mount
-    loadUserProfile();
-
-    // Listen for storage changes (for cross-tab sync)
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "user_data" || e.key?.startsWith("user_profile_picture_")) {
-        loadUserProfile();
-      }
-    };
-
-    window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
+    }
   }, []);
 
   const isActive = (path: string) => {
