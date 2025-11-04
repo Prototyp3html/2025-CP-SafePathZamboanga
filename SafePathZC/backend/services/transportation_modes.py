@@ -12,25 +12,17 @@ OSRM_JEEPNEY_BASE = os.getenv("OSRM_JEEPNEY_URL", "http://localhost:5004")  # NE
 
 # Railway deployment fallbacks - use driving service for unavailable modes
 def get_fallback_osrm_url(preferred_url: str, fallback_url: str = None) -> str:
-    """Get OSRM URL with fallback for Railway deployment
-    
-    This only falls back to driving if:
-    1. We're in production (Railway/deployed)
-    2. AND the preferred URL is localhost (meaning env var not set)
-    """
+    """Get OSRM URL with fallback for Railway deployment"""
     if fallback_url is None:
         fallback_url = OSRM_DRIVING_BASE
     
-    # Only consider it production if Railway environment variable is set
-    is_railway = os.getenv("RAILWAY_ENVIRONMENT") is not None
-    is_localhost_url = preferred_url.startswith("http://localhost:")
+    # For Railway/production, if the specialized service URL is localhost, use fallback
+    # Check for Railway environment or if we're not in local development
+    is_production = os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("PORT") or not preferred_url.startswith("http://localhost:")
     
-    # Only fallback if we're on Railway AND the URL is still localhost (env var not configured)
-    if is_railway and is_localhost_url:
-        print(f"🚨 Railway detected with localhost URL: Using fallback {fallback_url} instead of {preferred_url}")
-        print(f"   💡 TIP: Set environment variable for this OSRM service to use proper routing")
+    if preferred_url.startswith("http://localhost:") and is_production:
+        print(f"🚨 Railway/Production detected: Using fallback {fallback_url} instead of {preferred_url}")
         return fallback_url
-    
     return preferred_url
 
 TRANSPORTATION_MODES = {
@@ -53,8 +45,8 @@ TRANSPORTATION_MODES = {
         'can_use_main_roads': True,
         'can_use_highways': True,
         'speed_factor': 0.9,
-        'osrm_profile': 'bicycle',  # Use bicycle profile (can navigate smaller roads)
-        'osrm_url': get_fallback_osrm_url(OSRM_BICYCLE_BASE, OSRM_DRIVING_BASE),
+        'osrm_profile': 'driving',  # CHANGED: Use driving profile for better compatibility
+        'osrm_url': get_fallback_osrm_url(OSRM_BICYCLE_BASE, OSRM_DRIVING_BASE),  # Fallback to driving
     },
     'walking': {
         'name': 'Walking',
@@ -64,8 +56,8 @@ TRANSPORTATION_MODES = {
         'can_use_main_roads': False,  # Prefer sidewalks
         'can_use_highways': False,
         'speed_factor': 0.1,
-        'osrm_profile': 'foot',  # Use foot profile for pedestrian routing
-        'osrm_url': get_fallback_osrm_url(OSRM_WALKING_BASE, OSRM_DRIVING_BASE),
+        'osrm_profile': 'driving',  # CHANGED: Use driving profile for now
+        'osrm_url': get_fallback_osrm_url(OSRM_WALKING_BASE, OSRM_DRIVING_BASE),  # Fallback to driving
     },
     'public_transport': {
         'name': 'Public Transport',
@@ -75,8 +67,8 @@ TRANSPORTATION_MODES = {
         'can_use_main_roads': True,
         'can_use_highways': True,
         'speed_factor': 0.6,
-        'osrm_profile': 'driving',  # Use driving profile (main roads)
-        'osrm_url': get_fallback_osrm_url(OSRM_JEEPNEY_BASE, OSRM_DRIVING_BASE),
+        'osrm_profile': 'driving',  # CHANGED: Use driving profile instead of jeepney
+        'osrm_url': get_fallback_osrm_url(OSRM_JEEPNEY_BASE, OSRM_DRIVING_BASE),  # Fallback to driving
     },
     'bicycle': {
         'name': 'Bicycle',
@@ -86,8 +78,8 @@ TRANSPORTATION_MODES = {
         'can_use_main_roads': True,
         'can_use_highways': False,
         'speed_factor': 0.3,
-        'osrm_profile': 'bicycle',  # Use bicycle profile
-        'osrm_url': get_fallback_osrm_url(OSRM_BICYCLE_BASE, OSRM_DRIVING_BASE),
+        'osrm_profile': 'driving',  # CHANGED: Use driving profile for better compatibility
+        'osrm_url': get_fallback_osrm_url(OSRM_BICYCLE_BASE, OSRM_DRIVING_BASE),  # Fallback to driving
     },
     'truck': {
         'name': 'Truck',
@@ -97,8 +89,8 @@ TRANSPORTATION_MODES = {
         'can_use_main_roads': True,
         'can_use_highways': True,
         'speed_factor': 0.7,
-        'osrm_profile': 'driving',  # Use driving profile (trucks use main roads)
-        'osrm_url': get_fallback_osrm_url(OSRM_TRUCK_BASE, OSRM_DRIVING_BASE),
+        'osrm_profile': 'driving',  # CHANGED: Use driving profile instead of truck
+        'osrm_url': get_fallback_osrm_url(OSRM_TRUCK_BASE, OSRM_DRIVING_BASE),  # Fallback to driving
     }
 }
 
