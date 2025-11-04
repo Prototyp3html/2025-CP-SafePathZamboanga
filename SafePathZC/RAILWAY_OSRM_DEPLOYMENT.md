@@ -7,6 +7,7 @@ Your backend is on Railway and needs access to OSRM routing services. Here's how
 ### **Option 1: Deploy All 5 OSRM Services (Recommended)**
 
 #### 1. **Login to Railway**
+
 ```bash
 # Install Railway CLI (if not already installed)
 npm install -g @railway/cli
@@ -16,6 +17,7 @@ railway login
 ```
 
 #### 2. **Link to Your Project**
+
 ```bash
 cd c:\xampp\htdocs\2025-CP-SafePathZamboanga\SafePathZC
 railway link
@@ -23,6 +25,7 @@ railway link
 ```
 
 #### 3. **Deploy OSRM Driving Service**
+
 ```bash
 cd osrm-services/driving
 railway up --service osrm-driving
@@ -31,24 +34,28 @@ railway up --service osrm-driving
 After deployment, Railway will give you a URL like: `https://osrm-driving-production.up.railway.app`
 
 #### 4. **Deploy OSRM Walking Service**
+
 ```bash
 cd ../walking
 railway up --service osrm-walking
 ```
 
 #### 5. **Deploy OSRM Bicycle Service**
+
 ```bash
 cd ../bicycle
 railway up --service osrm-bicycle
 ```
 
 #### 6. **Deploy OSRM Truck Service**
+
 ```bash
 cd ../truck
 railway up --service osrm-truck
 ```
 
 #### 7. **Deploy OSRM Jeepney Service**
+
 ```bash
 cd ../jeepney
 railway up --service osrm-jeepney
@@ -97,6 +104,7 @@ Replace the URLs with your actual Railway deployment URLs.
 ### **Step 4: Repeat for All Services**
 
 Create 4 more services:
+
 - `osrm-walking` (root: `SafePathZC/osrm-services/walking`)
 - `osrm-bicycle` (root: `SafePathZC/osrm-services/bicycle`)
 - `osrm-truck` (root: `SafePathZC/osrm-services/truck`)
@@ -119,10 +127,12 @@ OSRM_JEEPNEY_URL=https://osrm-jeepney-production.up.railway.app
 ## **Cost Estimate**
 
 Railway Free Tier:
+
 - **$5 free credit/month**
 - **500 hours execution time**
 
 Each OSRM service uses ~512MB RAM. Estimated cost:
+
 - **5 OSRM services**: ~$20-30/month
 - **1 Backend**: ~$5-10/month
 - **1 Database**: ~$5-10/month
@@ -145,6 +155,7 @@ OSRM_JEEPNEY_URL=https://router.project-osrm.org
 ```
 
 **⚠️ Limitation**: Public OSRM doesn't have your custom Zamboanga profiles, so:
+
 - ✅ Routes will work
 - ❌ But truck/jeepney will use generic driving routes
 - ❌ No custom Zamboanga road optimizations
@@ -170,16 +181,19 @@ If you get JSON responses with routes, it's working! 🎉
 ## **Troubleshooting**
 
 ### Service won't start?
+
 - Check Railway logs for errors
 - Verify Dockerfile is correct
 - Ensure OSRM data files are included (27 files per service)
 
 ### Routes still identical?
+
 - Verify environment variables are set in backend service
 - Check backend logs: Should say "Using Railway URL" not "Using localhost"
 - Restart backend service after setting env vars
 
 ### Out of memory errors?
+
 - Increase RAM allocation in Railway settings (512MB → 1GB)
 - Or deploy fewer services (just driving + walking + bicycle)
 
