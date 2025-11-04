@@ -166,6 +166,13 @@ export const RouteModal = ({
     return String.fromCharCode(67 + index); // C is 67 in ASCII
   };
 
+  // Check if dark mode is active
+  const isDarkMode = document.documentElement.classList.contains('dark');
+  const bgColor = isDarkMode ? '#1f2937' : 'white'; // gray-800 or white
+  const textColor = isDarkMode ? '#f3f4f6' : '#333'; // gray-100 or dark gray
+  const borderColor = isDarkMode ? '#374151' : '#e5e7eb'; // gray-700 or gray-200
+  const labelColor = isDarkMode ? '#d1d5db' : '#333'; // gray-300 or dark
+
   return (
     <div
       style={{
@@ -186,7 +193,7 @@ export const RouteModal = ({
           left: 0,
           bottom: 0,
           width: "400px",
-          background: "white",
+          background: bgColor,
           boxShadow: "2px 0 20px rgba(0,0,0,0.15)",
           overflow: "hidden",
           animation: "slideInLeft 0.3s ease-out",
@@ -251,12 +258,12 @@ export const RouteModal = ({
         >
           {/* From Input */}
           <div style={{ marginBottom: "20px", position: "relative" }}>
-            <label
+              <label
               style={{
                 display: "block",
                 marginBottom: "8px",
                 fontWeight: "bold",
-                color: "#333",
+                color: labelColor,
                 fontSize: "14px",
               }}
             >
@@ -285,11 +292,13 @@ export const RouteModal = ({
                 style={{
                   width: "100%",
                   padding: "12px 12px 12px 32px",
-                  border: "2px solid #e5e7eb",
+                  border: `2px solid ${borderColor}`,
                   borderRadius: "8px",
                   fontSize: "14px",
                   outline: "none",
                   boxSizing: "border-box",
+                  background: bgColor,
+                  color: textColor,
                 }}
                 onFocus={() =>
                   setShowStartSuggestions(startSuggestions.length > 0)
