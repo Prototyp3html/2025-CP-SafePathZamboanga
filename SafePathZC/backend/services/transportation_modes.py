@@ -6,25 +6,46 @@ import os
 # Get OSRM URLs from environment variables with Railway-friendly fallbacks
 def normalize_osrm_url(url: str) -> str:
     """Normalize OSRM URL to ensure it has proper protocol"""
+    print(f"🔍 normalize_osrm_url input: '{url}' (type: {type(url)})")
+    
     if not url:
         return "http://localhost:5000"
     
+    # Clean up malformed URLs that might have leading equals signs or whitespace
+    original_url = url
+    url = url.strip()
+    if url.startswith('='):
+        url = url[1:]  # Remove leading equals sign
+        print(f"🧹 Removed leading equals sign: '{original_url}' -> '{url}'")
+    
     # If URL already has protocol, return as-is
     if url.startswith(('http://', 'https://')):
+        print(f"✅ URL already has protocol: '{url}'")
         return url
     
     # If it looks like a Railway domain, add https
     if 'railway.app' in url or 'railway.com' in url:
-        return f"https://{url}"
+        result = f"https://{url}"
+        print(f"🚄 Added https to Railway domain: '{url}' -> '{result}'")
+        return result
     
     # Default to http for localhost or other domains
-    return f"http://{url}"
+    result = f"http://{url}"
+    print(f"🏠 Added http to local/other domain: '{url}' -> '{result}'")
+    return result
 
 OSRM_DRIVING_BASE = normalize_osrm_url(os.getenv("OSRM_DRIVING_URL", "http://localhost:5000"))
 OSRM_WALKING_BASE = normalize_osrm_url(os.getenv("OSRM_WALKING_URL", "http://localhost:5001"))
 OSRM_BICYCLE_BASE = normalize_osrm_url(os.getenv("OSRM_BICYCLE_URL", "http://localhost:5002"))
-OSRM_TRUCK_BASE = normalize_osrm_url(os.getenv("OSRM_TRUCK_URL", "http://localhost:5003"))  # NEW: Truck OSRM endpoint
-OSRM_JEEPNEY_BASE = normalize_osrm_url(os.getenv("OSRM_JEEPNEY_URL", "http://localhost:5004"))  # NEW: Jeepney OSRM endpoint
+
+# Debug the problematic ones
+jeepney_raw = os.getenv("OSRM_JEEPNEY_URL", "http://localhost:5004")
+truck_raw = os.getenv("OSRM_TRUCK_URL", "http://localhost:5003")
+print(f"🔍 Raw OSRM_JEEPNEY_URL: '{jeepney_raw}' (len: {len(jeepney_raw)})")
+print(f"🔍 Raw OSRM_TRUCK_URL: '{truck_raw}' (len: {len(truck_raw)})")
+
+OSRM_TRUCK_BASE = normalize_osrm_url(truck_raw)  # NEW: Truck OSRM endpoint
+OSRM_JEEPNEY_BASE = normalize_osrm_url(jeepney_raw)  # NEW: Jeepney OSRM endpoint
 
 # Railway deployment fallbacks - use driving service for unavailable modes
 def get_fallback_osrm_url(preferred_url: str, fallback_url: str = None) -> str:

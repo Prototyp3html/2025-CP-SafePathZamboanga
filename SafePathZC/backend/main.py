@@ -2838,6 +2838,13 @@ async def startup_event():
         # Log OSRM URL configuration
         from services.transportation_modes import TRANSPORTATION_MODES, get_osrm_endpoint_for_mode
         print("🔗 OSRM Configuration:")
+        print("📋 Raw Environment Variables:")
+        print(f"  OSRM_DRIVING_URL: {os.getenv('OSRM_DRIVING_URL', 'NOT_SET')}")
+        print(f"  OSRM_WALKING_URL: {os.getenv('OSRM_WALKING_URL', 'NOT_SET')}")
+        print(f"  OSRM_BICYCLE_URL: {os.getenv('OSRM_BICYCLE_URL', 'NOT_SET')}")
+        print(f"  OSRM_TRUCK_URL: {os.getenv('OSRM_TRUCK_URL', 'NOT_SET')}")
+        print(f"  OSRM_JEEPNEY_URL: {os.getenv('OSRM_JEEPNEY_URL', 'NOT_SET')}")
+        print("🌐 Normalized OSRM Endpoints:")
         for mode in ['car', 'motorcycle', 'bicycle', 'walking', 'truck', 'jeepney']:
             if mode in TRANSPORTATION_MODES:
                 endpoint = get_osrm_endpoint_for_mode(mode)
