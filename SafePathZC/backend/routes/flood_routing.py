@@ -148,7 +148,9 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                 osrm_endpoint = get_osrm_endpoint_for_mode(request.transport_mode)
                 osrm_url = f"{osrm_endpoint}/{coords_str}"
                 
-                # Debug logging
+                # Debug logging - show both the endpoint and final URL
+                logger.info(f"🚗 Transport mode: {request.transport_mode}")
+                logger.info(f"🔗 OSRM Endpoint: {osrm_endpoint}")
                 logger.info(f"🔗 OSRM URL: {osrm_url}")
                 logger.info(f"📍 Coordinates: {coords_str}")
                 

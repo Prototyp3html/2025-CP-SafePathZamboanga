@@ -2835,6 +2835,14 @@ async def startup_event():
         flood_service = get_flood_service()
         print(f"✓ Flood service loaded with {len(flood_service.road_segments)} road segments from terrain_roads.geojson")
         
+        # Log OSRM URL configuration
+        from services.transportation_modes import TRANSPORTATION_MODES, get_osrm_endpoint_for_mode
+        print("🔗 OSRM Configuration:")
+        for mode in ['car', 'motorcycle', 'bicycle', 'walking', 'truck', 'jeepney']:
+            if mode in TRANSPORTATION_MODES:
+                endpoint = get_osrm_endpoint_for_mode(mode)
+                print(f"  {mode}: {endpoint}")
+        
     except Exception as e:
         print(f"✗ Failed to load routing services: {e}")
             

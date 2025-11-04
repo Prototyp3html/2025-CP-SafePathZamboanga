@@ -4,11 +4,27 @@
 import os
 
 # Get OSRM URLs from environment variables with Railway-friendly fallbacks
-OSRM_DRIVING_BASE = os.getenv("OSRM_DRIVING_URL", "http://localhost:5000")
-OSRM_WALKING_BASE = os.getenv("OSRM_WALKING_URL", "http://localhost:5001")
-OSRM_BICYCLE_BASE = os.getenv("OSRM_BICYCLE_URL", "http://localhost:5002")
-OSRM_TRUCK_BASE = os.getenv("OSRM_TRUCK_URL", "http://localhost:5003")  # NEW: Truck OSRM endpoint
-OSRM_JEEPNEY_BASE = os.getenv("OSRM_JEEPNEY_URL", "http://localhost:5004")  # NEW: Jeepney OSRM endpoint
+def normalize_osrm_url(url: str) -> str:
+    """Normalize OSRM URL to ensure it has proper protocol"""
+    if not url:
+        return "http://localhost:5000"
+    
+    # If URL already has protocol, return as-is
+    if url.startswith(('http://', 'https://')):
+        return url
+    
+    # If it looks like a Railway domain, add https
+    if 'railway.app' in url or 'railway.com' in url:
+        return f"https://{url}"
+    
+    # Default to http for localhost or other domains
+    return f"http://{url}"
+
+OSRM_DRIVING_BASE = normalize_osrm_url(os.getenv("OSRM_DRIVING_URL", "http://localhost:5000"))
+OSRM_WALKING_BASE = normalize_osrm_url(os.getenv("OSRM_WALKING_URL", "http://localhost:5001"))
+OSRM_BICYCLE_BASE = normalize_osrm_url(os.getenv("OSRM_BICYCLE_URL", "http://localhost:5002"))
+OSRM_TRUCK_BASE = normalize_osrm_url(os.getenv("OSRM_TRUCK_URL", "http://localhost:5003"))  # NEW: Truck OSRM endpoint
+OSRM_JEEPNEY_BASE = normalize_osrm_url(os.getenv("OSRM_JEEPNEY_URL", "http://localhost:5004"))  # NEW: Jeepney OSRM endpoint
 
 # Railway deployment fallbacks - use driving service for unavailable modes
 def get_fallback_osrm_url(preferred_url: str, fallback_url: str = None) -> str:
@@ -143,13 +159,13 @@ def get_osrm_endpoint_for_mode(transport_mode: str) -> str:
     Get the appropriate OSRM endpoint for the transportation mode.
     
     Returns:
-        OSRM base URL for the mode
+        OSRM base URL for the mode with proper protocol
     """
     if transport_mode not in TRANSPORTATION_MODES:
         transport_mode = 'car'  # fallback
     
     config = TRANSPORTATION_MODES[transport_mode]
-    base_url = config['osrm_url']
+    base_url = config['osrm_url']  # Already normalized with protocol
     profile = config['osrm_profile']
     
     return f"{base_url}/route/v1/{profile}"
