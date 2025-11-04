@@ -284,6 +284,36 @@ app.include_router(forum_router)
 app.include_router(flood_routing_router)  # Flood-aware routing with 3 distinct routes
 app.include_router(geocoding_router, prefix="/api/geocoding", tags=["geocoding"])
 
+# Debug endpoint to check OSRM configuration
+@app.get("/debug/osrm-config")
+async def debug_osrm_config():
+    """Debug endpoint to check OSRM service configuration"""
+    from services.transportation_modes import TRANSPORTATION_MODES, OSRM_DRIVING_BASE, OSRM_TRUCK_BASE, OSRM_JEEPNEY_BASE, OSRM_WALKING_BASE, OSRM_BICYCLE_BASE
+    
+    return {
+        "osrm_base_urls": {
+            "driving": OSRM_DRIVING_BASE,
+            "truck": OSRM_TRUCK_BASE,
+            "jeepney": OSRM_JEEPNEY_BASE,
+            "walking": OSRM_WALKING_BASE,
+            "bicycle": OSRM_BICYCLE_BASE
+        },
+        "transportation_modes": {
+            mode: {
+                "osrm_url": config["osrm_url"],
+                "osrm_profile": config["osrm_profile"]
+            }
+            for mode, config in TRANSPORTATION_MODES.items()
+        },
+        "environment_variables": {
+            "OSRM_DRIVING_URL": os.getenv("OSRM_DRIVING_URL", "NOT SET"),
+            "OSRM_TRUCK_URL": os.getenv("OSRM_TRUCK_URL", "NOT SET"),
+            "OSRM_JEEPNEY_URL": os.getenv("OSRM_JEEPNEY_URL", "NOT SET"),
+            "OSRM_WALKING_URL": os.getenv("OSRM_WALKING_URL", "NOT SET"),
+            "OSRM_BICYCLE_URL": os.getenv("OSRM_BICYCLE_URL", "NOT SET")
+        }
+    }
+
 # Dependency to get DB session
 def get_db():
     db = SessionLocal()

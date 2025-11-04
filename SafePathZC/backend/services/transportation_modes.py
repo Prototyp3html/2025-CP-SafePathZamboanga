@@ -47,6 +47,17 @@ print(f"🔍 Raw OSRM_TRUCK_URL: '{truck_raw}' (len: {len(truck_raw)})")
 OSRM_TRUCK_BASE = normalize_osrm_url(truck_raw)  # NEW: Truck OSRM endpoint
 OSRM_JEEPNEY_BASE = normalize_osrm_url(jeepney_raw)  # NEW: Jeepney OSRM endpoint
 
+# Print all OSRM configurations at startup
+print("\n" + "="*80)
+print("🚀 OSRM SERVICE CONFIGURATION")
+print("="*80)
+print(f"OSRM_DRIVING_BASE:  {OSRM_DRIVING_BASE}")
+print(f"OSRM_WALKING_BASE:  {OSRM_WALKING_BASE}")
+print(f"OSRM_BICYCLE_BASE:  {OSRM_BICYCLE_BASE}")
+print(f"OSRM_TRUCK_BASE:    {OSRM_TRUCK_BASE}")
+print(f"OSRM_JEEPNEY_BASE:  {OSRM_JEEPNEY_BASE}")
+print("="*80 + "\n")
+
 # Railway deployment fallbacks - use driving service for unavailable modes
 def get_fallback_osrm_url(preferred_url: str, fallback_url: str = None) -> str:
     """Get OSRM URL with fallback for Railway deployment"""
@@ -189,7 +200,12 @@ def get_osrm_endpoint_for_mode(transport_mode: str) -> str:
     base_url = config['osrm_url']  # Already normalized with protocol
     profile = config['osrm_profile']
     
-    return f"{base_url}/route/v1/{profile}"
+    endpoint = f"{base_url}/route/v1/{profile}"
+    print(f"🎯 OSRM Endpoint for '{transport_mode}': {endpoint}")
+    print(f"   Base URL: {base_url}")
+    print(f"   Profile: {profile}")
+    
+    return endpoint
 
 def adjust_route_for_transportation_mode(route_data: dict, transport_mode: str) -> dict:
     """
