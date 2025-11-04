@@ -1395,6 +1395,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const layersRef = useRef<Record<string, L.TileLayer>>({});
   const terrainPopupRef = useRef<L.CircleMarker | null>(null);
   const terrainOverlayRef = useRef<L.LayerGroup | null>(null);
+  const floodHeatmapRef = useRef<L.LayerGroup | null>(null);
   const routeLayersRef = useRef<L.Polyline[]>([]);
   const placeMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const placeDataRef = useRef<Map<string, PlaceDefinition>>(new Map());
@@ -7606,16 +7607,113 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     terrainOverlayRef.current.addTo(mapRef.current);
   };
 
+  // Create interactive flood risk heatmap from terrain data
+  const createFloodRiskHeatmap = () => {
+    if (!mapRef.current || !terrainRoadsData) return;
+
+    // Remove existing heatmap
+    if (floodHeatmapRef.current) {
+      mapRef.current.removeLayer(floodHeatmapRef.current);
+    }
+
+    const heatmapLayers: L.Polyline[] = [];
+
+    // Color code roads based on flood risk and elevation
+    terrainRoadsData.features.forEach((feature) => {
+      const isFlooded = feature.properties.flooded === "1";
+      const elevation = feature.properties.elev_mean;
+      const length = feature.properties.length_m;
+      const hasValidElevation = elevation !== null && elevation !== undefined && elevation > -9999;
+      const hasValidLength = length !== null && length !== undefined && length > 0;
+
+      // Determine color based on flood status and elevation
+      let color: string;
+      let riskLevel: string;
+      let elevationDisplay: string;
+
+      if (isFlooded) {
+        // Flooded roads are always red, regardless of elevation data
+        color = "#FF4444"; // Red for flooded areas
+        riskLevel = "⚠️ High Flood Risk";
+        elevationDisplay = hasValidElevation ? `${elevation.toFixed(1)}m` : "Low-lying area";
+      } else if (hasValidElevation && elevation > 20) {
+        // High elevation roads are green (safe)
+        color = "#00FF00"; // Green for safe (high elevation)
+        riskLevel = "✅ Safe (High Ground)";
+        elevationDisplay = `${elevation.toFixed(1)}m`;
+      } else if (hasValidElevation && elevation > 10) {
+        // Medium elevation roads are orange (moderate risk)
+        color = "#FFA500"; // Orange for moderate risk
+        riskLevel = "⚡ Moderate Risk";
+        elevationDisplay = `${elevation.toFixed(1)}m`;
+      } else if (hasValidElevation && elevation >= 0) {
+        // Low elevation roads are yellow
+        color = "#FFFF00"; // Yellow for low elevation
+        riskLevel = "⚠️ Low Elevation";
+        elevationDisplay = `${elevation.toFixed(1)}m`;
+      } else {
+        // Non-flooded roads with unknown elevation - assume moderate safety (yellow)
+        color = "#FFFF00"; // Yellow for unknown but not flooded
+        riskLevel = "⚠️ Unknown Elevation (Not Flooded)";
+        elevationDisplay = "Unknown";
+      }
+
+      const line = L.polyline(
+        feature.geometry.coordinates.map((coord) => [coord[1], coord[0]]),
+        {
+          color: color,
+          weight: 3,
+          opacity: 0.7,
+          interactive: true,
+        }
+      ).bindPopup(
+        `
+        <div style="font-family: system-ui, sans-serif; min-width: 180px;">
+          <b style="font-size: 14px; color: #2c3e50;">🗺️ Road Information</b>
+          <hr style="margin: 8px 0; border: none; border-top: 1px solid #e0e0e0;">
+          <div style="font-size: 12px; line-height: 1.6;">
+            <div style="margin: 4px 0;">
+              <b>Status:</b> <span style="color: ${color};">${riskLevel}</span>
+            </div>
+            <div style="margin: 4px 0;">
+              <b>Elevation:</b> ${elevationDisplay}
+            </div>
+            <div style="margin: 4px 0;">
+              <b>Length:</b> ${hasValidLength ? length.toFixed(0) + "m" : "Unknown"}
+            </div>
+            <div style="margin: 4px 0;">
+              <b>Flood Status:</b> ${isFlooded ? "Flood Prone ⚠️" : "Safe ✓"}
+            </div>
+          </div>
+        </div>
+      `,
+        {
+          maxWidth: 250,
+        }
+      );
+
+      heatmapLayers.push(line);
+    });
+
+    floodHeatmapRef.current = L.layerGroup(heatmapLayers);
+    floodHeatmapRef.current.addTo(mapRef.current);
+
+    console.log(`✅ Created flood risk heatmap with ${heatmapLayers.length} road segments`);
+  };
+
   // DEM overlay doesn't need to update on map movement (it's a static image)
   // Only toggle visibility based on showTerrainOverlay state
 
   // Handle terrain overlay toggle
   useEffect(() => {
     if (showTerrainOverlay && mapRef.current) {
+      console.log("🎯 Terrain overlay enabled");
       createTerrainOverlay();
-    } else if (terrainOverlayRef.current && mapRef.current) {
-      mapRef.current.removeLayer(terrainOverlayRef.current);
-      terrainOverlayRef.current = null;
+    } else if (mapRef.current) {
+      if (terrainOverlayRef.current) {
+        mapRef.current.removeLayer(terrainOverlayRef.current);
+        terrainOverlayRef.current = null;
+      }
     }
   }, [showTerrainOverlay]);
 
@@ -9053,6 +9151,19 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       mapRef.current!.removeLayer(terrainPopupRef.current);
       terrainPopupRef.current = null;
     }
+
+    // Clear terrain overlay and flood heatmap if clearing all
+    if (terrainOverlayRef.current && mapRef.current) {
+      mapRef.current.removeLayer(terrainOverlayRef.current);
+      terrainOverlayRef.current = null;
+    }
+    if (floodHeatmapRef.current && mapRef.current) {
+      mapRef.current.removeLayer(floodHeatmapRef.current);
+      floodHeatmapRef.current = null;
+    }
+
+    // Reset terrain overlay state
+    setShowTerrainOverlay(false);
   };
 
   return (
@@ -9687,138 +9798,88 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             </h4>
 
             <div
-              style={{ display: "flex", flexDirection: "column", gap: "4px" }}
+              style={{ display: "flex", flexDirection: "column", gap: "6px" }}
             >
               <div
                 style={{ display: "flex", alignItems: "center", gap: "8px" }}
               >
                 <div
                   style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#0066FF",
+                    width: "20px",
+                    height: "14px",
+                    background: "#e8f4e8",
                     borderRadius: "2px",
+                    border: "1px solid rgba(0,0,0,0.2)",
                   }}
                 ></div>
-                <span>0-10m (Coastal)</span>
+                <span>0-50m (Low/Coastal)</span>
               </div>
               <div
                 style={{ display: "flex", alignItems: "center", gap: "8px" }}
               >
                 <div
                   style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#0099FF",
+                    width: "20px",
+                    height: "14px",
+                    background: "#b8d98e",
                     borderRadius: "2px",
+                    border: "1px solid rgba(0,0,0,0.2)",
                   }}
                 ></div>
-                <span>10-25m (Low Plains)</span>
+                <span>50-150m (Plains)</span>
               </div>
               <div
                 style={{ display: "flex", alignItems: "center", gap: "8px" }}
               >
                 <div
                   style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#00CCFF",
+                    width: "20px",
+                    height: "14px",
+                    background: "#d4c896",
                     borderRadius: "2px",
+                    border: "1px solid rgba(0,0,0,0.2)",
                   }}
                 ></div>
-                <span>25-40m (Plains)</span>
+                <span>150-300m (Hills)</span>
               </div>
               <div
                 style={{ display: "flex", alignItems: "center", gap: "8px" }}
               >
                 <div
                   style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#00FF99",
+                    width: "20px",
+                    height: "14px",
+                    background: "#c4a57b",
                     borderRadius: "2px",
+                    border: "1px solid rgba(0,0,0,0.2)",
                   }}
                 ></div>
-                <span>40-60m (Low Hills)</span>
+                <span>300-600m (Mountains)</span>
               </div>
               <div
                 style={{ display: "flex", alignItems: "center", gap: "8px" }}
               >
                 <div
                   style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#00FF33",
+                    width: "20px",
+                    height: "14px",
+                    background: "#9d8b70",
                     borderRadius: "2px",
+                    border: "1px solid rgba(0,0,0,0.2)",
                   }}
                 ></div>
-                <span>60-80m (Hills)</span>
+                <span>600m+ (High Mountains)</span>
               </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <div
-                  style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#66FF00",
-                    borderRadius: "2px",
-                  }}
-                ></div>
-                <span>80-110m (Mid Hills)</span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <div
-                  style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#CCFF00",
-                    borderRadius: "2px",
-                  }}
-                ></div>
-                <span>110-140m (High Hills)</span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <div
-                  style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#FFCC00",
-                    borderRadius: "2px",
-                  }}
-                ></div>
-                <span>140-170m (Foothills)</span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <div
-                  style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#FF6600",
-                    borderRadius: "2px",
-                  }}
-                ></div>
-                <span>170-200m (Mountains)</span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <div
-                  style={{
-                    width: "16px",
-                    height: "12px",
-                    background: "#FF0000",
-                    borderRadius: "2px",
-                  }}
-                ></div>
-                <span>200m+ (Peaks)</span>
-              </div>
+            </div>
+            
+            <div style={{
+              marginTop: "10px",
+              paddingTop: "8px",
+              borderTop: "1px solid rgba(0,0,0,0.1)",
+              fontSize: "11px",
+              color: "#666"
+            }}>
+              🌍 Topographic heatmap overlay
             </div>
           </div>
         )}
