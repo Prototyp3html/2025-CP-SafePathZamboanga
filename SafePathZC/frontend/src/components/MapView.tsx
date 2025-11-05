@@ -8432,8 +8432,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         const isDarkMode = document.documentElement.classList.contains('dark');
 
         btn.style.cssText = `
-            background: ${isDarkMode ? '#1f2937' : '#ffffff'};
-            border: 2px solid ${isDarkMode ? '#4b5563' : '#000000'};
+            background: #ffffff;
+            border: 2px solid #000000;
             width: 160px;
             height: 37px;
             cursor: pointer;
@@ -8465,6 +8465,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         // Add text
         const text = document.createElement("span");
         text.innerText = "Show Terrain";
+        text.style.color = isDarkMode ? '#000000' : '#000000';
 
         // Append elements
         container.appendChild(icon);
@@ -8479,12 +8480,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           );
           setShowTerrainOverlay((prev) => {
             const newState = !prev;
-            const isDarkMode = document.documentElement.classList.contains('dark');
             console.log("🔄 Setting terrain overlay to:", newState);
             text.innerText = newState ? "Hide Terrain" : "Show Terrain";
-           btn.style.background = newState 
-              ? (isDarkMode ? '#374151' : '#f0f0f0')
-              : (isDarkMode ? '#1f2937' : '#ffffff');
+            btn.style.background = newState ? '#f0f0f0' : '#ffffff';
             return newState;
           });
         };
@@ -10172,10 +10170,18 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       )}
 
       {/* Flood-Risk Route Details Modal */}
-      {showRouteModal && routeDetails && (
+      {showRouteModal && routeDetails && (() => {
+        const isDarkMode = document.documentElement.classList.contains('dark');
+        const modalBg = isDarkMode ? '#1f2937' : 'white';
+        const textColor = isDarkMode ? '#f3f4f6' : '#2c3e50';
+        const secondaryTextColor = isDarkMode ? '#9ca3af' : '#666';
+        const borderColor = isDarkMode ? '#374151' : '#f0f0f0';
+        const cardBg = isDarkMode ? '#374151' : '#f8f9fa';
+        
+        return (
         <div
           style={{
-            backgroundColor: "white",
+            backgroundColor: modalBg,
             borderRadius: "10px",
             boxShadow: "0 5px 20px rgba(0,0,0,0.2)",
             padding: "20px",
@@ -10193,7 +10199,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               border: "none",
               fontSize: "1.5rem",
               cursor: "pointer",
-              color: "#888",
+              color: isDarkMode ? '#9ca3af' : '#888',
               fontWeight: "bold",
             }}
           >
@@ -10204,8 +10210,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             style={{
               marginTop: "0",
               marginBottom: "15px",
-              color: "#2c3e50",
-              borderBottom: "2px solid #f0f0f0",
+              color: textColor,
+              borderBottom: `2px solid ${borderColor}`,
               paddingBottom: "10px",
             }}
           >
@@ -10217,14 +10223,14 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           {safestFastestMode && (
             <div
               style={{
-                background: "#e3f2fd",
+                background: isDarkMode ? '#1e3a5f' : '#e3f2fd',
                 padding: "12px",
                 borderRadius: "6px",
                 marginBottom: "15px",
-                border: "1px solid #2196f3",
+                border: `1px solid ${isDarkMode ? '#3b82f6' : '#2196f3'}`,
               }}
             >
-              <div style={{ fontSize: "0.9rem", color: "#1565c0" }}>
+              <div style={{ fontSize: "0.9rem", color: isDarkMode ? '#93c5fd' : '#1565c0' }}>
                 <strong>ℹ️ Geographic Constraint Notice:</strong> Due to
                 identical terrain and distances, we've optimized routes for
                 safety vs speed instead of flood risk variation.
@@ -10237,20 +10243,20 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               display: "flex",
               justifyContent: "space-between",
               marginBottom: "20px",
-              background: "#f8f9fa",
+              background: cardBg,
               padding: "15px",
               borderRadius: "8px",
             }}
           >
             <div>
               <h3 style={{ margin: "0 0 5px 0", color: "#27ae60" }}>From:</h3>
-              <p style={{ margin: 0, fontWeight: "bold" }}>
+              <p style={{ margin: 0, fontWeight: "bold", color: textColor }}>
                 {routeDetails.startName}
               </p>
             </div>
             <div style={{ textAlign: "right" }}>
               <h3 style={{ margin: "0 0 5px 0", color: "#e74c3c" }}>To:</h3>
-              <p style={{ margin: 0, fontWeight: "bold" }}>
+              <p style={{ margin: 0, fontWeight: "bold", color: textColor }}>
                 {routeDetails.endName}
               </p>
             </div>
@@ -10266,11 +10272,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                 border:
                   selectedRoute === "safe"
                     ? "3px solid #27ae60"
-                    : "2px solid #ddd",
+                    : `2px solid ${isDarkMode ? '#4b5563' : '#ddd'}`,
                 borderRadius: "8px",
                 padding: "15px",
                 cursor: "pointer",
-                background: selectedRoute === "safe" ? "#f8fff8" : "white",
+                background: selectedRoute === "safe" 
+                  ? (isDarkMode ? '#1e4d2b' : '#f8fff8')
+                  : (isDarkMode ? '#374151' : 'white'),
                 transition: "all 0.3s ease",
               }}
               onClick={() => handleRouteSelection("safe")}
@@ -10299,10 +10307,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                   </h3>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: "1.2rem", fontWeight: "bold" }}>
+                  <div style={{ fontSize: "1.2rem", fontWeight: "bold", color: textColor }}>
                     {routeDetails.safeRoute.distance}
                   </div>
-                  <div style={{ fontSize: "0.9rem", color: "#666" }}>
+                  <div style={{ fontSize: "0.9rem", color: secondaryTextColor }}>
                     {routeDetails.safeRoute.time}
                   </div>
                 </div>
@@ -10322,7 +10330,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     : routeDetails.safeRoute.riskLevel}
                 </span>
               </div>
-              <p style={{ margin: 0, fontSize: "0.9rem", color: "#666" }}>
+              <p style={{ margin: 0, fontSize: "0.9rem", color: secondaryTextColor }}>
                 {safestFastestMode
                   ? "Prioritizes main roads and safer intersections for maximum security"
                   : routeDetails.safeRoute.description}
@@ -10335,12 +10343,14 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                 border:
                   selectedRoute === "manageable"
                     ? "3px solid #f39c12"
-                    : "2px solid #ddd",
+                    : `2px solid ${isDarkMode ? '#4b5563' : '#ddd'}`,
                 borderRadius: "8px",
                 padding: "15px",
                 cursor: "pointer",
                 background:
-                  selectedRoute === "manageable" ? "#fffbf0" : "white",
+                  selectedRoute === "manageable" 
+                    ? (isDarkMode ? '#3d2f0f' : '#fffbf0')
+                    : (isDarkMode ? '#374151' : 'white'),
                 transition: "all 0.3s ease",
               }}
               onClick={() => handleRouteSelection("manageable")}
@@ -10371,10 +10381,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                   </h3>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: "1.2rem", fontWeight: "bold" }}>
+                  <div style={{ fontSize: "1.2rem", fontWeight: "bold", color: textColor }}>
                     {routeDetails.manageableRoute.distance}
                   </div>
-                  <div style={{ fontSize: "0.9rem", color: "#666" }}>
+                  <div style={{ fontSize: "0.9rem", color: secondaryTextColor }}>
                     {routeDetails.manageableRoute.time}
                   </div>
                 </div>
@@ -10394,7 +10404,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     : routeDetails.manageableRoute.riskLevel}
                 </span>
               </div>
-              <p style={{ margin: 0, fontSize: "0.9rem", color: "#666" }}>
+              <p style={{ margin: 0, fontSize: "0.9rem", color: secondaryTextColor }}>
                 {safestFastestMode
                   ? "Takes the most direct path to minimize travel time"
                   : routeDetails.manageableRoute.description}
@@ -10407,11 +10417,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                 border:
                   selectedRoute === "prone"
                     ? "3px solid #e74c3c"
-                    : "2px solid #ddd",
+                    : `2px solid ${isDarkMode ? '#4b5563' : '#ddd'}`,
                 borderRadius: "8px",
                 padding: "15px",
                 cursor: "pointer",
-                background: selectedRoute === "prone" ? "#fff5f5" : "white",
+                background: selectedRoute === "prone" 
+                  ? (isDarkMode ? '#3d1f1f' : '#fff5f5')
+                  : (isDarkMode ? '#374151' : 'white'),
                 transition: "all 0.3s ease",
               }}
               onClick={() => handleRouteSelection("prone")}
@@ -10440,10 +10452,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                   </h3>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: "1.2rem", fontWeight: "bold" }}>
+                  <div style={{ fontSize: "1.2rem", fontWeight: "bold", color: textColor }}>
                     {routeDetails.proneRoute.distance}
                   </div>
-                  <div style={{ fontSize: "0.9rem", color: "#666" }}>
+                  <div style={{ fontSize: "0.9rem", color: secondaryTextColor }}>
                     {routeDetails.proneRoute.time}
                   </div>
                 </div>
@@ -10461,7 +10473,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                   {routeDetails.proneRoute.riskLevel}
                 </span>
               </div>
-              <p style={{ margin: 0, fontSize: "0.9rem", color: "#666" }}>
+              <p style={{ margin: 0, fontSize: "0.9rem", color: secondaryTextColor }}>
                 {routeDetails.proneRoute.description}
               </p>
             </div>
@@ -10472,17 +10484,17 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               style={{
                 marginTop: "20px",
                 padding: "15px",
-                background: "#e8f4f8",
+                background: isDarkMode ? '#1e3a5f' : '#e8f4f8',
                 borderRadius: "8px",
                 borderLeft: "4px solid #3498db",
               }}
             >
-              <h4 style={{ margin: "0 0 10px 0", color: "#2c3e50" }}>
+              <h4 style={{ margin: "0 0 10px 0", color: textColor }}>
                 📍 Selected Route:{" "}
                 {selectedRoute.charAt(0).toUpperCase() + selectedRoute.slice(1)}{" "}
                 Route
               </h4>
-              <p style={{ margin: "0", fontSize: "0.9rem", color: "#666" }}>
+              <p style={{ margin: "0", fontSize: "0.9rem", color: secondaryTextColor }}>
                 Route displayed on map. The {selectedRoute} route is now
                 highlighted in{" "}
                 {selectedRoute === "safe"
@@ -10499,12 +10511,12 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             style={{
               marginTop: "20px",
               padding: "15px",
-              background: "#fff3cd",
+              background: isDarkMode ? '#3d2f0f' : '#fff3cd',
               borderRadius: "8px",
               borderLeft: "4px solid #ffc107",
             }}
           >
-            <h4 style={{ margin: "0 0 10px 0", color: "#856404" }}>
+            <h4 style={{ margin: "0 0 10px 0", color: isDarkMode ? '#fbbf24' : '#856404' }}>
               💡 Flood Safety Tips
             </h4>
             <ul
@@ -10512,7 +10524,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                 margin: "0",
                 paddingLeft: "20px",
                 fontSize: "0.9rem",
-                color: "#856404",
+                color: isDarkMode ? '#fbbf24' : '#856404',
               }}
             >
               <li>Check weather conditions before traveling</li>
@@ -10522,7 +10534,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             </ul>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Identical Terrain Notification */}
       {showIdenticalTerrainNotification && (
