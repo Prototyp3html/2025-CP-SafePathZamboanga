@@ -9773,13 +9773,18 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         )}
 
         {/* Elevation Legend */}
-        {showTerrainOverlay && (
+        {showTerrainOverlay && (() => {
+          const isDarkMode = document.documentElement.classList.contains('dark');
+          const legendBg = isDarkMode ? 'rgba(31, 41, 55, 0.95)' : 'rgba(255, 255, 255, 0.95)';
+          const textColor = isDarkMode ? '#f3f4f6' : '#2c3e50';
+          
+          return (
           <div
             style={{
               position: "fixed",
               bottom: "30px",
               left: "20px",
-              background: "rgba(255, 255, 255, 0.95)",
+              background: legendBg,
               padding: "12px",
               borderRadius: "8px",
               boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
@@ -9792,7 +9797,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             <h4
               style={{
                 margin: "0 0 10px 0",
-                color: "#2c3e50",
+                color: textColor,
                 fontSize: "14px",
                 fontWeight: "600",
               }}
@@ -9815,7 +9820,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     border: "1px solid rgba(0,0,0,0.2)",
                   }}
                 ></div>
-                <span>0-50m (Low/Coastal)</span>
+                <span style={{ color: textColor }}>0-50m (Low/Coastal)</span>
               </div>
               <div
                 style={{ display: "flex", alignItems: "center", gap: "8px" }}
@@ -9829,7 +9834,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     border: "1px solid rgba(0,0,0,0.2)",
                   }}
                 ></div>
-                <span>50-150m (Plains)</span>
+                <span style={{ color: textColor }}>50-150m (Plains)</span>
               </div>
               <div
                 style={{ display: "flex", alignItems: "center", gap: "8px" }}
@@ -9843,7 +9848,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     border: "1px solid rgba(0,0,0,0.2)",
                   }}
                 ></div>
-                <span>150-300m (Hills)</span>
+                <span style={{ color: textColor }}>150-300m (Hills)</span>
               </div>
               <div
                 style={{ display: "flex", alignItems: "center", gap: "8px" }}
@@ -9857,7 +9862,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     border: "1px solid rgba(0,0,0,0.2)",
                   }}
                 ></div>
-                <span>300-600m (Mountains)</span>
+                <span style={{ color: textColor }}>300-600m (Mountains)</span>
               </div>
               <div
                 style={{ display: "flex", alignItems: "center", gap: "8px" }}
@@ -9871,33 +9876,39 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     border: "1px solid rgba(0,0,0,0.2)",
                   }}
                 ></div>
-                <span>600m+ (High Mountains)</span>
+                <span style={{ color: textColor }}>600m+ (High Mountains)</span>
               </div>
             </div>
             
             <div style={{
               marginTop: "10px",
               paddingTop: "8px",
-              borderTop: "1px solid rgba(0,0,0,0.1)",
+              borderTop: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)'}`,
               fontSize: "11px",
-              color: "#666"
+              color: isDarkMode ? '#9ca3af' : '#666'
             }}>
               🌍 Topographic heatmap overlay
             </div>
           </div>
-        )}
+          );
+        })()}
 
-        {routeMode && (
+        {routeMode && (() => {
+          const isDarkMode = document.documentElement.classList.contains('dark');
+          const legendBg = isDarkMode ? 'rgba(31, 41, 55, 0.95)' : 'rgba(255, 255, 255, 0.95)';
+          const textColor = isDarkMode ? '#f3f4f6' : '#2c3e50';
+          
+          return (
           <div
             style={{
               position: "fixed",
               bottom: "30px",
               left: "20px",
-              background: "rgba(255, 255, 255, 0.95)",
+              background: legendBg,
               padding: "12px",
               borderRadius: "8px",
               boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
-              border: "1px solid rgba(0,0,0,0.1)",
+              border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)'}`,
               zIndex: 1000,
               minWidth: "200px",
               fontFamily: "system-ui, -apple-system, sans-serif",
@@ -9906,7 +9917,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             <h4
               style={{
                 margin: "0 0 10px 0",
-                color: "#2c3e50",
+                color: textColor,
                 fontSize: "14px",
                 fontWeight: "600",
               }}
@@ -9926,7 +9937,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     background: "#27ae60",
                   }}
                 ></div>
-                <span style={{ fontSize: "12px" }}>Safe Route</span>
+                <span style={{ fontSize: "12px", color: textColor }}>Safe Route</span>
               </div>
               <div
                 style={{ display: "flex", alignItems: "center", gap: "8px" }}
@@ -9938,7 +9949,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     background: "#f39c12",
                   }}
                 ></div>
-                <span style={{ fontSize: "12px" }}>Manageable Route</span>
+                <span style={{ fontSize: "12px", color: textColor }}>Manageable Route</span>
               </div>
               <div
                 style={{ display: "flex", alignItems: "center", gap: "8px" }}
@@ -9951,11 +9962,12 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     borderStyle: "dashed",
                   }}
                 ></div>
-                <span style={{ fontSize: "12px" }}>Flood-Prone Route</span>
+                <span style={{ fontSize: "12px", color: textColor }}>Flood-Prone Route</span>
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
       </div>
 
       {/* Route Planner Modal */}
