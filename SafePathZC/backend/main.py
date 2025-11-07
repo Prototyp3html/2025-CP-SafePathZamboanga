@@ -355,8 +355,8 @@ async def get_public_reports(
                 "location": {
                     "address": report.location_address,
                     "coordinates": {
-                        "lat": float(report.latitude) if report.latitude else None,
-                        "lng": float(report.longitude) if report.longitude else None
+                        "lat": float(report.location_lat) if report.location_lat else None,
+                        "lng": float(report.location_lng) if report.location_lng else None
                     }
                 },
                 "created_at": report.created_at.isoformat() if report.created_at else None,

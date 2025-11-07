@@ -266,15 +266,19 @@ Please exercise caution when traveling through this area and consider alternativ
 
 Status: ✅ Verified by Admin"""
                     
+                    # Get system admin user for forum post authorship
+                    admin_user = db.query(AdminUser).filter(AdminUser.role == "admin").first()
+                    author_id = admin_user.id if admin_user else 1
+                    author_name = admin_user.name if admin_user else "SafePath System"
+                    
                     new_forum_post = Post(
                         title=f"{report.category.title()} Report - {report.location_address}",
                         content=post_content,
                         category="reports",
                         is_urgent=report.urgency == "severe",
                         is_approved=True,  # Auto-approve since report is approved
-                        author_id=1,  # Use system/admin author ID
-                        location_lat=report.location_lat,
-                        location_lng=report.location_lng
+                        author_id=author_id,
+                        author_name=author_name
                     )
                     
                     db.add(new_forum_post)
@@ -788,15 +792,19 @@ Please exercise caution when traveling through this area and consider alternativ
 
 Status: ✅ Verified by Admin"""
             
+            # Get system admin user for forum post authorship
+            admin_user = db.query(AdminUser).filter(AdminUser.role == "admin").first()
+            author_id = admin_user.id if admin_user else 1
+            author_name = admin_user.name if admin_user else "SafePath System"
+            
             new_forum_post = Post(
                 title=f"{report_data.category.title()} Report - {report_data.location_address}",
                 content=post_content,
                 category="reports",
                 is_urgent=report_data.urgency == "severe",
                 is_approved=True,  # Auto-approve since report is approved
-                author_id=1,  # Use system/admin author ID
-                location_lat=report_data.location_lat,
-                location_lng=report_data.location_lng
+                author_id=author_id,
+                author_name=author_name
             )
             
             db.add(new_forum_post)
@@ -871,9 +879,8 @@ Status: ✅ Verified by Admin"""
             category="reports",
             is_urgent=report_data.urgency == "severe",
             is_approved=True,  # Auto-approve admin reports
-            author_id=1,  # Use system/admin author ID
-            location_lat=report_data.location_lat,
-            location_lng=report_data.location_lng
+            author_id=admin_user.id,
+            author_name=admin_user.name
         )
         
         db.add(new_forum_post)
