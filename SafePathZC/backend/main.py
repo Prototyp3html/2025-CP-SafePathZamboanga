@@ -2851,6 +2851,27 @@ async def get_routes_summary(db: Session = Depends(get_db)):
         "recent_searches": recent_searches
     }
 
+async def ensure_profile_picture_column(db: Session):
+    """Ensure profile_picture column exists in users table for Railway deployment"""
+    try:
+        # Try to query a user to check if profile_picture column exists
+        from sqlalchemy import text
+        result = db.execute(text("SELECT profile_picture FROM users LIMIT 1"))
+        print("✓ profile_picture column exists in users table")
+    except Exception as e:
+        if "profile_picture does not exist" in str(e):
+            print("🔄 Adding profile_picture column to users table...")
+            try:
+                # Add the profile_picture column
+                db.execute(text("ALTER TABLE users ADD COLUMN profile_picture TEXT"))
+                db.commit()
+                print("✅ Successfully added profile_picture column to users table")
+            except Exception as alter_error:
+                print(f"❌ Failed to add profile_picture column: {alter_error}")
+                # Don't raise, continue startup
+        else:
+            print(f"⚠️ Database column check error (continuing anyway): {e}")
+
 # Routing services are initialized via get_routing_service() and get_flood_service()
 
 @app.on_event("startup")
@@ -2889,6 +2910,10 @@ async def startup_event():
         # Create admin tables
         from models import Base
         Base.metadata.create_all(bind=engine)
+        
+        # Run database migration to ensure profile_picture column exists
+        await ensure_profile_picture_column(db)
+        
         init_admin_user(db)
         init_demo_user(db)
     finally:
