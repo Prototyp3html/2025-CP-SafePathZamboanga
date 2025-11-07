@@ -88,7 +88,7 @@ const Settings = () => {
       const userProfilePicture = localStorage.getItem(
         `user_profile_picture_${userKey}`
       );
-      
+
       if (userProfilePicture) {
         setProfilePicture(userProfilePicture);
       } else if (parsedUser.profilePicture) {
@@ -154,7 +154,9 @@ const Settings = () => {
             localStorage.setItem("user_data", JSON.stringify(updatedUser));
             setUser(updatedUser);
 
-            console.log(`✅ Profile picture saved to localStorage with key: user_profile_picture_${userKey}`);
+            console.log(
+              `✅ Profile picture saved to localStorage with key: user_profile_picture_${userKey}`
+            );
           }
 
           // Try to save to backend
@@ -215,7 +217,9 @@ const Settings = () => {
       localStorage.setItem("user_data", JSON.stringify(updatedUser));
       setUser(updatedUser);
 
-      console.log(`✅ Profile picture removed from localStorage key: user_profile_picture_${userKey}`);
+      console.log(
+        `✅ Profile picture removed from localStorage key: user_profile_picture_${userKey}`
+      );
     }
 
     // Try to remove from backend
@@ -263,6 +267,7 @@ const Settings = () => {
           phone: profile.phone,
           location: profile.address, // address maps to location in backend
           emergencyContact: profile.emergencyContact,
+          profilePicture: profilePicture, // Include profile picture in backend update
         };
 
         const response = await fetch(`${BACKEND_URL}/auth/profile`, {
@@ -288,6 +293,7 @@ const Settings = () => {
           phone: profile.phone,
           location: profile.address,
           emergencyContact: profile.emergencyContact,
+          profilePicture: profilePicture, // Include profile picture in local storage
         };
         localStorage.setItem("user_data", JSON.stringify(updatedUser));
         setUser(updatedUser);
@@ -353,12 +359,14 @@ const Settings = () => {
 
   const handlePreferenceChange = (key: string, value: any) => {
     updatePreference(key as any, value);
-    
+
     // Special handling for theme changes
     if (key === "theme") {
       toast({
         title: "Theme updated",
-        description: `Switched to ${value} mode. ${value === "auto" ? "Following system preferences." : ""}`,
+        description: `Switched to ${value} mode. ${
+          value === "auto" ? "Following system preferences." : ""
+        }`,
       });
     } else {
       toast({
@@ -1041,7 +1049,10 @@ Type "DELETE" to confirm:`;
                             disabled
                             title="SMS notifications require Twilio/SMS service integration"
                           />
-                          <Label htmlFor="sms-notifications" className="cursor-not-allowed">
+                          <Label
+                            htmlFor="sms-notifications"
+                            className="cursor-not-allowed"
+                          >
                             SMS notifications 🚧 (Coming soon)
                           </Label>
                         </div>
@@ -1059,7 +1070,11 @@ Type "DELETE" to confirm:`;
                       </div>
                       <p className="text-xs text-gray-500 mt-3 flex items-start gap-2">
                         <i className="fas fa-info-circle mt-0.5"></i>
-                        <span>SMS notifications require SMS service integration (Twilio, Vonage, etc.). Currently, notifications are shown in-app and via browser.</span>
+                        <span>
+                          SMS notifications require SMS service integration
+                          (Twilio, Vonage, etc.). Currently, notifications are
+                          shown in-app and via browser.
+                        </span>
                       </p>
                     </div>
                   </CardContent>
@@ -1088,7 +1103,8 @@ Type "DELETE" to confirm:`;
                             if (value !== "english") {
                               toast({
                                 title: "🚧 Feature In Development",
-                                description: "Language translations are being prepared. Currently only English is fully supported.",
+                                description:
+                                  "Language translations are being prepared. Currently only English is fully supported.",
                                 variant: "default",
                                 duration: 5000,
                               });
@@ -1100,8 +1116,12 @@ Type "DELETE" to confirm:`;
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="english">English ✅</SelectItem>
-                            <SelectItem value="filipino">Filipino 🚧</SelectItem>
-                            <SelectItem value="chavacano">Chavacano 🚧</SelectItem>
+                            <SelectItem value="filipino">
+                              Filipino 🚧
+                            </SelectItem>
+                            <SelectItem value="chavacano">
+                              Chavacano 🚧
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                         {preferences.language !== "english" && (
@@ -1138,7 +1158,9 @@ Type "DELETE" to confirm:`;
                       <div className="mt-3 flex gap-2">
                         <button
                           type="button"
-                          onClick={() => handlePreferenceChange("theme", "light")}
+                          onClick={() =>
+                            handlePreferenceChange("theme", "light")
+                          }
                           className={`flex-1 px-4 py-2.5 rounded-lg border-2 transition-all ${
                             preferences.theme === "light"
                               ? "border-blue-600 bg-blue-50 text-blue-700 font-medium"
@@ -1152,7 +1174,9 @@ Type "DELETE" to confirm:`;
                         </button>
                         <button
                           type="button"
-                          onClick={() => handlePreferenceChange("theme", "dark")}
+                          onClick={() =>
+                            handlePreferenceChange("theme", "dark")
+                          }
                           className={`flex-1 px-4 py-2.5 rounded-lg border-2 transition-all ${
                             preferences.theme === "dark"
                               ? "border-blue-600 bg-blue-50 text-blue-700 font-medium"
@@ -1166,7 +1190,9 @@ Type "DELETE" to confirm:`;
                         </button>
                         <button
                           type="button"
-                          onClick={() => handlePreferenceChange("theme", "auto")}
+                          onClick={() =>
+                            handlePreferenceChange("theme", "auto")
+                          }
                           className={`flex-1 px-4 py-2.5 rounded-lg border-2 transition-all ${
                             preferences.theme === "auto"
                               ? "border-blue-600 bg-blue-50 text-blue-700 font-medium"

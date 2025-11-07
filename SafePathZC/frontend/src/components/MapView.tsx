@@ -1307,6 +1307,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     "idle" | "requesting-permission" | "tracking" | "completed" | "error"
   >("idle");
 
+  // Draggable modal position state
+  const [modalPosition, setModalPosition] = useState({ x: 20, y: 120 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+
   // Initialize confirmation dialog hook
   const { confirm } = useConfirmation();
 
@@ -7523,6 +7528,88 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     }
   };
 
+  // Drag handlers for the tracking modal
+  const handleModalMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    setDragOffset({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    });
+  };
+
+  const handleModalMouseMove = (e: MouseEvent) => {
+    if (isDragging) {
+      const newX = e.clientX - dragOffset.x;
+      const newY = e.clientY - dragOffset.y;
+
+      // Keep modal within screen bounds
+      const maxX = window.innerWidth - 220; // modal width
+      const maxY = window.innerHeight - 100; // modal height
+
+      setModalPosition({
+        x: Math.max(0, Math.min(newX, maxX)),
+        y: Math.max(0, Math.min(newY, maxY)),
+      });
+    }
+  };
+
+  const handleModalMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  // Touch handlers for mobile
+  const handleModalTouchStart = (e: React.TouchEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    const touch = e.touches[0];
+    setDragOffset({
+      x: touch.clientX - rect.left,
+      y: touch.clientY - rect.top,
+    });
+  };
+
+  const handleModalTouchMove = (e: TouchEvent) => {
+    if (isDragging) {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const newX = touch.clientX - dragOffset.x;
+      const newY = touch.clientY - dragOffset.y;
+
+      // Keep modal within screen bounds
+      const maxX = window.innerWidth - 220; // modal width
+      const maxY = window.innerHeight - 100; // modal height
+
+      setModalPosition({
+        x: Math.max(0, Math.min(newX, maxX)),
+        y: Math.max(0, Math.min(newY, maxY)),
+      });
+    }
+  };
+
+  const handleModalTouchEnd = () => {
+    setIsDragging(false);
+  };
+
+  // Add event listeners for modal dragging
+  useEffect(() => {
+    if (isDragging) {
+      document.addEventListener("mousemove", handleModalMouseMove);
+      document.addEventListener("mouseup", handleModalMouseUp);
+      document.addEventListener("touchmove", handleModalTouchMove);
+      document.addEventListener("touchend", handleModalTouchEnd);
+
+      return () => {
+        document.removeEventListener("mousemove", handleModalMouseMove);
+        document.removeEventListener("mouseup", handleModalMouseUp);
+        document.removeEventListener("touchmove", handleModalTouchMove);
+        document.removeEventListener("touchend", handleModalTouchEnd);
+      };
+    }
+  }, [isDragging, dragOffset.x, dragOffset.y]);
+
   // Handle route selection
   const handleRouteSelection = (routeType: "safe" | "manageable" | "prone") => {
     console.log(`🎯 User selected ${routeType} route`);
@@ -7623,8 +7710,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       const isFlooded = feature.properties.flooded === "1";
       const elevation = feature.properties.elev_mean;
       const length = feature.properties.length_m;
-      const hasValidElevation = elevation !== null && elevation !== undefined && elevation > -9999;
-      const hasValidLength = length !== null && length !== undefined && length > 0;
+      const hasValidElevation =
+        elevation !== null && elevation !== undefined && elevation > -9999;
+      const hasValidLength =
+        length !== null && length !== undefined && length > 0;
 
       // Determine color based on flood status and elevation
       let color: string;
@@ -7635,7 +7724,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         // Flooded roads are always red, regardless of elevation data
         color = "#FF4444"; // Red for flooded areas
         riskLevel = "⚠️ High Flood Risk";
-        elevationDisplay = hasValidElevation ? `${elevation.toFixed(1)}m` : "Low-lying area";
+        elevationDisplay = hasValidElevation
+          ? `${elevation.toFixed(1)}m`
+          : "Low-lying area";
       } else if (hasValidElevation && elevation > 20) {
         // High elevation roads are green (safe)
         color = "#00FF00"; // Green for safe (high elevation)
@@ -7679,7 +7770,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               <b>Elevation:</b> ${elevationDisplay}
             </div>
             <div style="margin: 4px 0;">
-              <b>Length:</b> ${hasValidLength ? length.toFixed(0) + "m" : "Unknown"}
+              <b>Length:</b> ${
+                hasValidLength ? length.toFixed(0) + "m" : "Unknown"
+              }
             </div>
             <div style="margin: 4px 0;">
               <b>Flood Status:</b> ${isFlooded ? "Flood Prone ⚠️" : "Safe ✓"}
@@ -7698,7 +7791,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     floodHeatmapRef.current = L.layerGroup(heatmapLayers);
     floodHeatmapRef.current.addTo(mapRef.current);
 
-    console.log(`✅ Created flood risk heatmap with ${heatmapLayers.length} road segments`);
+    console.log(
+      `✅ Created flood risk heatmap with ${heatmapLayers.length} road segments`
+    );
   };
 
   // DEM overlay doesn't need to update on map movement (it's a static image)
@@ -8429,7 +8524,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           "leaflet-bar leaflet-control leaflet-control-custom"
         );
 
-        const isDarkMode = document.documentElement.classList.contains('dark');
+        const isDarkMode = document.documentElement.classList.contains("dark");
 
         btn.style.cssText = `
             background: #ffffff;
@@ -8465,7 +8560,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         // Add text
         const text = document.createElement("span");
         text.innerText = "Show Terrain";
-        text.style.color = isDarkMode ? '#000000' : '#000000';
+        text.style.color = isDarkMode ? "#000000" : "#000000";
 
         // Append elements
         container.appendChild(icon);
@@ -8482,7 +8577,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             const newState = !prev;
             console.log("🔄 Setting terrain overlay to:", newState);
             text.innerText = newState ? "Hide Terrain" : "Show Terrain";
-            btn.style.background = newState ? '#f0f0f0' : '#ffffff';
+            btn.style.background = newState ? "#f0f0f0" : "#ffffff";
             return newState;
           });
         };
@@ -9773,201 +9868,267 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         )}
 
         {/* Elevation Legend */}
-        {showTerrainOverlay && (() => {
-          const isDarkMode = document.documentElement.classList.contains('dark');
-          const legendBg = isDarkMode ? 'rgba(31, 41, 55, 0.95)' : 'rgba(255, 255, 255, 0.95)';
-          const textColor = isDarkMode ? '#f3f4f6' : '#2c3e50';
-          
-          return (
-          <div
-            style={{
-              position: "fixed",
-              bottom: "30px",
-              left: "20px",
-              background: legendBg,
-              padding: "12px",
-              borderRadius: "8px",
-              boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
-              fontSize: "12px",
-              zIndex: 1000,
-              minWidth: "200px",
-              fontFamily: "system-ui, -apple-system, sans-serif",
-            }}
-          >
-            <h4
-              style={{
-                margin: "0 0 10px 0",
-                color: textColor,
-                fontSize: "14px",
-                fontWeight: "600",
-              }}
-            >
-              🗺️ Terrain Elevation
-            </h4>
+        {showTerrainOverlay &&
+          (() => {
+            const isDarkMode =
+              document.documentElement.classList.contains("dark");
+            const legendBg = isDarkMode
+              ? "rgba(31, 41, 55, 0.95)"
+              : "rgba(255, 255, 255, 0.95)";
+            const textColor = isDarkMode ? "#f3f4f6" : "#2c3e50";
 
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: "6px" }}
-            >
+            return (
               <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+                style={{
+                  position: "fixed",
+                  bottom: "30px",
+                  left: "20px",
+                  background: legendBg,
+                  padding: "12px",
+                  borderRadius: "8px",
+                  boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
+                  fontSize: "12px",
+                  zIndex: 1000,
+                  minWidth: "200px",
+                  fontFamily: "system-ui, -apple-system, sans-serif",
+                }}
               >
-                <div
+                <h4
                   style={{
-                    width: "20px",
-                    height: "14px",
-                    background: "#e8f4e8",
-                    borderRadius: "2px",
-                    border: "1px solid rgba(0,0,0,0.2)",
+                    margin: "0 0 10px 0",
+                    color: textColor,
+                    fontSize: "14px",
+                    fontWeight: "600",
                   }}
-                ></div>
-                <span style={{ color: textColor }}>0-50m (Low/Coastal)</span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <div
-                  style={{
-                    width: "20px",
-                    height: "14px",
-                    background: "#b8d98e",
-                    borderRadius: "2px",
-                    border: "1px solid rgba(0,0,0,0.2)",
-                  }}
-                ></div>
-                <span style={{ color: textColor }}>50-150m (Plains)</span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <div
-                  style={{
-                    width: "20px",
-                    height: "14px",
-                    background: "#d4c896",
-                    borderRadius: "2px",
-                    border: "1px solid rgba(0,0,0,0.2)",
-                  }}
-                ></div>
-                <span style={{ color: textColor }}>150-300m (Hills)</span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <div
-                  style={{
-                    width: "20px",
-                    height: "14px",
-                    background: "#c4a57b",
-                    borderRadius: "2px",
-                    border: "1px solid rgba(0,0,0,0.2)",
-                  }}
-                ></div>
-                <span style={{ color: textColor }}>300-600m (Mountains)</span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <div
-                  style={{
-                    width: "20px",
-                    height: "14px",
-                    background: "#9d8b70",
-                    borderRadius: "2px",
-                    border: "1px solid rgba(0,0,0,0.2)",
-                  }}
-                ></div>
-                <span style={{ color: textColor }}>600m+ (High Mountains)</span>
-              </div>
-            </div>
-            
-            <div style={{
-              marginTop: "10px",
-              paddingTop: "8px",
-              borderTop: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)'}`,
-              fontSize: "11px",
-              color: isDarkMode ? '#9ca3af' : '#666'
-            }}>
-              🌍 Topographic heatmap overlay
-            </div>
-          </div>
-          );
-        })()}
+                >
+                  🗺️ Terrain Elevation
+                </h4>
 
-        {routeMode && (() => {
-          const isDarkMode = document.documentElement.classList.contains('dark');
-          const legendBg = isDarkMode ? 'rgba(31, 41, 55, 0.95)' : 'rgba(255, 255, 255, 0.95)';
-          const textColor = isDarkMode ? '#f3f4f6' : '#2c3e50';
-          
-          return (
-          <div
-            style={{
-              position: "fixed",
-              bottom: "30px",
-              left: "20px",
-              background: legendBg,
-              padding: "12px",
-              borderRadius: "8px",
-              boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
-              border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)'}`,
-              zIndex: 1000,
-              minWidth: "200px",
-              fontFamily: "system-ui, -apple-system, sans-serif",
-            }}
-          >
-            <h4
-              style={{
-                margin: "0 0 10px 0",
-                color: textColor,
-                fontSize: "14px",
-                fontWeight: "600",
-              }}
-            >
-              🗺️ Route Options
-            </h4>
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: "5px" }}
-            >
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
                 <div
                   style={{
-                    width: "20px",
-                    height: "3px",
-                    background: "#27ae60",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "6px",
                   }}
-                ></div>
-                <span style={{ fontSize: "12px", color: textColor }}>Safe Route</span>
-              </div>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "20px",
+                        height: "14px",
+                        background: "#e8f4e8",
+                        borderRadius: "2px",
+                        border: "1px solid rgba(0,0,0,0.2)",
+                      }}
+                    ></div>
+                    <span style={{ color: textColor }}>
+                      0-50m (Low/Coastal)
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "20px",
+                        height: "14px",
+                        background: "#b8d98e",
+                        borderRadius: "2px",
+                        border: "1px solid rgba(0,0,0,0.2)",
+                      }}
+                    ></div>
+                    <span style={{ color: textColor }}>50-150m (Plains)</span>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "20px",
+                        height: "14px",
+                        background: "#d4c896",
+                        borderRadius: "2px",
+                        border: "1px solid rgba(0,0,0,0.2)",
+                      }}
+                    ></div>
+                    <span style={{ color: textColor }}>150-300m (Hills)</span>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "20px",
+                        height: "14px",
+                        background: "#c4a57b",
+                        borderRadius: "2px",
+                        border: "1px solid rgba(0,0,0,0.2)",
+                      }}
+                    ></div>
+                    <span style={{ color: textColor }}>
+                      300-600m (Mountains)
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "20px",
+                        height: "14px",
+                        background: "#9d8b70",
+                        borderRadius: "2px",
+                        border: "1px solid rgba(0,0,0,0.2)",
+                      }}
+                    ></div>
+                    <span style={{ color: textColor }}>
+                      600m+ (High Mountains)
+                    </span>
+                  </div>
+                </div>
+
                 <div
                   style={{
-                    width: "20px",
-                    height: "3px",
-                    background: "#f39c12",
+                    marginTop: "10px",
+                    paddingTop: "8px",
+                    borderTop: `1px solid ${
+                      isDarkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)"
+                    }`,
+                    fontSize: "11px",
+                    color: isDarkMode ? "#9ca3af" : "#666",
                   }}
-                ></div>
-                <span style={{ fontSize: "12px", color: textColor }}>Manageable Route</span>
+                >
+                  🌍 Topographic heatmap overlay
+                </div>
               </div>
+            );
+          })()}
+
+        {routeMode &&
+          (() => {
+            const isDarkMode =
+              document.documentElement.classList.contains("dark");
+            const legendBg = isDarkMode
+              ? "rgba(31, 41, 55, 0.95)"
+              : "rgba(255, 255, 255, 0.95)";
+            const textColor = isDarkMode ? "#f3f4f6" : "#2c3e50";
+
+            return (
               <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+                style={{
+                  position: "fixed",
+                  bottom: "30px",
+                  left: "20px",
+                  background: legendBg,
+                  padding: "12px",
+                  borderRadius: "8px",
+                  boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
+                  border: `1px solid ${
+                    isDarkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)"
+                  }`,
+                  zIndex: 1000,
+                  minWidth: "200px",
+                  fontFamily: "system-ui, -apple-system, sans-serif",
+                }}
               >
+                <h4
+                  style={{
+                    margin: "0 0 10px 0",
+                    color: textColor,
+                    fontSize: "14px",
+                    fontWeight: "600",
+                  }}
+                >
+                  🗺️ Route Options
+                </h4>
                 <div
                   style={{
-                    width: "20px",
-                    height: "3px",
-                    background: "#e74c3c",
-                    borderStyle: "dashed",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "5px",
                   }}
-                ></div>
-                <span style={{ fontSize: "12px", color: textColor }}>Flood-Prone Route</span>
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "20px",
+                        height: "3px",
+                        background: "#27ae60",
+                      }}
+                    ></div>
+                    <span style={{ fontSize: "12px", color: textColor }}>
+                      Safe Route
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "20px",
+                        height: "3px",
+                        background: "#f39c12",
+                      }}
+                    ></div>
+                    <span style={{ fontSize: "12px", color: textColor }}>
+                      Manageable Route
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "20px",
+                        height: "3px",
+                        background: "#e74c3c",
+                        borderStyle: "dashed",
+                      }}
+                    ></div>
+                    <span style={{ fontSize: "12px", color: textColor }}>
+                      Flood-Prone Route
+                    </span>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-          );
-        })()}
+            );
+          })()}
       </div>
 
       {/* Route Planner Modal */}
@@ -10182,372 +10343,481 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       )}
 
       {/* Flood-Risk Route Details Modal */}
-      {showRouteModal && routeDetails && (() => {
-        const isDarkMode = document.documentElement.classList.contains('dark');
-        const modalBg = isDarkMode ? '#1f2937' : 'white';
-        const textColor = isDarkMode ? '#f3f4f6' : '#2c3e50';
-        const secondaryTextColor = isDarkMode ? '#9ca3af' : '#666';
-        const borderColor = isDarkMode ? '#374151' : '#f0f0f0';
-        const cardBg = isDarkMode ? '#374151' : '#f8f9fa';
-        
-        return (
-        <div
-          style={{
-            backgroundColor: modalBg,
-            borderRadius: "10px",
-            boxShadow: "0 5px 20px rgba(0,0,0,0.2)",
-            padding: "20px",
-            marginTop: "20px",
-            position: "relative",
-          }}
-        >
-          <button
-            onClick={() => setShowRouteModal(false)}
-            style={{
-              position: "absolute",
-              top: "15px",
-              right: "15px",
-              background: "none",
-              border: "none",
-              fontSize: "1.5rem",
-              cursor: "pointer",
-              color: isDarkMode ? '#9ca3af' : '#888',
-              fontWeight: "bold",
-            }}
-          >
-            ×
-          </button>
+      {showRouteModal &&
+        routeDetails &&
+        (() => {
+          const isDarkMode =
+            document.documentElement.classList.contains("dark");
+          const modalBg = isDarkMode ? "#1f2937" : "white";
+          const textColor = isDarkMode ? "#f3f4f6" : "#2c3e50";
+          const secondaryTextColor = isDarkMode ? "#9ca3af" : "#666";
+          const borderColor = isDarkMode ? "#374151" : "#f0f0f0";
+          const cardBg = isDarkMode ? "#374151" : "#f8f9fa";
 
-          <h2
-            style={{
-              marginTop: "0",
-              marginBottom: "15px",
-              color: textColor,
-              borderBottom: `2px solid ${borderColor}`,
-              paddingBottom: "10px",
-            }}
-          >
-            {safestFastestMode
-              ? "⚡ Optimized Route Options"
-              : "🌊 Flood-Risk Route Options"}
-          </h2>
-
-          {safestFastestMode && (
+          return (
             <div
               style={{
-                background: isDarkMode ? '#1e3a5f' : '#e3f2fd',
-                padding: "12px",
-                borderRadius: "6px",
-                marginBottom: "15px",
-                border: `1px solid ${isDarkMode ? '#3b82f6' : '#2196f3'}`,
-              }}
-            >
-              <div style={{ fontSize: "0.9rem", color: isDarkMode ? '#93c5fd' : '#1565c0' }}>
-                <strong>ℹ️ Geographic Constraint Notice:</strong> Due to
-                identical terrain and distances, we've optimized routes for
-                safety vs speed instead of flood risk variation.
-              </div>
-            </div>
-          )}
-
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              marginBottom: "20px",
-              background: cardBg,
-              padding: "15px",
-              borderRadius: "8px",
-            }}
-          >
-            <div>
-              <h3 style={{ margin: "0 0 5px 0", color: "#27ae60" }}>From:</h3>
-              <p style={{ margin: 0, fontWeight: "bold", color: textColor }}>
-                {routeDetails.startName}
-              </p>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <h3 style={{ margin: "0 0 5px 0", color: "#e74c3c" }}>To:</h3>
-              <p style={{ margin: 0, fontWeight: "bold", color: textColor }}>
-                {routeDetails.endName}
-              </p>
-            </div>
-          </div>
-
-          {/* Route Options */}
-          <div
-            style={{ display: "flex", flexDirection: "column", gap: "15px" }}
-          >
-            {/* Safe Route */}
-            <div
-              style={{
-                border:
-                  selectedRoute === "safe"
-                    ? "3px solid #27ae60"
-                    : `2px solid ${isDarkMode ? '#4b5563' : '#ddd'}`,
-                borderRadius: "8px",
-                padding: "15px",
-                cursor: "pointer",
-                background: selectedRoute === "safe" 
-                  ? (isDarkMode ? '#1e4d2b' : '#f8fff8')
-                  : (isDarkMode ? '#374151' : 'white'),
-                transition: "all 0.3s ease",
-              }}
-              onClick={() => handleRouteSelection("safe")}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: "10px",
-                }}
-              >
-                <div
-                  style={{ display: "flex", alignItems: "center", gap: "10px" }}
-                >
-                  <div
-                    style={{
-                      width: "20px",
-                      height: "20px",
-                      background: routeDetails.safeRoute.color,
-                      borderRadius: "50%",
-                    }}
-                  ></div>
-                  <h3 style={{ margin: 0, color: "#27ae60" }}>
-                    {safestFastestMode ? "🛡️ Safest Route" : "🛡️ Safe Route"}
-                  </h3>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: "1.2rem", fontWeight: "bold", color: textColor }}>
-                    {routeDetails.safeRoute.distance}
-                  </div>
-                  <div style={{ fontSize: "0.9rem", color: secondaryTextColor }}>
-                    {routeDetails.safeRoute.time}
-                  </div>
-                </div>
-              </div>
-              <div style={{ marginBottom: "10px" }}>
-                <span
-                  style={{
-                    background: "#27ae60",
-                    color: "white",
-                    padding: "4px 8px",
-                    borderRadius: "4px",
-                    fontSize: "0.8rem",
-                  }}
-                >
-                  {safestFastestMode
-                    ? "SAFEST"
-                    : routeDetails.safeRoute.riskLevel}
-                </span>
-              </div>
-              <p style={{ margin: 0, fontSize: "0.9rem", color: secondaryTextColor }}>
-                {safestFastestMode
-                  ? "Prioritizes main roads and safer intersections for maximum security"
-                  : routeDetails.safeRoute.description}
-              </p>
-            </div>
-
-            {/* Manageable Route */}
-            <div
-              style={{
-                border:
-                  selectedRoute === "manageable"
-                    ? "3px solid #f39c12"
-                    : `2px solid ${isDarkMode ? '#4b5563' : '#ddd'}`,
-                borderRadius: "8px",
-                padding: "15px",
-                cursor: "pointer",
-                background:
-                  selectedRoute === "manageable" 
-                    ? (isDarkMode ? '#3d2f0f' : '#fffbf0')
-                    : (isDarkMode ? '#374151' : 'white'),
-                transition: "all 0.3s ease",
-              }}
-              onClick={() => handleRouteSelection("manageable")}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: "10px",
-                }}
-              >
-                <div
-                  style={{ display: "flex", alignItems: "center", gap: "10px" }}
-                >
-                  <div
-                    style={{
-                      width: "20px",
-                      height: "20px",
-                      background: routeDetails.manageableRoute.color,
-                      borderRadius: "50%",
-                    }}
-                  ></div>
-                  <h3 style={{ margin: 0, color: "#f39c12" }}>
-                    {safestFastestMode
-                      ? "⚡ Fastest Route"
-                      : "⚠️ Manageable Route"}
-                  </h3>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: "1.2rem", fontWeight: "bold", color: textColor }}>
-                    {routeDetails.manageableRoute.distance}
-                  </div>
-                  <div style={{ fontSize: "0.9rem", color: secondaryTextColor }}>
-                    {routeDetails.manageableRoute.time}
-                  </div>
-                </div>
-              </div>
-              <div style={{ marginBottom: "10px" }}>
-                <span
-                  style={{
-                    background: "#f39c12",
-                    color: "white",
-                    padding: "4px 8px",
-                    borderRadius: "4px",
-                    fontSize: "0.8rem",
-                  }}
-                >
-                  {safestFastestMode
-                    ? "FASTEST"
-                    : routeDetails.manageableRoute.riskLevel}
-                </span>
-              </div>
-              <p style={{ margin: 0, fontSize: "0.9rem", color: secondaryTextColor }}>
-                {safestFastestMode
-                  ? "Takes the most direct path to minimize travel time"
-                  : routeDetails.manageableRoute.description}
-              </p>
-            </div>
-
-            {/* Prone Route */}
-            <div
-              style={{
-                border:
-                  selectedRoute === "prone"
-                    ? "3px solid #e74c3c"
-                    : `2px solid ${isDarkMode ? '#4b5563' : '#ddd'}`,
-                borderRadius: "8px",
-                padding: "15px",
-                cursor: "pointer",
-                background: selectedRoute === "prone" 
-                  ? (isDarkMode ? '#3d1f1f' : '#fff5f5')
-                  : (isDarkMode ? '#374151' : 'white'),
-                transition: "all 0.3s ease",
-              }}
-              onClick={() => handleRouteSelection("prone")}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: "10px",
-                }}
-              >
-                <div
-                  style={{ display: "flex", alignItems: "center", gap: "10px" }}
-                >
-                  <div
-                    style={{
-                      width: "20px",
-                      height: "20px",
-                      background: routeDetails.proneRoute.color,
-                      borderRadius: "50%",
-                    }}
-                  ></div>
-                  <h3 style={{ margin: 0, color: "#e74c3c" }}>
-                    🚨 Flood-Prone Route
-                  </h3>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: "1.2rem", fontWeight: "bold", color: textColor }}>
-                    {routeDetails.proneRoute.distance}
-                  </div>
-                  <div style={{ fontSize: "0.9rem", color: secondaryTextColor }}>
-                    {routeDetails.proneRoute.time}
-                  </div>
-                </div>
-              </div>
-              <div style={{ marginBottom: "10px" }}>
-                <span
-                  style={{
-                    background: "#e74c3c",
-                    color: "white",
-                    padding: "4px 8px",
-                    borderRadius: "4px",
-                    fontSize: "0.8rem",
-                  }}
-                >
-                  {routeDetails.proneRoute.riskLevel}
-                </span>
-              </div>
-              <p style={{ margin: 0, fontSize: "0.9rem", color: secondaryTextColor }}>
-                {routeDetails.proneRoute.description}
-              </p>
-            </div>
-          </div>
-
-          {selectedRoute && (
-            <div
-              style={{
+                backgroundColor: modalBg,
+                borderRadius: "10px",
+                boxShadow: "0 5px 20px rgba(0,0,0,0.2)",
+                padding: "20px",
                 marginTop: "20px",
-                padding: "15px",
-                background: isDarkMode ? '#1e3a5f' : '#e8f4f8',
-                borderRadius: "8px",
-                borderLeft: "4px solid #3498db",
+                position: "relative",
               }}
             >
-              <h4 style={{ margin: "0 0 10px 0", color: textColor }}>
-                📍 Selected Route:{" "}
-                {selectedRoute.charAt(0).toUpperCase() + selectedRoute.slice(1)}{" "}
-                Route
-              </h4>
-              <p style={{ margin: "0", fontSize: "0.9rem", color: secondaryTextColor }}>
-                Route displayed on map. The {selectedRoute} route is now
-                highlighted in{" "}
-                {selectedRoute === "safe"
-                  ? "green"
-                  : selectedRoute === "manageable"
-                  ? "orange"
-                  : "red"}
-                .
-              </p>
-            </div>
-          )}
+              <button
+                onClick={() => setShowRouteModal(false)}
+                style={{
+                  position: "absolute",
+                  top: "15px",
+                  right: "15px",
+                  background: "none",
+                  border: "none",
+                  fontSize: "1.5rem",
+                  cursor: "pointer",
+                  color: isDarkMode ? "#9ca3af" : "#888",
+                  fontWeight: "bold",
+                }}
+              >
+                ×
+              </button>
 
-          <div
-            style={{
-              marginTop: "20px",
-              padding: "15px",
-              background: isDarkMode ? '#3d2f0f' : '#fff3cd',
-              borderRadius: "8px",
-              borderLeft: "4px solid #ffc107",
-            }}
-          >
-            <h4 style={{ margin: "0 0 10px 0", color: isDarkMode ? '#fbbf24' : '#856404' }}>
-              💡 Flood Safety Tips
-            </h4>
-            <ul
-              style={{
-                margin: "0",
-                paddingLeft: "20px",
-                fontSize: "0.9rem",
-                color: isDarkMode ? '#fbbf24' : '#856404',
-              }}
-            >
-              <li>Check weather conditions before traveling</li>
-              <li>Avoid traveling during heavy rains or flood warnings</li>
-              <li>Keep emergency contacts handy</li>
-              <li>Monitor local flood alerts and updates</li>
-            </ul>
-          </div>
-        </div>
-        );
-      })()}
+              <h2
+                style={{
+                  marginTop: "0",
+                  marginBottom: "15px",
+                  color: textColor,
+                  borderBottom: `2px solid ${borderColor}`,
+                  paddingBottom: "10px",
+                }}
+              >
+                {safestFastestMode
+                  ? "⚡ Optimized Route Options"
+                  : "🌊 Flood-Risk Route Options"}
+              </h2>
+
+              {safestFastestMode && (
+                <div
+                  style={{
+                    background: isDarkMode ? "#1e3a5f" : "#e3f2fd",
+                    padding: "12px",
+                    borderRadius: "6px",
+                    marginBottom: "15px",
+                    border: `1px solid ${isDarkMode ? "#3b82f6" : "#2196f3"}`,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: "0.9rem",
+                      color: isDarkMode ? "#93c5fd" : "#1565c0",
+                    }}
+                  >
+                    <strong>ℹ️ Geographic Constraint Notice:</strong> Due to
+                    identical terrain and distances, we've optimized routes for
+                    safety vs speed instead of flood risk variation.
+                  </div>
+                </div>
+              )}
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginBottom: "20px",
+                  background: cardBg,
+                  padding: "15px",
+                  borderRadius: "8px",
+                }}
+              >
+                <div>
+                  <h3 style={{ margin: "0 0 5px 0", color: "#27ae60" }}>
+                    From:
+                  </h3>
+                  <p
+                    style={{ margin: 0, fontWeight: "bold", color: textColor }}
+                  >
+                    {routeDetails.startName}
+                  </p>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <h3 style={{ margin: "0 0 5px 0", color: "#e74c3c" }}>To:</h3>
+                  <p
+                    style={{ margin: 0, fontWeight: "bold", color: textColor }}
+                  >
+                    {routeDetails.endName}
+                  </p>
+                </div>
+              </div>
+
+              {/* Route Options */}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "15px",
+                }}
+              >
+                {/* Safe Route */}
+                <div
+                  style={{
+                    border:
+                      selectedRoute === "safe"
+                        ? "3px solid #27ae60"
+                        : `2px solid ${isDarkMode ? "#4b5563" : "#ddd"}`,
+                    borderRadius: "8px",
+                    padding: "15px",
+                    cursor: "pointer",
+                    background:
+                      selectedRoute === "safe"
+                        ? isDarkMode
+                          ? "#1e4d2b"
+                          : "#f8fff8"
+                        : isDarkMode
+                        ? "#374151"
+                        : "white",
+                    transition: "all 0.3s ease",
+                  }}
+                  onClick={() => handleRouteSelection("safe")}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: "10px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: "20px",
+                          height: "20px",
+                          background: routeDetails.safeRoute.color,
+                          borderRadius: "50%",
+                        }}
+                      ></div>
+                      <h3 style={{ margin: 0, color: "#27ae60" }}>
+                        {safestFastestMode
+                          ? "🛡️ Safest Route"
+                          : "🛡️ Safe Route"}
+                      </h3>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div
+                        style={{
+                          fontSize: "1.2rem",
+                          fontWeight: "bold",
+                          color: textColor,
+                        }}
+                      >
+                        {routeDetails.safeRoute.distance}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "0.9rem",
+                          color: secondaryTextColor,
+                        }}
+                      >
+                        {routeDetails.safeRoute.time}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: "10px" }}>
+                    <span
+                      style={{
+                        background: "#27ae60",
+                        color: "white",
+                        padding: "4px 8px",
+                        borderRadius: "4px",
+                        fontSize: "0.8rem",
+                      }}
+                    >
+                      {safestFastestMode
+                        ? "SAFEST"
+                        : routeDetails.safeRoute.riskLevel}
+                    </span>
+                  </div>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: "0.9rem",
+                      color: secondaryTextColor,
+                    }}
+                  >
+                    {safestFastestMode
+                      ? "Prioritizes main roads and safer intersections for maximum security"
+                      : routeDetails.safeRoute.description}
+                  </p>
+                </div>
+
+                {/* Manageable Route */}
+                <div
+                  style={{
+                    border:
+                      selectedRoute === "manageable"
+                        ? "3px solid #f39c12"
+                        : `2px solid ${isDarkMode ? "#4b5563" : "#ddd"}`,
+                    borderRadius: "8px",
+                    padding: "15px",
+                    cursor: "pointer",
+                    background:
+                      selectedRoute === "manageable"
+                        ? isDarkMode
+                          ? "#3d2f0f"
+                          : "#fffbf0"
+                        : isDarkMode
+                        ? "#374151"
+                        : "white",
+                    transition: "all 0.3s ease",
+                  }}
+                  onClick={() => handleRouteSelection("manageable")}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: "10px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: "20px",
+                          height: "20px",
+                          background: routeDetails.manageableRoute.color,
+                          borderRadius: "50%",
+                        }}
+                      ></div>
+                      <h3 style={{ margin: 0, color: "#f39c12" }}>
+                        {safestFastestMode
+                          ? "⚡ Fastest Route"
+                          : "⚠️ Manageable Route"}
+                      </h3>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div
+                        style={{
+                          fontSize: "1.2rem",
+                          fontWeight: "bold",
+                          color: textColor,
+                        }}
+                      >
+                        {routeDetails.manageableRoute.distance}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "0.9rem",
+                          color: secondaryTextColor,
+                        }}
+                      >
+                        {routeDetails.manageableRoute.time}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: "10px" }}>
+                    <span
+                      style={{
+                        background: "#f39c12",
+                        color: "white",
+                        padding: "4px 8px",
+                        borderRadius: "4px",
+                        fontSize: "0.8rem",
+                      }}
+                    >
+                      {safestFastestMode
+                        ? "FASTEST"
+                        : routeDetails.manageableRoute.riskLevel}
+                    </span>
+                  </div>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: "0.9rem",
+                      color: secondaryTextColor,
+                    }}
+                  >
+                    {safestFastestMode
+                      ? "Takes the most direct path to minimize travel time"
+                      : routeDetails.manageableRoute.description}
+                  </p>
+                </div>
+
+                {/* Prone Route */}
+                <div
+                  style={{
+                    border:
+                      selectedRoute === "prone"
+                        ? "3px solid #e74c3c"
+                        : `2px solid ${isDarkMode ? "#4b5563" : "#ddd"}`,
+                    borderRadius: "8px",
+                    padding: "15px",
+                    cursor: "pointer",
+                    background:
+                      selectedRoute === "prone"
+                        ? isDarkMode
+                          ? "#3d1f1f"
+                          : "#fff5f5"
+                        : isDarkMode
+                        ? "#374151"
+                        : "white",
+                    transition: "all 0.3s ease",
+                  }}
+                  onClick={() => handleRouteSelection("prone")}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: "10px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: "20px",
+                          height: "20px",
+                          background: routeDetails.proneRoute.color,
+                          borderRadius: "50%",
+                        }}
+                      ></div>
+                      <h3 style={{ margin: 0, color: "#e74c3c" }}>
+                        🚨 Flood-Prone Route
+                      </h3>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div
+                        style={{
+                          fontSize: "1.2rem",
+                          fontWeight: "bold",
+                          color: textColor,
+                        }}
+                      >
+                        {routeDetails.proneRoute.distance}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "0.9rem",
+                          color: secondaryTextColor,
+                        }}
+                      >
+                        {routeDetails.proneRoute.time}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: "10px" }}>
+                    <span
+                      style={{
+                        background: "#e74c3c",
+                        color: "white",
+                        padding: "4px 8px",
+                        borderRadius: "4px",
+                        fontSize: "0.8rem",
+                      }}
+                    >
+                      {routeDetails.proneRoute.riskLevel}
+                    </span>
+                  </div>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: "0.9rem",
+                      color: secondaryTextColor,
+                    }}
+                  >
+                    {routeDetails.proneRoute.description}
+                  </p>
+                </div>
+              </div>
+
+              {selectedRoute && (
+                <div
+                  style={{
+                    marginTop: "20px",
+                    padding: "15px",
+                    background: isDarkMode ? "#1e3a5f" : "#e8f4f8",
+                    borderRadius: "8px",
+                    borderLeft: "4px solid #3498db",
+                  }}
+                >
+                  <h4 style={{ margin: "0 0 10px 0", color: textColor }}>
+                    📍 Selected Route:{" "}
+                    {selectedRoute.charAt(0).toUpperCase() +
+                      selectedRoute.slice(1)}{" "}
+                    Route
+                  </h4>
+                  <p
+                    style={{
+                      margin: "0",
+                      fontSize: "0.9rem",
+                      color: secondaryTextColor,
+                    }}
+                  >
+                    Route displayed on map. The {selectedRoute} route is now
+                    highlighted in{" "}
+                    {selectedRoute === "safe"
+                      ? "green"
+                      : selectedRoute === "manageable"
+                      ? "orange"
+                      : "red"}
+                    .
+                  </p>
+                </div>
+              )}
+
+              <div
+                style={{
+                  marginTop: "20px",
+                  padding: "15px",
+                  background: isDarkMode ? "#3d2f0f" : "#fff3cd",
+                  borderRadius: "8px",
+                  borderLeft: "4px solid #ffc107",
+                }}
+              >
+                <h4
+                  style={{
+                    margin: "0 0 10px 0",
+                    color: isDarkMode ? "#fbbf24" : "#856404",
+                  }}
+                >
+                  💡 Flood Safety Tips
+                </h4>
+                <ul
+                  style={{
+                    margin: "0",
+                    paddingLeft: "20px",
+                    fontSize: "0.9rem",
+                    color: isDarkMode ? "#fbbf24" : "#856404",
+                  }}
+                >
+                  <li>Check weather conditions before traveling</li>
+                  <li>Avoid traveling during heavy rains or flood warnings</li>
+                  <li>Keep emergency contacts handy</li>
+                  <li>Monitor local flood alerts and updates</li>
+                </ul>
+              </div>
+            </div>
+          );
+        })()}
 
       {/* Identical Terrain Notification */}
       {showIdenticalTerrainNotification && (
@@ -10597,13 +10867,15 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         onClose={() => setShowWeatherDashboard(false)}
       />
 
-      {/* 🆕 GPS Tracking Status Indicator */}
+      {/* 🆕 GPS Tracking Status Indicator - Draggable */}
       {isTrackingRoute && (
         <div
+          onMouseDown={handleModalMouseDown}
+          onTouchStart={handleModalTouchStart}
           style={{
             position: "absolute",
-            top: "120px",
-            right: "20px",
+            top: `${modalPosition.y}px`,
+            left: `${modalPosition.x}px`,
             background:
               trackingStatus === "tracking"
                 ? "linear-gradient(135deg, #00b894, #00a085)"
@@ -10615,6 +10887,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             zIndex: 1000,
             minWidth: "200px",
             border: "2px solid white",
+            cursor: isDragging ? "grabbing" : "grab",
+            userSelect: "none",
           }}
         >
           <div

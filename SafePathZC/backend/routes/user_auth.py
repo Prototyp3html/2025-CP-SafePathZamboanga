@@ -45,6 +45,7 @@ class UserUpdate(BaseModel):
     phone: Optional[str] = None
     location: Optional[str] = None
     emergencyContact: Optional[str] = None
+    profilePicture: Optional[str] = None
 
 class UserResponse(BaseModel):
     id: int
@@ -53,6 +54,7 @@ class UserResponse(BaseModel):
     phone: Optional[str]
     location: str
     emergencyContact: Optional[str]
+    profilePicture: Optional[str]
     role: str
     isActive: bool
     communityPoints: int
@@ -96,6 +98,7 @@ def format_user_response(user: User) -> dict:
         "phone": user.phone,
         "location": user.location,
         "emergencyContact": user.emergency_contact,
+        "profilePicture": user.profile_picture,
         "role": user.role,
         "isActive": user.is_active,
         "communityPoints": user.community_points or 0,
@@ -196,6 +199,8 @@ async def update_user_profile(
         user.location = update_data.location
     if update_data.emergencyContact is not None:
         user.emergency_contact = update_data.emergencyContact
+    if update_data.profilePicture is not None:
+        user.profile_picture = update_data.profilePicture
     
     user.last_activity = datetime.utcnow()
     db.commit()
@@ -376,6 +381,8 @@ async def update_user_profile(
             user.location = profile_data.location
         if profile_data.emergencyContact is not None:
             user.emergency_contact = profile_data.emergencyContact
+        if profile_data.profilePicture is not None:
+            user.profile_picture = profile_data.profilePicture
             
         db.commit()
         db.refresh(user)
@@ -387,7 +394,9 @@ async def update_user_profile(
                 "email": user.email,
                 "name": user.name,
                 "phone": user.phone,
-                "location": user.location
+                "location": user.location,
+                "profilePicture": user.profile_picture,
+                "emergencyContact": user.emergency_contact
             }
         }
         

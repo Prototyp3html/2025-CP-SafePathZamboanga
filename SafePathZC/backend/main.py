@@ -28,6 +28,7 @@ from routes.admin import router as admin_router, init_admin_user
 from routes.user_auth import router as user_auth_router, init_demo_user
 from routes.forum import router as forum_router
 from routes.flood_routing import router as flood_routing_router
+from routes.crime_reports import router as crime_reports_router
 from routes.geocoding import router as geocoding_router
 
 # Load environment variables

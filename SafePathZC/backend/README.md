@@ -175,9 +175,9 @@ taskkill /F /PID <process_id>
 
 The API is configured to allow requests from:
 
-- `http://localhost:3000` (Create React App)
-- `http://localhost:5173` (Vite)
+- `http://localhost:5173` (SafePathZC Frontend - Vite)
 - `http://127.0.0.1:5173`
+- Railway production domain
 
 ## 📈 Performance Considerations
 

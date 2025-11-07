@@ -2,38 +2,43 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover"
+    />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
     <meta name="theme-color" content="#3b82f6" />
-    <title>Safe Routes Zamboanga - Navigate Safely Through Weather</title>
+
+    <!-- Favicon and App Icons -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/logo.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/logo.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/logo.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <title>SafePath ZC</title>
     <meta
       name="description"
       content="Plan your safe route through Zamboanga City with real-time weather updates and flood risk alerts"
     />
     <meta name="author" content="Safe Routes Team" />
 
-    <meta
-      property="og:title"
-      content="Safe Routes Zamboanga - Navigate Safely"
-    />
+    <meta property="og:title" content="SafePath ZC" />
     <meta
       property="og:description"
       content="Real-time route planning with weather and flood risk alerts for Zamboanga City"
     />
     <meta property="og:type" content="website" />
-    <meta
-      property="og:image"
-      content="https://lovable.dev/opengraph-image-p98pqg.png"
-    />
+    <meta property="og:image" content="/logo.png" />
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:site" content="@SafeRoutesZC" />
-    <meta
-      name="twitter:image"
-      content="https://lovable.dev/opengraph-image-p98pqg.png"
-    />
+    <meta name="twitter:site" content="@SafePathZC" />
+    <meta name="twitter:image" content="/logo.png" />
 
     <!-- Font Awesome for icons -->
 
@@ -46,17 +51,20 @@
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap"
     />
-    
+
     <style>
       /* Prevent zoom on input focus for iOS */
       @supports (-webkit-touch-callout: none) {
-        input, select, textarea {
+        input,
+        select,
+        textarea {
           font-size: 16px !important;
         }
       }
-      
+
       /* Ensure proper viewport height on mobile */
-      html, body {
+      html,
+      body {
         overflow-x: hidden;
         width: 100%;
         position: relative;
