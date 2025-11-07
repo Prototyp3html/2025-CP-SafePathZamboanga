@@ -41,15 +41,15 @@ services:
     command: osrm-routed --algorithm mld /data/zamboanga-foot.osrm
     restart: unless-stopped
 
-  # OSRM Bicycle Profile (Motorcycles/Bicycles)
-  osrm-bicycle:
+  # OSRM Motorcycle Profile (Motorcycles/Bicycles - No Restrictions)
+  osrm-motorcycle:
     image: osrm/osrm-backend
-    container_name: safepath-osrm-bicycle
+    container_name: safepath-osrm-motorcycle
     ports:
       - "5002:5000"
     volumes:
       - ./backend/osrm-data:/data
-    command: osrm-routed --algorithm mld /data/zamboanga-bicycle.osrm
+    command: osrm-routed --algorithm mld /data/zamboanga-motorcycle.osrm
     restart: unless-stopped
 
   # OSRM Truck Profile (Heavy vehicles)

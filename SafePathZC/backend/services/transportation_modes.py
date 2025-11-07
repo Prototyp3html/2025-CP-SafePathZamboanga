@@ -36,7 +36,7 @@ def normalize_osrm_url(url: str) -> str:
 
 OSRM_DRIVING_BASE = normalize_osrm_url(os.getenv("OSRM_DRIVING_URL", "http://localhost:5000"))
 OSRM_WALKING_BASE = normalize_osrm_url(os.getenv("OSRM_WALKING_URL", "http://localhost:5001"))
-OSRM_BICYCLE_BASE = normalize_osrm_url(os.getenv("OSRM_BICYCLE_URL", "http://localhost:5002"))
+OSRM_MOTORCYCLE_BASE = normalize_osrm_url(os.getenv("OSRM_MOTORCYCLE_URL", "http://localhost:5002"))  # Changed from bicycle to motorcycle
 
 # Debug the problematic ones
 jeepney_raw = os.getenv("OSRM_JEEPNEY_URL", "http://localhost:5004")
@@ -53,7 +53,7 @@ print("🚀 OSRM SERVICE CONFIGURATION")
 print("="*80)
 print(f"OSRM_DRIVING_BASE:  {OSRM_DRIVING_BASE}")
 print(f"OSRM_WALKING_BASE:  {OSRM_WALKING_BASE}")
-print(f"OSRM_BICYCLE_BASE:  {OSRM_BICYCLE_BASE}")
+print(f"OSRM_MOTORCYCLE_BASE:  {OSRM_MOTORCYCLE_BASE}")
 print(f"OSRM_TRUCK_BASE:    {OSRM_TRUCK_BASE}")
 print(f"OSRM_JEEPNEY_BASE:  {OSRM_JEEPNEY_BASE}")
 print("="*80 + "\n")
@@ -93,8 +93,8 @@ TRANSPORTATION_MODES = {
         'can_use_main_roads': True,
         'can_use_highways': True,
         'speed_factor': 0.9,
-        'osrm_profile': 'bicycle',  # Use bicycle profile (motorcycles can navigate smaller roads)
-        'osrm_url': OSRM_BICYCLE_BASE,
+        'osrm_profile': 'driving',  # Use driving profile for unrestricted routing like cars
+        'osrm_url': OSRM_MOTORCYCLE_BASE,  # Use dedicated motorcycle service
     },
     'walking': {
         'name': 'Walking',
@@ -118,17 +118,7 @@ TRANSPORTATION_MODES = {
         'osrm_profile': 'driving',  # Use driving profile (jeepney routing comes from data file)
         'osrm_url': OSRM_JEEPNEY_BASE,
     },
-    'bicycle': {
-        'name': 'Bicycle',
-        'ground_clearance_cm': 5,
-        'max_flood_depth_cm': 5,
-        'can_use_footpaths': True,
-        'can_use_main_roads': True,
-        'can_use_highways': False,
-        'speed_factor': 0.3,
-        'osrm_profile': 'bicycle',  # Use bicycle profile
-        'osrm_url': OSRM_BICYCLE_BASE,
-    },
+
     'truck': {
         'name': 'Truck',
         'ground_clearance_cm': 40,

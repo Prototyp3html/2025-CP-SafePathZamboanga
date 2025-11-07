@@ -153,13 +153,33 @@ class RoadSegment:
         if road_type in ["motorway", "trunk", "primary"] or any(keyword in road_name for keyword in [
             "national", "highway", "governor", "airport", "avenue", "boulevard", "n-", "r-"
         ]):
-            hierarchy_penalty = 0.5  # STRONGLY prefer major roads
+            # Major roads - preference depends on vehicle type
+            if transportation_mode in ["motorcycle", "bicycle"]:
+                hierarchy_penalty = 0.7  # Motorcycles/bicycles prefer major roads for speed BUT can use shortcuts
+            elif transportation_mode == "walking":
+                hierarchy_penalty = 1.5  # Pedestrians AVOID major roads (no sidewalks, dangerous)
+            elif transportation_mode == "public_transport":
+                hierarchy_penalty = 0.4  # Jeepneys STRONGLY prefer major roads (fixed routes on main streets)
+            else:  # car, truck
+                hierarchy_penalty = 0.5  # Cars/trucks STRONGLY prefer major roads
         elif road_type in ["secondary", "tertiary"] or any(keyword in road_name for keyword in [
             "road", "street", "drive"
         ]):
-            hierarchy_penalty = 1.0  # Normal roads
-        else:  # residential, service, unclassified, unnamed
-            hierarchy_penalty = 3.0  # HEAVILY discourage small roads
+            if transportation_mode == "walking":
+                hierarchy_penalty = 0.9  # Pedestrians prefer normal streets (safer, has sidewalks)
+            elif transportation_mode == "public_transport":
+                hierarchy_penalty = 0.8  # Jeepneys use secondary roads but prefer major routes
+            else:
+                hierarchy_penalty = 1.0  # Normal roads - neutral for all other modes
+        else:  # residential, service, unclassified, unnamed - SHORTCUTS!
+            if transportation_mode in ["motorcycle", "bicycle"]:
+                hierarchy_penalty = 1.1  # Motorcycles/bicycles CAN use shortcuts but slightly longer (balance directness vs shortcuts)
+            elif transportation_mode == "walking":
+                hierarchy_penalty = 0.7  # Pedestrians LOVE shortcuts (footpaths, alleys, residential streets)
+            elif transportation_mode == "public_transport":
+                hierarchy_penalty = 5.0  # Jeepneys NEVER use small roads (too large, fixed routes only)
+            else:  # car, truck
+                hierarchy_penalty = 3.0  # Cars/trucks HEAVILY discouraged from small roads
         
         # Transportation mode adjustments
         mode_factors = {

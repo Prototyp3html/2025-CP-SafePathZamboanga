@@ -288,7 +288,7 @@ app.include_router(geocoding_router, prefix="/api/geocoding", tags=["geocoding"]
 @app.get("/debug/osrm-config")
 async def debug_osrm_config():
     """Debug endpoint to check OSRM service configuration"""
-    from services.transportation_modes import TRANSPORTATION_MODES, OSRM_DRIVING_BASE, OSRM_TRUCK_BASE, OSRM_JEEPNEY_BASE, OSRM_WALKING_BASE, OSRM_BICYCLE_BASE
+    from services.transportation_modes import TRANSPORTATION_MODES, OSRM_DRIVING_BASE, OSRM_TRUCK_BASE, OSRM_JEEPNEY_BASE, OSRM_WALKING_BASE, OSRM_MOTORCYCLE_BASE
     
     return {
         "osrm_base_urls": {
@@ -296,7 +296,7 @@ async def debug_osrm_config():
             "truck": OSRM_TRUCK_BASE,
             "jeepney": OSRM_JEEPNEY_BASE,
             "walking": OSRM_WALKING_BASE,
-            "bicycle": OSRM_BICYCLE_BASE
+            "motorcycle": OSRM_MOTORCYCLE_BASE
         },
         "transportation_modes": {
             mode: {
@@ -310,7 +310,7 @@ async def debug_osrm_config():
             "OSRM_TRUCK_URL": os.getenv("OSRM_TRUCK_URL", "NOT SET"),
             "OSRM_JEEPNEY_URL": os.getenv("OSRM_JEEPNEY_URL", "NOT SET"),
             "OSRM_WALKING_URL": os.getenv("OSRM_WALKING_URL", "NOT SET"),
-            "OSRM_BICYCLE_URL": os.getenv("OSRM_BICYCLE_URL", "NOT SET")
+            "OSRM_MOTORCYCLE_URL": os.getenv("OSRM_MOTORCYCLE_URL", "NOT SET")
         }
     }
 
@@ -392,7 +392,7 @@ async def get_osrm_route(start_lng: float, start_lat: float, end_lng: float, end
         from services.transportation_modes import get_osrm_endpoint_for_mode, TRANSPORTATION_MODES
         
         # Get the appropriate OSRM endpoint URL for this transport mode
-        # This automatically selects the right OSRM container (driving/walking/bicycle)
+        # This automatically selects the right OSRM container (driving/walking/motorcycle)
         osrm_endpoint = get_osrm_endpoint_for_mode(transport_mode)
         url = f"{osrm_endpoint}/{start_lng},{start_lat};{end_lng},{end_lat}"
         
@@ -848,13 +848,13 @@ async def get_route(
     end: str = Query(..., description="End coordinates as lng,lat"),
     alternatives: bool = Query(False, description="Include alternative routes"),
     waypoints: str = Query(None, description="Optional waypoints as lng,lat;lng,lat"),
-    transport_mode: str = Query("car", description="Transportation mode: car, motorcycle, walking, public_transport, bicycle, truck")
+    transport_mode: str = Query("car", description="Transportation mode: car, motorcycle, walking, public_transport, truck")
 ):
     """Get routing data between two points using HYBRID APPROACH: OSRM for routing + GeoJSON for flood analysis
     
     NOW SUPPORTS TRANSPORT MODE SELECTION - Different vehicles will use different OSRM routing profiles!
     - car/truck/public_transport: Use driving profile (main roads)
-    - motorcycle/bicycle: Use bicycle profile (can use smaller roads)
+    - motorcycle: Use driving profile (unrestricted routing like cars)
     - walking: Use foot profile (sidewalks, pedestrian paths)
     """
     try:
@@ -2755,11 +2755,11 @@ async def startup_event():
         print("📋 Raw Environment Variables:")
         print(f"  OSRM_DRIVING_URL: {os.getenv('OSRM_DRIVING_URL', 'NOT_SET')}")
         print(f"  OSRM_WALKING_URL: {os.getenv('OSRM_WALKING_URL', 'NOT_SET')}")
-        print(f"  OSRM_BICYCLE_URL: {os.getenv('OSRM_BICYCLE_URL', 'NOT_SET')}")
+        print(f"  OSRM_MOTORCYCLE_URL: {os.getenv('OSRM_MOTORCYCLE_URL', 'NOT_SET')}")
         print(f"  OSRM_TRUCK_URL: {os.getenv('OSRM_TRUCK_URL', 'NOT_SET')}")
         print(f"  OSRM_JEEPNEY_URL: {os.getenv('OSRM_JEEPNEY_URL', 'NOT_SET')}")
         print("🌐 Normalized OSRM Endpoints:")
-        for mode in ['car', 'motorcycle', 'bicycle', 'walking', 'truck', 'jeepney']:
+        for mode in ['car', 'motorcycle', 'walking', 'truck', 'jeepney']:
             if mode in TRANSPORTATION_MODES:
                 endpoint = get_osrm_endpoint_for_mode(mode)
                 print(f"  {mode}: {endpoint}")
@@ -2878,7 +2878,7 @@ async def local_route(
     start: str = Query(..., description="Start coordinates as 'lat,lng'"),
     end: str = Query(..., description="End coordinates as 'lat,lng'"),
     waypoints: Optional[str] = Query(None, description="Optional waypoints as 'lng,lat;lng,lat;...'"),
-    transport_mode: str = Query("car", description="Transportation mode: car, motorcycle, walking, public_transport, bicycle, truck")
+    transport_mode: str = Query("car", description="Transportation mode: car, motorcycle, walking, public_transport, truck")
 ):
     """
     Calculate flood-aware routes using OSRM + terrain flood data.

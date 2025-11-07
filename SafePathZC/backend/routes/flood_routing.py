@@ -205,8 +205,8 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                             coordinates = geometry.get("coordinates", [])
                             
                             if coordinates:
-                                # Validate: Skip routes with dead-end segments (increased threshold to 100m)
-                                if has_dead_end_segment(coordinates, threshold_m=100.0):
+                                # Validate: Skip routes with dead-end segments (increased threshold to 200m - more lenient)
+                                if has_dead_end_segment(coordinates, threshold_m=200.0):
                                     logger.info(f"Skipping OSRM route: contains dead-end segment (route backtracks on itself)")
                                     continue
                                 
@@ -240,7 +240,7 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
             logger.info("Strategy 2: Generating waypoint routes...")
             
             # Smaller offset factors to avoid dead-end segments (reduced from 8%, 15% to 4%, 6%)
-            offset_factors = [0.04, -0.04, 0.06, -0.06]  # 4%, -4%, 6%, -6% offsets
+            offset_factors = [0.03, -0.03, 0.05, -0.05, 0.08, -0.08]  # More diverse offsets: 3%, -3%, 5%, -5%, 8%, -8%
             
             # Calculate baseline distance for validation (direct route distance)
             baseline_distance = all_routes[0]["distance"] if len(all_routes) > 0 else distance * 111000  # Convert degrees to meters
@@ -288,13 +288,13 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                 
                                 # Validate: Skip routes that are too much longer than baseline (>30% longer)
                                 # This filters out routes with dead-end segments or unreasonable detours
-                                if baseline_distance > 0 and route_distance > baseline_distance * 1.3:
+                                if baseline_distance > 0 and route_distance > baseline_distance * 1.5:
                                     logger.info(f"Skipping waypoint route with offset {offset_factor}: too long ({route_distance:.0f}m vs baseline {baseline_distance:.0f}m, {((route_distance/baseline_distance - 1) * 100):.0f}% longer)")
                                     continue
                                 
                                 # Validate: Skip routes with dead-end segments (backtracking)
-                                # Increased threshold to 100m to catch more dead-ends
-                                if has_dead_end_segment(coordinates, threshold_m=100.0):
+                                # Increased threshold to 200m to be more lenient and allow more routes
+                                if has_dead_end_segment(coordinates, threshold_m=200.0):
                                     logger.info(f"Skipping waypoint route with offset {offset_factor}: contains dead-end segment")
                                     continue
                                 
