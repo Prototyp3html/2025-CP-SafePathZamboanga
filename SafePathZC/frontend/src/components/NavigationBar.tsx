@@ -21,7 +21,7 @@ export const NavigationBar = () => {
         const userProfilePicture = localStorage.getItem(
           `user_profile_picture_${userKey}`
         );
-        
+
         if (userProfilePicture) {
           setProfilePicture(userProfilePicture);
         } else if (parsedUser.profilePicture) {
