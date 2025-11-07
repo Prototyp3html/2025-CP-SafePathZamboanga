@@ -736,7 +736,9 @@ const CommunityForum = () => {
                                   clipRule="evenodd"
                                 />
                               </svg>
-                              <span>COMMUNITY SAFETY REPORT - VERIFIED BY ADMIN</span>
+                              <span>
+                                COMMUNITY SAFETY REPORT - VERIFIED BY ADMIN
+                              </span>
                             </div>
                           </div>
                         )}
@@ -744,37 +746,15 @@ const CommunityForum = () => {
                         {/* Enhanced Post Header */}
                         <div className="p-6 border-b border-gray-100">
                           <div className="flex items-start space-x-4">
-                            <div
-                              className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-lg overflow-hidden relative ${
-                                post.category === "reports"
-                                  ? "bg-gradient-to-r from-blue-600 to-indigo-700"
-                                  : "bg-gradient-to-r from-blue-500 to-purple-600"
-                              }`}
-                            >
+                            <div className="w-12 h-12 rounded-full overflow-hidden bg-gray-200 flex items-center justify-center">
                               {post.author_profile_picture ? (
                                 <img
                                   src={post.author_profile_picture}
                                   alt={`${post.author_name}'s profile`}
-                                  className="w-full h-full object-cover"
+                                  className="w-full h-full object-cover rounded-full"
                                 />
                               ) : (
-                                <User className="w-6 h-6 text-white" />
-                              )}
-                              {/* Report indicator badge on avatar */}
-                              {post.category === "reports" && (
-                                <div className="absolute -bottom-1 -right-1 bg-indigo-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">
-                                  <svg
-                                    className="w-3 h-3"
-                                    fill="currentColor"
-                                    viewBox="0 0 20 20"
-                                  >
-                                    <path
-                                      fillRule="evenodd"
-                                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                                      clipRule="evenodd"
-                                    />
-                                  </svg>
-                                </div>
+                                <User className="w-6 h-6 text-gray-500" />
                               )}
                             </div>
                             <div className="flex-1">
