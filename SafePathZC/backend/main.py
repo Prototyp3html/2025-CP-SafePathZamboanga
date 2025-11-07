@@ -723,130 +723,18 @@ def calculate_risk_score(elevation: float, slope: float, weather: dict, lat: flo
     
     return min(risk_score, 10.0)  # Cap at 10
 
-def remove_dead_ends(coordinates: List[List[float]], dead_end_threshold: float = 0.00005) -> List[List[float]]:
-    """
-    ULTRA-AGGRESSIVE dead-end removal with multi-pass progressive cleaning.
-    
-    Removes "there and back" patterns where route goes somewhere then returns close to origin.
-    Uses multiple passes with increasingly strict thresholds to catch dead-ends at all scales.
-    
-    Args:
-        coordinates: List of [lng, lat] coordinate pairs
-        dead_end_threshold: Base distance threshold (degrees, ~5m)
-    
-    Returns:
-        Route with dead-ends aggressively removed
-    """
-    if len(coordinates) < 5:
-        return coordinates
-    
-    cleaned = coordinates.copy()
-    
-    # MULTI-PASS APPROACH: Start with VERY strict threshold, progressively loosen
-    # This catches tight loops first, then progressively larger dead-ends
-    # Reduced thresholds from previous version for MORE aggressive cleaning
-    thresholds = [
-        0.00003,  # ~3m - catch tiny loops
-        0.00005,  # ~5m - catch very small dead-ends
-        0.00008,  # ~8m - catch small dead-ends
-        0.0001,   # ~10m - catch medium dead-ends
-        0.00015,  # ~15m - catch larger dead-ends
-    ]
-    
-    for threshold in thresholds:
-        changes_made = True
-        iterations = 0
-        max_iterations = 30  # Increased from 20 for more thorough cleaning
-        
-        while changes_made and iterations < max_iterations:
-            changes_made = False
-            iterations += 1
-            i = 0
-            
-            while i < len(cleaned) - 4:
-                current = cleaned[i]
-                
-                # Look ahead to find if we return close to current position
-                # Start checking from i+3 (reduced from i+4) to catch tighter loops
-                for j in range(i + 3, len(cleaned)):
-                    next_point = cleaned[j]
-                    
-                    # Calculate distance between current and future point
-                    dist = ((next_point[0] - current[0])**2 + (next_point[1] - current[1])**2) ** 0.5
-                    
-                    # If we return close to where we were, it's likely a dead-end
-                    if dist < threshold:
-                        # Calculate total detour distance
-                        detour_dist = 0
-                        for k in range(i, j):
-                            p1 = cleaned[k]
-                            p2 = cleaned[k + 1]
-                            detour_dist += ((p2[0] - p1[0])**2 + (p2[1] - p1[1])**2) ** 0.5
-                        
-                        # ULTRA STRICT: If detour is ANY amount but returns close, it's a dead-end
-                        # Changed from "2x threshold" to "1.5x threshold" for maximum strictness
-                        if detour_dist > threshold * 1.5:
-                            # Remove the dead-end section
-                            cleaned = cleaned[:i+1] + cleaned[j:]
-                            changes_made = True
-                            break
-                
-                if changes_made:
-                    break
-                i += 1
-    
-    # ADDITIONAL PASS: Remove sharp U-turns (180-degree turns)
-    # This catches dead-ends that might have been missed by distance checking
-    final_cleaned = [cleaned[0]] if cleaned else []
-    
-    for i in range(1, len(cleaned) - 1):
-        if len(final_cleaned) < 2:
-            final_cleaned.append(cleaned[i])
-            continue
-            
-        prev = final_cleaned[-1]
-        curr = cleaned[i]
-        next_point = cleaned[i + 1]
-        
-        # Calculate vectors
-        vec1_x = curr[0] - prev[0]
-        vec1_y = curr[1] - prev[1]
-        vec2_x = next_point[0] - curr[0]
-        vec2_y = next_point[1] - curr[1]
-        
-        # Normalize vectors
-        len1 = (vec1_x**2 + vec1_y**2) ** 0.5
-        len2 = (vec2_x**2 + vec2_y**2) ** 0.5
-        
-        if len1 > 0 and len2 > 0:
-            vec1_x /= len1
-            vec1_y /= len1
-            vec2_x /= len2
-            vec2_y /= len2
-            
-            # Dot product: -1 = opposite directions (180° turn)
-            dot = vec1_x * vec2_x + vec1_y * vec2_y
-            
-            # If angle > 135 degrees (dot < -0.7), skip this point (it's a sharp U-turn)
-            if dot > -0.7:
-                final_cleaned.append(curr)
-        else:
-            final_cleaned.append(curr)
-    
-    if cleaned:
-        final_cleaned.append(cleaned[-1])
-    
-    return final_cleaned
-
 def simplify_route(coordinates: List[List[float]], tolerance: float = 0.00003, waypoints: List[List[float]] = None) -> List[List[float]]:
     """
-    Remove backtracking, dead-ends, and redundant points from route coordinates.
+    Remove backtracking, redundant points from route coordinates.
     This cleans up messy OSRM routes that have U-turns and side explorations.
     PRESERVES waypoint coordinates to ensure routes visually pass through them.
     
+    NOTE: Dead-end detection is now handled in flood_routing.py before routes reach here.
+    This function only does light cleanup and simplification.
+    
     Args:
         coordinates: List of [lng, lat] coordinate pairs
-        tolerance: Distance tolerance for simplification (degrees, ~3m) - REDUCED for better road alignment
+        tolerance: Distance tolerance for simplification (degrees, ~3m)
         waypoints: List of [lng, lat] waypoint coordinates that must be preserved
     
     Returns:
@@ -873,13 +761,7 @@ def simplify_route(coordinates: List[List[float]], tolerance: float = 0.00003, w
     if len(cleaned) < 3:
         return cleaned
     
-    # Step 2: AGGRESSIVE dead-end removal (NEW!)
-    cleaned = remove_dead_ends(cleaned, dead_end_threshold=0.0003)
-    
-    if len(cleaned) < 3:
-        return cleaned
-    
-    # Step 3: Remove sharp backtracking (angle-based)
+    # Step 2: Remove sharp backtracking (angle-based) - ONLY for obvious U-turns
     no_backtrack = [cleaned[0]]
     
     for i in range(1, len(cleaned) - 1):
@@ -891,22 +773,22 @@ def simplify_route(coordinates: List[List[float]], tolerance: float = 0.00003, w
         vec_to_curr = [curr[0] - prev[0], curr[1] - prev[1]]
         vec_to_next = [next_point[0] - curr[0], next_point[1] - curr[1]]
         
-        # Dot product to check if going backwards (angle > 120 degrees)
+        # Dot product to check if going backwards (angle > 150 degrees - VERY sharp turn)
         dot = vec_to_curr[0] * vec_to_next[0] + vec_to_curr[1] * vec_to_next[1]
         mag_curr = (vec_to_curr[0]**2 + vec_to_curr[1]**2) ** 0.5
         mag_next = (vec_to_next[0]**2 + vec_to_next[1]**2) ** 0.5
         
         if mag_curr > 0 and mag_next > 0:
             cos_angle = dot / (mag_curr * mag_next)
-            # If angle < -0.3 (> 107 degrees), it's sharp backtracking
-            if cos_angle > -0.3:
+            # If angle < -0.866 (>150 degrees), it's a very sharp U-turn - remove it
+            if cos_angle > -0.866:
                 no_backtrack.append(curr)
         else:
             no_backtrack.append(curr)
     
     no_backtrack.append(cleaned[-1])
     
-    # Step 4: Apply Ramer-Douglas-Peucker simplification to remove redundant points
+    # Step 3: Apply Ramer-Douglas-Peucker simplification to remove redundant points
     def perpendicular_distance(point, line_start, line_end):
         """Calculate perpendicular distance from point to line segment"""
         if line_start == line_end:
@@ -954,7 +836,9 @@ def simplify_route(coordinates: List[List[float]], tolerance: float = 0.00003, w
     
     simplified = rdp_simplify(no_backtrack, tolerance)
     
-    print(f"     🧹 Route simplified: {len(coordinates)} → {len(simplified)} points (removed {len(coordinates) - len(simplified)} redundant points)")
+    removed_count = len(coordinates) - len(simplified)
+    if removed_count > 0:
+        print(f"     🧹 Route simplified: {len(coordinates)} → {len(simplified)} points (removed {removed_count} redundant points)")
     
     return simplified
 
