@@ -109,7 +109,7 @@ class User(Base):
     phone = Column(String, nullable=True)
     location = Column(String, nullable=True)
     emergency_contact = Column(String, nullable=True)
-    # profile_picture = Column(Text, nullable=True)  # TEMPORARILY COMMENTED - Add manually in Railway DB first
+    profile_picture = Column(Text, nullable=True)  # Base64 encoded image data
     role = Column(String, default="user")  # user, admin, moderator
     is_active = Column(Boolean, default=True)
     community_points = Column(Integer, default=0)

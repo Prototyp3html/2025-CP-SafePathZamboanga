@@ -78,6 +78,67 @@ const Profile = () => {
     }
   };
 
+  const handleProfilePictureChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Check file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert("File size must be less than 5MB");
+      return;
+    }
+
+    // Check file type
+    if (!file.type.startsWith('image/')) {
+      alert("Please select an image file");
+      return;
+    }
+
+    try {
+      // Convert to base64
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const base64Image = e.target?.result as string;
+        
+        // Update local state and localStorage immediately for instant feedback
+        setProfilePicture(base64Image);
+        if (user?.email) {
+          localStorage.setItem(`user_profile_picture_${user.email}`, base64Image);
+        }
+
+        // Send to backend
+        const token = localStorage.getItem("user_token");
+        if (token) {
+          try {
+            const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
+            const response = await fetch(`${BACKEND_URL}/auth/profile-picture`, {
+              method: 'PUT',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                profilePicture: base64Image
+              }),
+            });
+
+            if (response.ok) {
+              console.log("✅ Profile picture saved to database");
+            } else {
+              console.error("Failed to save profile picture to database");
+            }
+          } catch (error) {
+            console.error("Error uploading profile picture:", error);
+          }
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error("Error processing profile picture:", error);
+      alert("Error processing image. Please try again.");
+    }
+  };
+
   const handleLoginSuccess = (userData: any) => {
     setIsLoggedIn(true);
     setUser(userData);
@@ -247,7 +308,7 @@ const Profile = () => {
             <div className="lg:col-span-1">
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 text-center">
                 {/* Profile Picture */}
-                <div className="w-32 h-32 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 overflow-hidden">
+                <div className="relative w-32 h-32 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 overflow-hidden">
                   {profilePicture ? (
                     <img
                       src={profilePicture}
@@ -269,7 +330,30 @@ const Profile = () => {
                       />
                     </svg>
                   )}
+                  
+                  {/* Camera Icon Overlay */}
+                  <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity cursor-pointer rounded-full"
+                       onClick={() => document.getElementById('profile-picture-input')?.click()}>
+                    <i className="fas fa-camera text-white text-xl"></i>
+                  </div>
                 </div>
+                
+                {/* Hidden File Input */}
+                <input
+                  id="profile-picture-input"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleProfilePictureChange}
+                  className="hidden"
+                />
+                
+                {/* Change Picture Button */}
+                <button
+                  onClick={() => document.getElementById('profile-picture-input')?.click()}
+                  className="text-blue-600 hover:text-blue-700 text-sm font-medium mb-4"
+                >
+                  Change Profile Picture
+                </button>
 
                 {/* User Info */}
                 <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">

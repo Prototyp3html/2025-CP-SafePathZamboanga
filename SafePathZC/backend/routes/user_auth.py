@@ -98,7 +98,7 @@ def format_user_response(user: User) -> dict:
         "phone": user.phone,
         "location": user.location,
         "emergencyContact": user.emergency_contact,
-        "profilePicture": None,  # TEMPORARILY DISABLED - Add profile_picture column in Railway DB first
+        "profilePicture": user.profile_picture,  # Now enabled with database column
         "role": user.role,
         "isActive": user.is_active,
         "communityPoints": user.community_points or 0,
@@ -199,9 +199,8 @@ async def update_user_profile(
         user.location = update_data.location
     if update_data.emergencyContact is not None:
         user.emergency_contact = update_data.emergencyContact
-    # TEMPORARILY DISABLED profile picture updates - add column in Railway DB first
-    # if update_data.profilePicture is not None:
-    #     user.profile_picture = update_data.profilePicture
+    if update_data.profilePicture is not None:
+        user.profile_picture = update_data.profilePicture
     
     user.last_activity = datetime.utcnow()
     db.commit()
@@ -382,9 +381,8 @@ async def update_user_profile(
             user.location = profile_data.location
         if profile_data.emergencyContact is not None:
             user.emergency_contact = profile_data.emergencyContact
-        # TEMPORARILY DISABLED profile picture updates - add column in Railway DB first
-        # if profile_data.profilePicture is not None:
-        #     user.profile_picture = profile_data.profilePicture
+        if profile_data.profilePicture is not None:
+            user.profile_picture = profile_data.profilePicture
             
         db.commit()
         db.refresh(user)
@@ -397,7 +395,7 @@ async def update_user_profile(
                 "name": user.name,
                 "phone": user.phone,
                 "location": user.location,
-                "profilePicture": None,  # TEMPORARILY DISABLED
+                "profilePicture": user.profile_picture,  # Now enabled
                 "emergencyContact": user.emergency_contact
             }
         }
@@ -422,8 +420,12 @@ async def update_profile_picture(
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
-        # In a real implementation, you would save the image to a file storage service
-        # For now, we'll just acknowledge the update
+        # Save the base64 image data
+        if "profilePicture" in picture_data:
+            user.profile_picture = picture_data["profilePicture"]
+            db.commit()
+            db.refresh(user)
+        
         return {"message": "Profile picture updated successfully"}
         
     except jwt.PyJWTError:
