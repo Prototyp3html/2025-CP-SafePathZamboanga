@@ -228,23 +228,23 @@ const CommunityForum = () => {
 
       const data = await response.json();
       const newPosts = data.posts || [];
-      
+
       console.log("Forum posts fetched:", newPosts.length);
       console.log("Page:", page, "Append:", append);
-      
+
       if (append) {
         // Add new posts to existing ones
-        setForumPosts(prevPosts => [...prevPosts, ...newPosts]);
+        setForumPosts((prevPosts) => [...prevPosts, ...newPosts]);
         setCurrentPage(page);
       } else {
         // Replace all posts (new search/filter)
         setForumPosts(newPosts);
         setCurrentPage(0);
       }
-      
+
       // Check if there are more posts available
       setHasMorePosts(newPosts.length === limit);
-      
+
       console.log(
         "Reports found:",
         newPosts.filter((p) => p.category === "reports")?.length || 0
@@ -263,7 +263,7 @@ const CommunityForum = () => {
 
   const loadMorePosts = async () => {
     if (loadingMore || !hasMorePosts) return;
-    
+
     const nextPage = currentPage + 1;
     await fetchPosts(nextPage, true);
   };
@@ -578,17 +578,25 @@ const CommunityForum = () => {
                           selectedCategory ===
                           category.name.toLowerCase().replace(" ", "-")
                             ? category.name === "Road Reports"
-                              ? "bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg"
+                              ? "bg-gradient-to-r from-indigo-600 to-blue-700 text-white shadow-lg"
                               : "bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg"
                             : category.name === "Road Reports"
-                            ? "hover:bg-orange-50 text-orange-700 hover:text-orange-600 border-l-4 border-l-orange-500"
+                            ? "hover:bg-indigo-50 text-indigo-700 hover:text-indigo-600 border-l-4 border-l-indigo-500"
                             : "hover:bg-gray-50 text-gray-700 hover:text-blue-600"
                         }`}
                       >
                         <span className="font-medium flex items-center">
                           {category.name === "Road Reports" && (
-                            <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                            <svg
+                              className="w-4 h-4 mr-2"
+                              fill="currentColor"
+                              viewBox="0 0 20 20"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                                clipRule="evenodd"
+                              />
                             </svg>
                           )}
                           {category.name}
@@ -713,20 +721,38 @@ const CommunityForum = () => {
                           post.is_urgent
                             ? "border-l-4 border-l-red-500 bg-gradient-to-r from-red-50 to-white"
                             : post.category === "reports"
-                            ? "border-l-4 border-l-orange-500 bg-gradient-to-r from-orange-50 to-white border-orange-200 hover:border-orange-300"
+                            ? "border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50 to-white border-blue-200 hover:border-blue-300"
                             : "border-gray-100 hover:border-blue-200"
                         }`}
                       >
                         {/* Report Status Banner (only for report posts) */}
                         {post.category === "reports" && (
-                          <div className="bg-gradient-to-r from-orange-500 to-red-600 text-white p-3">
+                          <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-3">
                             <div className="flex items-center justify-center space-x-2 text-sm font-medium">
-                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                              <svg
+                                className="w-4 h-4"
+                                fill="currentColor"
+                                viewBox="0 0 20 20"
+                              >
+                                <path
+                                  fillRule="evenodd"
+                                  d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                                  clipRule="evenodd"
+                                />
                               </svg>
-                              <span>🚨 COMMUNITY SAFETY REPORT - VERIFIED BY ADMIN</span>
-                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                              <span>
+                                🛡️ COMMUNITY SAFETY REPORT - VERIFIED BY ADMIN
+                              </span>
+                              <svg
+                                className="w-4 h-4"
+                                fill="currentColor"
+                                viewBox="0 0 20 20"
+                              >
+                                <path
+                                  fillRule="evenodd"
+                                  d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                                  clipRule="evenodd"
+                                />
                               </svg>
                             </div>
                           </div>
@@ -735,11 +761,13 @@ const CommunityForum = () => {
                         {/* Enhanced Post Header */}
                         <div className="p-6 border-b border-gray-100">
                           <div className="flex items-start space-x-4">
-                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-lg overflow-hidden relative ${
-                              post.category === "reports" 
-                                ? "bg-gradient-to-r from-orange-500 to-red-600" 
-                                : "bg-gradient-to-r from-blue-500 to-purple-600"
-                            }`}>
+                            <div
+                              className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-lg overflow-hidden relative ${
+                                post.category === "reports"
+                                  ? "bg-gradient-to-r from-blue-600 to-indigo-700"
+                                  : "bg-gradient-to-r from-blue-500 to-purple-600"
+                              }`}
+                            >
                               {post.author_profile_picture ? (
                                 <img
                                   src={post.author_profile_picture}
@@ -751,9 +779,17 @@ const CommunityForum = () => {
                               )}
                               {/* Report indicator badge on avatar */}
                               {post.category === "reports" && (
-                                <div className="absolute -bottom-1 -right-1 bg-orange-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">
-                                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                <div className="absolute -bottom-1 -right-1 bg-indigo-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">
+                                  <svg
+                                    className="w-3 h-3"
+                                    fill="currentColor"
+                                    viewBox="0 0 20 20"
+                                  >
+                                    <path
+                                      fillRule="evenodd"
+                                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                                      clipRule="evenodd"
+                                    />
                                   </svg>
                                 </div>
                               )}
@@ -765,11 +801,19 @@ const CommunityForum = () => {
                                 </h3>
                                 {/* Report Badge - shows for report category posts */}
                                 {post.category === "reports" && (
-                                  <span className="bg-orange-500 text-white text-xs px-3 py-1 rounded-full font-bold flex items-center">
-                                    <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                  <span className="bg-indigo-600 text-white text-xs px-3 py-1 rounded-full font-bold flex items-center">
+                                    <svg
+                                      className="w-3 h-3 mr-1"
+                                      fill="currentColor"
+                                      viewBox="0 0 20 20"
+                                    >
+                                      <path
+                                        fillRule="evenodd"
+                                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                                        clipRule="evenodd"
+                                      />
                                     </svg>
-                                    REPORT
+                                    VERIFIED
                                   </span>
                                 )}
                                 {post.is_urgent && (
@@ -785,8 +829,16 @@ const CommunityForum = () => {
                                 {/* Verified Report Status for report posts */}
                                 {post.category === "reports" && (
                                   <div className="flex items-center bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs">
-                                    <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                      <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                    <svg
+                                      className="w-3 h-3 mr-1"
+                                      fill="currentColor"
+                                      viewBox="0 0 20 20"
+                                    >
+                                      <path
+                                        fillRule="evenodd"
+                                        d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                                        clipRule="evenodd"
+                                      />
                                     </svg>
                                     Verified Report
                                   </div>
@@ -795,11 +847,13 @@ const CommunityForum = () => {
                                   <Clock className="w-3 h-3 mr-1" />
                                   {post.timestamp}
                                 </div>
-                                <span className={`px-2 py-1 rounded-full text-xs ${
-                                  post.category === "reports" 
-                                    ? "bg-orange-100 text-orange-700" 
-                                    : "bg-gray-100 text-gray-600"
-                                }`}>
+                                <span
+                                  className={`px-2 py-1 rounded-full text-xs ${
+                                    post.category === "reports"
+                                      ? "bg-indigo-100 text-indigo-700"
+                                      : "bg-gray-100 text-gray-600"
+                                  }`}
+                                >
                                   {post.category}
                                 </span>
                               </div>
@@ -1015,16 +1069,32 @@ const CommunityForum = () => {
                 {/* Load More Button */}
                 {hasMorePosts && !loading && (
                   <div className="text-center mt-8">
-                    <button 
+                    <button
                       onClick={loadMorePosts}
                       disabled={loadingMore}
                       className="bg-white border-2 border-gray-200 text-gray-700 px-8 py-4 rounded-2xl font-medium hover:bg-gray-50 hover:border-blue-300 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center mx-auto"
                     >
                       {loadingMore ? (
                         <>
-                          <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          <svg
+                            className="animate-spin -ml-1 mr-3 h-5 w-5 text-gray-700"
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                          >
+                            <circle
+                              className="opacity-25"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                            ></circle>
+                            <path
+                              className="opacity-75"
+                              fill="currentColor"
+                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                            ></path>
                           </svg>
                           Loading...
                         </>
@@ -1034,11 +1104,13 @@ const CommunityForum = () => {
                     </button>
                   </div>
                 )}
-                
+
                 {/* End of posts message */}
                 {!hasMorePosts && !loading && forumPosts.length > 0 && (
                   <div className="text-center mt-8">
-                    <p className="text-gray-500 text-sm">You've reached the end of the posts! 🎉</p>
+                    <p className="text-gray-500 text-sm">
+                      You've reached the end of the posts! 🎉
+                    </p>
                   </div>
                 )}
               </div>
