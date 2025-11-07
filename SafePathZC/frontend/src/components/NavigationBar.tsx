@@ -13,6 +13,7 @@ export const NavigationBar = () => {
       const userData = localStorage.getItem("user_data");
       if (userData) {
         const parsedUser = JSON.parse(userData);
+        console.log("NavigationBar: User role detected:", parsedUser.role);
         setUser(parsedUser);
 
         // Check for profile picture using email as consistent key
@@ -142,9 +143,9 @@ export const NavigationBar = () => {
         {/* User Icon */}
         <div>
           <Link
-            to="/profile"
+            to={user?.role === "admin" ? "/admin" : "/profile"}
             className={`flex items-center justify-center w-7 h-7 md:w-8 md:h-8 rounded-full transition-all duration-200 overflow-hidden ${
-              isActive("/profile")
+              isActive(user?.role === "admin" ? "/admin" : "/profile")
                 ? "bg-blue-700 bg-opacity-80"
                 : "bg-white bg-opacity-20 hover:bg-opacity-30"
             }`}
