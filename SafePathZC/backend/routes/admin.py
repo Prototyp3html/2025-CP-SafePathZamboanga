@@ -249,7 +249,7 @@ async def update_report_status(
                     forum_post.updated_at = datetime.utcnow()
                     print(f"Auto-approved existing forum post {forum_post.id} for report {report_id}")
                 else:
-                    # Create new forum post for the approved report
+                    # Create new forum post for the approved report using original reporter info
                     severity_text = report.urgency.upper() if report.urgency in ["severe", "moderate", "low"] else "MODERATE"
                     
                     post_content = f"""{report.category.upper()} ALERT
@@ -266,10 +266,25 @@ Please exercise caution when traveling through this area and consider alternativ
 
 Status: ✅ Verified by Admin"""
                     
-                    # Get system admin user for forum post authorship
-                    admin_user = db.query(AdminUser).filter(AdminUser.role == "admin").first()
-                    author_id = admin_user.id if admin_user else 1
-                    author_name = admin_user.name if admin_user else "SafePath System"
+                    # Try to find the original reporter in the User table
+                    reporter_user = None
+                    if report.reporter_email:
+                        reporter_user = db.query(User).filter(User.email == report.reporter_email).first()
+                        print(f"🔍 Looking for reporter with email: {report.reporter_email}")
+                        print(f"👤 Found reporter: {reporter_user.name if reporter_user else 'Not found'}")
+                    
+                    if reporter_user:
+                        # Use original reporter's information
+                        author_id = reporter_user.id
+                        author_name = reporter_user.name
+                        print(f"✅ Using original reporter: {author_name} (ID: {author_id})")
+                    else:
+                        # Fallback: Use reporter name from report
+                        author_id = 999999  # Special ID for anonymous/non-registered users
+                        author_name = report.reporter_name if report.reporter_name else "Community Member"
+                        print(f"⚠️ Using fallback author: {author_name} (ID: {author_id})")
+                        print(f"📧 Report email was: {report.reporter_email}")
+                        print(f"👤 Report name was: {report.reporter_name}")
                     
                     new_forum_post = Post(
                         title=f"{report.category.title()} Report - {report.location_address}",
@@ -792,10 +807,26 @@ Please exercise caution when traveling through this area and consider alternativ
 
 Status: ✅ Verified by Admin"""
             
-            # Get system admin user for forum post authorship
-            admin_user = db.query(AdminUser).filter(AdminUser.role == "admin").first()
-            author_id = admin_user.id if admin_user else 1
-            author_name = admin_user.name if admin_user else "SafePath System"
+            # Use original reporter's information for forum post authorship
+            # Try to find the reporter in the User table
+            reporter_user = None
+            if report_data.reporter_email:
+                reporter_user = db.query(User).filter(User.email == report_data.reporter_email).first()
+                print(f"🔍 Auto-approval: Looking for reporter with email: {report_data.reporter_email}")
+                print(f"👤 Auto-approval: Found reporter: {reporter_user.name if reporter_user else 'Not found'}")
+            
+            if reporter_user:
+                # Use original reporter's information
+                author_id = reporter_user.id
+                author_name = reporter_user.name
+                print(f"✅ Auto-approval: Using original reporter: {author_name} (ID: {author_id})")
+            else:
+                # Fallback: Use reporter name from report data
+                author_id = 999999  # Special ID for anonymous/non-registered users
+                author_name = report_data.reporter_name if report_data.reporter_name else "Community Member"
+                print(f"⚠️ Auto-approval: Using fallback author: {author_name} (ID: {author_id})")
+                print(f"📧 Auto-approval: Report email was: {report_data.reporter_email}")
+                print(f"👤 Auto-approval: Report name was: {report_data.reporter_name}")
             
             new_forum_post = Post(
                 title=f"{report_data.category.title()} Report - {report_data.location_address}",
