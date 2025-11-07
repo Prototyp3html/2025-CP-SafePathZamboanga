@@ -74,7 +74,7 @@ def has_dead_end_segment(coordinates: List[List[float]], threshold_m: float = 10
                     path_distance += math.sqrt(dx_seg*dx_seg + dy_seg*dy_seg)
                 
                 # If path distance is significantly longer than direct distance, it's a dead-end
-                if path_distance > distance * 3.0:  # Path is 3x longer than direct distance
+                if path_distance > distance * 8.0:  # Path is 8x longer than direct distance (more lenient)
                     logger.warning(f"Dead-end loop detected: points {i} and {j} are {distance:.0f}m apart but path is {path_distance:.0f}m")
                     return True
     
@@ -205,8 +205,8 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                             coordinates = geometry.get("coordinates", [])
                             
                             if coordinates:
-                                # Validate: Skip routes with dead-end segments (increased threshold to 200m - more lenient)
-                                if has_dead_end_segment(coordinates, threshold_m=200.0):
+                                # Validate: Skip routes with dead-end segments (increased threshold to 400m - very lenient)
+                                if has_dead_end_segment(coordinates, threshold_m=400.0):
                                     logger.info(f"Skipping OSRM route: contains dead-end segment (route backtracks on itself)")
                                     continue
                                 
@@ -293,8 +293,8 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                     continue
                                 
                                 # Validate: Skip routes with dead-end segments (backtracking)
-                                # Increased threshold to 200m to be more lenient and allow more routes
-                                if has_dead_end_segment(coordinates, threshold_m=200.0):
+                                # Increased threshold to 400m to be very lenient and allow more routes
+                                if has_dead_end_segment(coordinates, threshold_m=400.0):
                                     logger.info(f"Skipping waypoint route with offset {offset_factor}: contains dead-end segment")
                                     continue
                                 
