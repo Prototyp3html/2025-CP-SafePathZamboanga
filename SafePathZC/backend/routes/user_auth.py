@@ -98,7 +98,7 @@ def format_user_response(user: User) -> dict:
         "phone": user.phone,
         "location": user.location,
         "emergencyContact": user.emergency_contact,
-        "profilePicture": user.profile_picture,
+        "profilePicture": None,  # TEMPORARILY DISABLED - Add profile_picture column in Railway DB first
         "role": user.role,
         "isActive": user.is_active,
         "communityPoints": user.community_points or 0,
@@ -199,8 +199,9 @@ async def update_user_profile(
         user.location = update_data.location
     if update_data.emergencyContact is not None:
         user.emergency_contact = update_data.emergencyContact
-    if update_data.profilePicture is not None:
-        user.profile_picture = update_data.profilePicture
+    # TEMPORARILY DISABLED profile picture updates - add column in Railway DB first
+    # if update_data.profilePicture is not None:
+    #     user.profile_picture = update_data.profilePicture
     
     user.last_activity = datetime.utcnow()
     db.commit()
@@ -381,8 +382,9 @@ async def update_user_profile(
             user.location = profile_data.location
         if profile_data.emergencyContact is not None:
             user.emergency_contact = profile_data.emergencyContact
-        if profile_data.profilePicture is not None:
-            user.profile_picture = profile_data.profilePicture
+        # TEMPORARILY DISABLED profile picture updates - add column in Railway DB first
+        # if profile_data.profilePicture is not None:
+        #     user.profile_picture = profile_data.profilePicture
             
         db.commit()
         db.refresh(user)
@@ -395,7 +397,7 @@ async def update_user_profile(
                 "name": user.name,
                 "phone": user.phone,
                 "location": user.location,
-                "profilePicture": user.profile_picture,
+                "profilePicture": None,  # TEMPORARILY DISABLED
                 "emergencyContact": user.emergency_contact
             }
         }
