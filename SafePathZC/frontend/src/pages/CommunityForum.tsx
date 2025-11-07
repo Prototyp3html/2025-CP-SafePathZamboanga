@@ -715,41 +715,28 @@ const CommunityForum = () => {
                         key={post.id}
                         className={`bg-white dark:bg-gray-800 rounded-2xl shadow-xl border transition-all duration-300 hover:shadow-2xl hover:scale-[1.02] ${
                           post.is_urgent
-                            ? "border-l-4 border-l-red-500 bg-gradient-to-r from-red-50 to-white"
+                            ? "bg-gradient-to-r from-red-50 to-white border-red-200 hover:border-red-300"
                             : post.category === "reports"
-                            ? "border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50 to-white border-blue-200 hover:border-blue-300"
+                            ? "bg-gradient-to-r from-blue-50 to-white border-blue-200 hover:border-blue-300"
                             : "border-gray-100 hover:border-blue-200"
                         }`}
                       >
                         {/* Report Status Banner (only for report posts) */}
                         {post.category === "reports" && (
-                          <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-3">
-                            <div className="flex items-center justify-center space-x-2 text-sm font-medium">
+                          <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-4 py-2">
+                            <div className="flex items-center justify-center space-x-2 text-xs font-medium">
                               <svg
-                                className="w-4 h-4"
+                                className="w-3 h-3"
                                 fill="currentColor"
                                 viewBox="0 0 20 20"
                               >
                                 <path
                                   fillRule="evenodd"
-                                  d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                                  d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
                                   clipRule="evenodd"
                                 />
                               </svg>
-                              <span>
-                                🛡️ COMMUNITY SAFETY REPORT - VERIFIED BY ADMIN
-                              </span>
-                              <svg
-                                className="w-4 h-4"
-                                fill="currentColor"
-                                viewBox="0 0 20 20"
-                              >
-                                <path
-                                  fillRule="evenodd"
-                                  d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                                  clipRule="evenodd"
-                                />
-                              </svg>
+                              <span>COMMUNITY SAFETY REPORT - VERIFIED BY ADMIN</span>
                             </div>
                           </div>
                         )}
@@ -791,67 +778,44 @@ const CommunityForum = () => {
                               )}
                             </div>
                             <div className="flex-1">
-                              <div className="flex items-center space-x-3 mb-2">
-                                <h3 className="font-bold text-xl text-gray-900 hover:text-blue-600 transition-colors cursor-pointer">
-                                  {post.title}
-                                </h3>
-                                {/* Report Badge - shows for report category posts */}
-                                {post.category === "reports" && (
-                                  <span className="bg-indigo-600 text-white text-xs px-3 py-1 rounded-full font-bold flex items-center">
-                                    <svg
-                                      className="w-3 h-3 mr-1"
-                                      fill="currentColor"
-                                      viewBox="0 0 20 20"
-                                    >
-                                      <path
-                                        fillRule="evenodd"
-                                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                                        clipRule="evenodd"
-                                      />
-                                    </svg>
-                                    VERIFIED
-                                  </span>
-                                )}
-                                {post.is_urgent && (
-                                  <span className="bg-red-500 text-white text-xs px-3 py-1 rounded-full font-bold animate-pulse">
-                                    URGENT
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex items-center text-sm text-gray-500 space-x-4">
-                                <span className="font-medium text-blue-600">
-                                  {post.author_name}
-                                </span>
-                                {/* Verified Report Status for report posts */}
-                                {post.category === "reports" && (
-                                  <div className="flex items-center bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs">
-                                    <svg
-                                      className="w-3 h-3 mr-1"
-                                      fill="currentColor"
-                                      viewBox="0 0 20 20"
-                                    >
-                                      <path
-                                        fillRule="evenodd"
-                                        d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                                        clipRule="evenodd"
-                                      />
-                                    </svg>
-                                    Verified Report
+                              <div className="flex items-start justify-between mb-3">
+                                <div>
+                                  <h3 className="font-bold text-xl text-gray-900 hover:text-blue-600 transition-colors cursor-pointer mb-2">
+                                    {post.title}
+                                  </h3>
+                                  <div className="flex items-center text-sm text-gray-500 space-x-4">
+                                    <span className="font-medium text-blue-600">
+                                      {post.author_name}
+                                    </span>
+                                    <div className="flex items-center">
+                                      <Clock className="w-3 h-3 mr-1" />
+                                      {post.timestamp}
+                                    </div>
                                   </div>
-                                )}
-                                <div className="flex items-center">
-                                  <Clock className="w-3 h-3 mr-1" />
-                                  {post.timestamp}
                                 </div>
-                                <span
-                                  className={`px-2 py-1 rounded-full text-xs ${
-                                    post.category === "reports"
-                                      ? "bg-indigo-100 text-indigo-700"
-                                      : "bg-gray-100 text-gray-600"
-                                  }`}
-                                >
-                                  {post.category}
-                                </span>
+                                <div className="flex items-center space-x-2">
+                                  {post.is_urgent && (
+                                    <span className="bg-red-500 text-white text-xs px-3 py-1 rounded-full font-bold animate-pulse">
+                                      URGENT
+                                    </span>
+                                  )}
+                                  {post.category === "reports" && (
+                                    <span className="bg-green-100 text-green-700 text-xs px-3 py-1 rounded-full font-medium flex items-center">
+                                      <svg
+                                        className="w-3 h-3 mr-1"
+                                        fill="currentColor"
+                                        viewBox="0 0 20 20"
+                                      >
+                                        <path
+                                          fillRule="evenodd"
+                                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                                          clipRule="evenodd"
+                                        />
+                                      </svg>
+                                      VERIFIED
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </div>
