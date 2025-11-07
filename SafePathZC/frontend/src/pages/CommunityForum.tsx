@@ -577,11 +577,7 @@ const CommunityForum = () => {
                         className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 flex items-center justify-between group ${
                           selectedCategory ===
                           category.name.toLowerCase().replace(" ", "-")
-                            ? category.name === "Road Reports"
-                              ? "bg-gradient-to-r from-indigo-600 to-blue-700 text-white shadow-lg"
-                              : "bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg"
-                            : category.name === "Road Reports"
-                            ? "hover:bg-indigo-50 text-indigo-700 hover:text-indigo-600 border-l-4 border-l-indigo-500"
+                            ? "bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg"
                             : "hover:bg-gray-50 text-gray-700 hover:text-blue-600"
                         }`}
                       >
@@ -893,48 +889,63 @@ const CommunityForum = () => {
                                   </div>
 
                                   {/* Report Details */}
-                                  <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                                  <div className="bg-gradient-to-br from-gray-50 to-white rounded-xl border border-gray-200 p-6 space-y-4">
                                     {formattedContent.location && (
-                                      <div className="flex items-start space-x-3">
-                                        <div className="text-sm font-medium text-gray-500 w-20">
-                                          Location
+                                      <div className="flex items-center space-x-4">
+                                        <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-lg">
+                                          📍
                                         </div>
-                                        <div className="text-sm text-gray-900 flex-1">
-                                          {formattedContent.location}
+                                        <div>
+                                          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                            Location
+                                          </div>
+                                          <div className="text-base font-medium text-gray-900 mt-1">
+                                            {formattedContent.location}
+                                          </div>
                                         </div>
                                       </div>
                                     )}
 
                                     {formattedContent.description && (
-                                      <div className="flex items-start space-x-3">
-                                        <div className="text-sm font-medium text-gray-500 w-20">
-                                          Details
+                                      <div className="flex items-start space-x-4">
+                                        <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-lg">
+                                          📝
                                         </div>
-                                        <div className="text-sm text-gray-900 flex-1">
-                                          {formattedContent.description}
+                                        <div>
+                                          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                            Details
+                                          </div>
+                                          <div className="text-base text-gray-900 mt-1">
+                                            {formattedContent.description}
+                                          </div>
                                         </div>
                                       </div>
                                     )}
 
                                     {formattedContent.severity && (
-                                      <div className="flex items-start space-x-3">
-                                        <div className="text-sm font-medium text-gray-500 w-20">
-                                          Severity
+                                      <div className="flex items-center space-x-4">
+                                        <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-lg">
+                                          ⚠️
                                         </div>
-                                        <div
-                                          className={`text-sm font-medium flex-1 ${
-                                            formattedContent.severity.includes(
-                                              "HIGH"
-                                            )
-                                              ? "text-red-600"
-                                              : formattedContent.severity.includes(
-                                                  "MODERATE"
-                                                )
-                                              ? "text-yellow-600"
-                                              : "text-green-600"
-                                          }`}
-                                        >
-                                          {formattedContent.severity}
+                                        <div>
+                                          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                            Severity
+                                          </div>
+                                          <div
+                                            className={`text-base font-semibold mt-1 inline-flex items-center px-3 py-1 rounded-full text-sm ${
+                                              formattedContent.severity.includes(
+                                                "HIGH"
+                                              )
+                                                ? "bg-red-100 text-red-800"
+                                                : formattedContent.severity.includes(
+                                                    "MODERATE"
+                                                  )
+                                                ? "bg-yellow-100 text-yellow-800"
+                                                : "bg-green-100 text-green-800"
+                                            }`}
+                                          >
+                                            {formattedContent.severity}
+                                          </div>
                                         </div>
                                       </div>
                                     )}
@@ -942,38 +953,63 @@ const CommunityForum = () => {
                                     {(formattedContent.weather ||
                                       formattedContent.temperature ||
                                       formattedContent.windSpeed) && (
-                                      <div className="flex items-start space-x-3">
-                                        <div className="text-sm font-medium text-gray-500 w-20">
-                                          Weather
+                                      <div className="flex items-start space-x-4">
+                                        <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-lg">
+                                          🌤️
                                         </div>
-                                        <div className="text-sm text-gray-900 flex-1">
-                                          {formattedContent.weather && (
-                                            <div>
-                                              {formattedContent.weather}
-                                            </div>
-                                          )}
-                                          {formattedContent.temperature && (
-                                            <div>
-                                              {formattedContent.temperature}
-                                            </div>
-                                          )}
-                                          {formattedContent.windSpeed && (
-                                            <div>
-                                              {formattedContent.windSpeed}
-                                            </div>
-                                          )}
+                                        <div>
+                                          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                            Weather Conditions
+                                          </div>
+                                          <div className="text-base text-gray-900 mt-1 space-y-1">
+                                            {formattedContent.weather && (
+                                              <div>
+                                                {formattedContent.weather}
+                                              </div>
+                                            )}
+                                            {formattedContent.temperature && (
+                                              <div>
+                                                {formattedContent.temperature}
+                                              </div>
+                                            )}
+                                            {formattedContent.windSpeed && (
+                                              <div>
+                                                {formattedContent.windSpeed}
+                                              </div>
+                                            )}
+                                          </div>
                                         </div>
                                       </div>
                                     )}
                                   </div>
 
                                   {/* Safety Notice */}
-                                  <div className="bg-blue-50 border-l-4 border-blue-400 p-3">
-                                    <p className="text-sm text-blue-700">
-                                      Please exercise caution when traveling
-                                      through this area and consider alternative
-                                      routes if possible.
-                                    </p>
+                                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+                                    <div className="flex items-start space-x-3">
+                                      <div className="flex-shrink-0">
+                                        <svg
+                                          className="w-5 h-5 text-blue-600 mt-0.5"
+                                          fill="currentColor"
+                                          viewBox="0 0 20 20"
+                                        >
+                                          <path
+                                            fillRule="evenodd"
+                                            d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                                            clipRule="evenodd"
+                                          />
+                                        </svg>
+                                      </div>
+                                      <div>
+                                        <h4 className="text-sm font-medium text-blue-800">
+                                          Safety Advisory
+                                        </h4>
+                                        <p className="text-sm text-blue-700 mt-1">
+                                          Please exercise caution when traveling
+                                          through this area and consider
+                                          alternative routes if possible.
+                                        </p>
+                                      </div>
+                                    </div>
                                   </div>
                                 </div>
                               );
