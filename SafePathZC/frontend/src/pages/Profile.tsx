@@ -16,7 +16,17 @@ const Profile = () => {
   useEffect(() => {
     const token = localStorage.getItem("user_token");
     const userData = localStorage.getItem("user_data");
-    if (token && userData) {
+    const adminToken = localStorage.getItem("admin_token");
+    const adminData = localStorage.getItem("admin_data");
+
+    // Check for admin authentication first
+    if (adminToken && adminData) {
+      setIsLoggedIn(true);
+      const parsedAdmin = JSON.parse(adminData);
+      setUser(parsedAdmin);
+      // Don't fetch fresh data for admins - they use different auth system
+      console.log("👑 Admin logged in, using stored admin data");
+    } else if (token && userData) {
       setIsLoggedIn(true);
       const parsedUser = JSON.parse(userData);
       setUser(parsedUser);
@@ -26,7 +36,7 @@ const Profile = () => {
       const userProfilePicture = localStorage.getItem(
         `user_profile_picture_${userKey}`
       );
-      
+
       if (userProfilePicture) {
         setProfilePicture(userProfilePicture);
       } else if (parsedUser.profilePicture) {
@@ -38,8 +48,10 @@ const Profile = () => {
         );
       }
 
-      // Fetch fresh data from backend
-      fetchFreshUserData(token);
+      // Only fetch fresh data for regular users, not admins
+      if (parsedUser.userType !== "admin" && parsedUser.role !== "admin") {
+        fetchFreshUserData(token);
+      }
     }
   }, []);
 
@@ -77,13 +89,13 @@ const Profile = () => {
     if (user?.email) {
       localStorage.removeItem(`user_profile_picture_${user.email}`);
     }
-    
+
     localStorage.removeItem("user_token");
     localStorage.removeItem("user_data");
     localStorage.removeItem("admin_token");
     localStorage.removeItem("admin_data");
     // Don't remove user_preferences as they can be reused
-    
+
     setIsLoggedIn(false);
     setUser(null);
     setProfilePicture(null);
@@ -283,7 +295,9 @@ const Profile = () => {
                   <div className="text-3xl font-bold text-blue-600 dark:text-blue-400 mb-1">
                     {user?.communityPoints || user?.community_points || 0}
                   </div>
-                  <div className="text-gray-600 dark:text-gray-400 text-sm">Community Points</div>
+                  <div className="text-gray-600 dark:text-gray-400 text-sm">
+                    Community Points
+                  </div>
                 </div>
 
                 {/* Stats */}
@@ -292,13 +306,17 @@ const Profile = () => {
                     <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                       {user?.routesUsed || user?.routes_used || 0}
                     </div>
-                    <div className="text-gray-600 dark:text-gray-400 text-sm">Routes Used</div>
+                    <div className="text-gray-600 dark:text-gray-400 text-sm">
+                      Routes Used
+                    </div>
                   </div>
                   <div>
                     <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                       {user?.reportsSubmitted || user?.reports_submitted || 0}
                     </div>
-                    <div className="text-gray-600 dark:text-gray-400 text-sm">Reports</div>
+                    <div className="text-gray-600 dark:text-gray-400 text-sm">
+                      Reports
+                    </div>
                   </div>
                 </div>
 
