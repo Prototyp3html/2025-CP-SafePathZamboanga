@@ -79,6 +79,21 @@ export const AdminDashboard: React.FC = () => {
   );
   const [reports, setReports] = useState<Report[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [stats, setStats] = useState<{
+    users: number;
+    admins: number;
+    total_reports: number;
+    pending_reports: number;
+    approved_reports: number;
+    total_posts: number;
+  }>({
+    users: 0,
+    admins: 0,
+    total_reports: 0,
+    pending_reports: 0,
+    approved_reports: 0,
+    total_posts: 0,
+  });
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [filter, setFilter] = useState<
@@ -112,6 +127,7 @@ export const AdminDashboard: React.FC = () => {
   useEffect(() => {
     loadReports();
     loadUsers();
+    loadStats();
   }, []);
 
   const loadReports = async () => {
@@ -207,6 +223,33 @@ export const AdminDashboard: React.FC = () => {
     } catch (error) {
       console.error("Error loading users:", error);
       setUsers([]);
+    }
+  };
+
+  const loadStats = async () => {
+    try {
+      const token = localStorage.getItem("admin_token");
+      if (!token) {
+        console.error("No admin token found");
+        return;
+      }
+
+      const response = await fetch(`${BACKEND_URL}/admin/stats`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setStats(data);
+        console.log("Stats loaded successfully:", data);
+      } else {
+        const errorData = await response.json();
+        console.error("Failed to load stats:", response.status, errorData);
+      }
+    } catch (error) {
+      console.error("Error loading stats:", error);
     }
   };
 
@@ -625,7 +668,7 @@ export const AdminDashboard: React.FC = () => {
                     Total Reports
                   </p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {Array.isArray(reports) ? reports.length : 0}
+                    {stats.total_reports}
                   </p>
                 </div>
                 <div className="bg-blue-50 p-3 rounded-lg">
@@ -638,9 +681,7 @@ export const AdminDashboard: React.FC = () => {
                 <div>
                   <p className="text-gray-600 text-sm font-medium">Pending</p>
                   <p className="text-2xl font-bold text-orange-600">
-                    {Array.isArray(reports)
-                      ? reports.filter((r) => r.status === "pending").length
-                      : 0}
+                    {stats.pending_reports}
                   </p>
                 </div>
                 <div className="bg-orange-50 p-3 rounded-lg">
@@ -653,9 +694,7 @@ export const AdminDashboard: React.FC = () => {
                 <div>
                   <p className="text-gray-600 text-sm font-medium">Approved</p>
                   <p className="text-2xl font-bold text-green-600">
-                    {Array.isArray(reports)
-                      ? reports.filter((r) => r.status === "approved").length
-                      : 0}
+                    {stats.approved_reports}
                   </p>
                 </div>
                 <div className="bg-green-50 p-3 rounded-lg">
@@ -887,7 +926,7 @@ export const AdminDashboard: React.FC = () => {
                     Total Users
                   </p>
                   <p className="text-3xl font-bold">
-                    {Array.isArray(users) ? users.length : 0}
+                    {stats.users}
                   </p>
                 </div>
                 <Users className="w-8 h-8 text-emerald-200" />
@@ -913,9 +952,7 @@ export const AdminDashboard: React.FC = () => {
                 <div>
                   <p className="text-purple-100 text-sm font-medium">Admins</p>
                   <p className="text-3xl font-bold">
-                    {Array.isArray(users)
-                      ? users.filter((u) => u.role === "admin").length
-                      : 0}
+                    {stats.admins}
                   </p>
                 </div>
                 <Shield className="w-8 h-8 text-purple-200" />

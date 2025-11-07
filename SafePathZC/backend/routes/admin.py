@@ -633,6 +633,39 @@ async def search_users_by_name(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to search users: {str(e)}")
 
+@router.get("/stats")
+async def get_admin_stats(
+    admin_user_id: int = Depends(verify_admin_token),
+    db: Session = Depends(get_db)
+):
+    """Get admin dashboard statistics"""
+    try:
+        # Count regular users
+        user_count = db.query(User).count()
+        
+        # Count admin users
+        admin_count = db.query(AdminUser).count()
+        
+        # Count reports
+        total_reports = db.query(Report).count()
+        pending_reports = db.query(Report).filter(Report.status == "pending").count()
+        approved_reports = db.query(Report).filter(Report.status == "approved").count()
+        
+        # Count posts
+        total_posts = db.query(Post).count()
+        
+        return {
+            "users": user_count,
+            "admins": admin_count,
+            "total_reports": total_reports,
+            "pending_reports": pending_reports,
+            "approved_reports": approved_reports,
+            "total_posts": total_posts
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get statistics: {str(e)}")
+
 @router.post("/reports")
 async def create_report(
     report_data: ReportCreate,

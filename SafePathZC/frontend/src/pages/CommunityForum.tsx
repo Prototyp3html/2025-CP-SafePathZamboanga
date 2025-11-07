@@ -52,6 +52,31 @@ interface ForumStats {
   total_posts: number;
 }
 
+// Helper function to format report content for better display
+const formatReportContent = (content: string) => {
+  // Check if this is a report post (contains "ALERT" and structured data)
+  if (!content.includes("ALERT") || !content.includes("Location:")) {
+    return content; // Return normal content as-is
+  }
+
+  // Parse structured report content
+  const lines = content.split('\n').filter(line => line.trim());
+  const reportData: any = {};
+  
+  lines.forEach(line => {
+    const trimmed = line.trim();
+    if (trimmed.includes("Location:")) reportData.location = trimmed.replace("Location:", "").trim();
+    if (trimmed.includes("Description:")) reportData.description = trimmed.replace("Description:", "").trim();
+    if (trimmed.includes("Severity:")) reportData.severity = trimmed.replace("Severity:", "").trim();
+    if (trimmed.includes("Weather Conditions:")) reportData.weather = trimmed.replace("Weather Conditions:", "").trim();
+    if (trimmed.includes("Temperature:")) reportData.temperature = trimmed.trim();
+    if (trimmed.includes("Wind Speed:")) reportData.windSpeed = trimmed.trim();
+    if (trimmed.includes("ALERT")) reportData.type = trimmed.replace("ALERT", "").trim();
+  });
+
+  return reportData;
+};
+
 const CommunityForum = () => {
   const { confirm } = useConfirmation();
 
@@ -681,9 +706,78 @@ const CommunityForum = () => {
 
                         {/* Enhanced Post Content */}
                         <div className="p-6">
-                          <p className="text-gray-700 text-lg leading-relaxed mb-4">
-                            {post.content}
-                          </p>
+                          {(() => {
+                            const formattedContent = formatReportContent(post.content);
+                            
+                            // If it's a structured report, display it nicely
+                            if (typeof formattedContent === 'object' && formattedContent.type) {
+                              return (
+                                <div className="space-y-4">
+                                  {/* Alert Header */}
+                                  <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                                    formattedContent.severity?.includes('HIGH') ? 'bg-red-100 text-red-800' :
+                                    formattedContent.severity?.includes('MODERATE') ? 'bg-yellow-100 text-yellow-800' :
+                                    'bg-green-100 text-green-800'
+                                  }`}>
+                                    {formattedContent.type} ALERT
+                                  </div>
+
+                                  {/* Report Details */}
+                                  <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                                    {formattedContent.location && (
+                                      <div className="flex items-start space-x-3">
+                                        <div className="text-sm font-medium text-gray-500 w-20">Location</div>
+                                        <div className="text-sm text-gray-900 flex-1">{formattedContent.location}</div>
+                                      </div>
+                                    )}
+                                    
+                                    {formattedContent.description && (
+                                      <div className="flex items-start space-x-3">
+                                        <div className="text-sm font-medium text-gray-500 w-20">Details</div>
+                                        <div className="text-sm text-gray-900 flex-1">{formattedContent.description}</div>
+                                      </div>
+                                    )}
+                                    
+                                    {formattedContent.severity && (
+                                      <div className="flex items-start space-x-3">
+                                        <div className="text-sm font-medium text-gray-500 w-20">Severity</div>
+                                        <div className={`text-sm font-medium flex-1 ${
+                                          formattedContent.severity.includes('HIGH') ? 'text-red-600' :
+                                          formattedContent.severity.includes('MODERATE') ? 'text-yellow-600' :
+                                          'text-green-600'
+                                        }`}>{formattedContent.severity}</div>
+                                      </div>
+                                    )}
+                                    
+                                    {(formattedContent.weather || formattedContent.temperature || formattedContent.windSpeed) && (
+                                      <div className="flex items-start space-x-3">
+                                        <div className="text-sm font-medium text-gray-500 w-20">Weather</div>
+                                        <div className="text-sm text-gray-900 flex-1">
+                                          {formattedContent.weather && <div>{formattedContent.weather}</div>}
+                                          {formattedContent.temperature && <div>{formattedContent.temperature}</div>}
+                                          {formattedContent.windSpeed && <div>{formattedContent.windSpeed}</div>}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Safety Notice */}
+                                  <div className="bg-blue-50 border-l-4 border-blue-400 p-3">
+                                    <p className="text-sm text-blue-700">
+                                      Please exercise caution when traveling through this area and consider alternative routes if possible.
+                                    </p>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            
+                            // For regular posts, display content normally
+                            return (
+                              <p className="text-gray-700 text-lg leading-relaxed mb-4">
+                                {post.content}
+                              </p>
+                            );
+                          })()}
 
                           {/* Enhanced Tags */}
                           <div className="flex flex-wrap gap-2 mb-6">
