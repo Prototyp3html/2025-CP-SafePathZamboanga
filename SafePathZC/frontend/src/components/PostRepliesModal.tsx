@@ -11,6 +11,7 @@ interface Comment {
   post_id: number;
   author_id: number;
   author_name: string;
+  author_profile_picture?: string; // Base64 profile picture
   content: string;
   created_at: string;
   updated_at: string;
@@ -223,18 +224,30 @@ export const PostRepliesModal = ({
                     key={comment.id}
                     className="bg-gray-50 rounded-lg p-4 border border-gray-200"
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <User className="w-4 h-4 text-blue-600" />
-                        <span className="font-medium text-blue-600">
-                          {comment.author_name}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {comment.timestamp}
-                        </span>
+                    <div className="flex items-start gap-3 mb-2">
+                      <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {comment.author_profile_picture ? (
+                          <img
+                            src={comment.author_profile_picture}
+                            alt={`${comment.author_name}'s profile`}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <User className="w-4 h-4 text-white" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-medium text-blue-600">
+                            {comment.author_name}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {comment.timestamp}
+                          </span>
+                        </div>
+                        <p className="text-gray-700">{comment.content}</p>
                       </div>
                     </div>
-                    <p className="text-gray-700">{comment.content}</p>
                   </div>
                 ))}
               </div>

@@ -148,6 +148,7 @@ class PostResponse(BaseModel):
     content: str
     author_id: int
     author_name: str
+    author_profile_picture: Optional[str] = None  # Base64 profile picture
     category: str
     tags: List[str]
     likes_count: int
@@ -167,6 +168,7 @@ class CommentResponse(BaseModel):
     post_id: int
     author_id: int
     author_name: str
+    author_profile_picture: Optional[str] = None  # Base64 profile picture
     content: str
     created_at: datetime
     updated_at: datetime
@@ -205,6 +207,12 @@ def format_post_response(post: Post, user_id: int, db: Session) -> PostResponse:
             PostLike.user_id == user_id
         ).first() is not None
     
+    # Get author's profile picture
+    author_profile_picture = None
+    author = db.query(User).filter(User.id == post.author_id).first()
+    if author and hasattr(author, 'profile_picture') and author.profile_picture:
+        author_profile_picture = author.profile_picture
+    
     # Parse tags
     tags = json.loads(post.tags) if post.tags else []
     
@@ -214,6 +222,7 @@ def format_post_response(post: Post, user_id: int, db: Session) -> PostResponse:
         content=post.content,
         author_id=post.author_id,
         author_name=post.author_name,
+        author_profile_picture=author_profile_picture,
         category=post.category,
         tags=tags,
         likes_count=post.likes_count,
@@ -226,13 +235,20 @@ def format_post_response(post: Post, user_id: int, db: Session) -> PostResponse:
         timestamp=format_timestamp(post.created_at)
     )
 
-def format_comment_response(comment: Comment) -> CommentResponse:
+def format_comment_response(comment: Comment, db: Session) -> CommentResponse:
     """Format comment for API response"""
+    # Get author's profile picture
+    author_profile_picture = None
+    author = db.query(User).filter(User.id == comment.author_id).first()
+    if author and hasattr(author, 'profile_picture') and author.profile_picture:
+        author_profile_picture = author.profile_picture
+    
     return CommentResponse(
         id=comment.id,
         post_id=comment.post_id,
         author_id=comment.author_id,
         author_name=comment.author_name,
+        author_profile_picture=author_profile_picture,
         content=comment.content,
         created_at=comment.created_at,
         updated_at=comment.updated_at,
@@ -466,7 +482,7 @@ def get_comments(post_id: int, db: Session = Depends(get_db)):
     
     comments = db.query(Comment).filter(Comment.post_id == post_id).order_by(Comment.created_at).all()
     
-    return [format_comment_response(comment) for comment in comments]
+    return [format_comment_response(comment, db) for comment in comments]
 
 @router.post("/posts/{post_id}/comments", response_model=CommentResponse)
 def create_comment(post_id: int, comment_data: CommentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -492,7 +508,7 @@ def create_comment(post_id: int, comment_data: CommentCreate, current_user: User
     db.commit()
     db.refresh(new_comment)
     
-    return format_comment_response(new_comment)
+    return format_comment_response(new_comment, db)
 
 @router.get("/stats")
 def get_forum_stats(db: Session = Depends(get_db)):

@@ -33,6 +33,7 @@ interface ForumPost {
   content: string;
   author_id: number;
   author_name: string;
+  author_profile_picture?: string; // Base64 profile picture
   category: string;
   tags: string[];
   likes_count: number;
@@ -640,8 +641,16 @@ const CommunityForum = () => {
                         {/* Enhanced Post Header */}
                         <div className="p-6 border-b border-gray-100">
                           <div className="flex items-start space-x-4">
-                            <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                              <User className="w-6 h-6 text-white" />
+                            <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg overflow-hidden">
+                              {post.author_profile_picture ? (
+                                <img
+                                  src={post.author_profile_picture}
+                                  alt={`${post.author_name}'s profile`}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <User className="w-6 h-6 text-white" />
+                              )}
                             </div>
                             <div className="flex-1">
                               <div className="flex items-center space-x-3 mb-2">
