@@ -723,7 +723,7 @@ const CommunityForum = () => {
                       >
                         {/* Report Status Banner (only for report posts) */}
                         {post.category === "reports" && (
-                          <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-4 py-2">
+                          <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-4 py-2 rounded-t-2xl">
                             <div className="flex items-center justify-center space-x-2 text-xs font-medium">
                               <svg
                                 className="w-3 h-3"
@@ -833,63 +833,48 @@ const CommunityForum = () => {
                                   </div>
 
                                   {/* Report Details */}
-                                  <div className="bg-gradient-to-br from-gray-50 to-white rounded-xl border border-gray-200 p-6 space-y-4">
+                                  <div className="bg-gray-50 rounded-lg p-4 space-y-3">
                                     {formattedContent.location && (
-                                      <div className="flex items-center space-x-4">
-                                        <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-lg">
-                                          📍
+                                      <div>
+                                        <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                                          Location
                                         </div>
-                                        <div>
-                                          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                                            Location
-                                          </div>
-                                          <div className="text-base font-medium text-gray-900 mt-1">
-                                            {formattedContent.location}
-                                          </div>
+                                        <div className="text-sm font-medium text-gray-900">
+                                          {formattedContent.location}
                                         </div>
                                       </div>
                                     )}
 
                                     {formattedContent.description && (
-                                      <div className="flex items-start space-x-4">
-                                        <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-lg">
-                                          📝
+                                      <div>
+                                        <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                                          Details
                                         </div>
-                                        <div>
-                                          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                                            Details
-                                          </div>
-                                          <div className="text-base text-gray-900 mt-1">
-                                            {formattedContent.description}
-                                          </div>
+                                        <div className="text-sm text-gray-900">
+                                          {formattedContent.description}
                                         </div>
                                       </div>
                                     )}
 
                                     {formattedContent.severity && (
-                                      <div className="flex items-center space-x-4">
-                                        <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-lg">
-                                          ⚠️
+                                      <div>
+                                        <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                                          Severity
                                         </div>
-                                        <div>
-                                          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                                            Severity
-                                          </div>
-                                          <div
-                                            className={`text-base font-semibold mt-1 inline-flex items-center px-3 py-1 rounded-full text-sm ${
-                                              formattedContent.severity.includes(
-                                                "HIGH"
-                                              )
-                                                ? "bg-red-100 text-red-800"
-                                                : formattedContent.severity.includes(
-                                                    "MODERATE"
-                                                  )
-                                                ? "bg-yellow-100 text-yellow-800"
-                                                : "bg-green-100 text-green-800"
-                                            }`}
-                                          >
-                                            {formattedContent.severity}
-                                          </div>
+                                        <div
+                                          className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                                            formattedContent.severity.includes(
+                                              "HIGH"
+                                            )
+                                              ? "bg-red-100 text-red-800"
+                                              : formattedContent.severity.includes(
+                                                  "MODERATE"
+                                                )
+                                              ? "bg-yellow-100 text-yellow-800"
+                                              : "bg-green-100 text-green-800"
+                                          }`}
+                                        >
+                                          {formattedContent.severity}
                                         </div>
                                       </div>
                                     )}
@@ -897,31 +882,26 @@ const CommunityForum = () => {
                                     {(formattedContent.weather ||
                                       formattedContent.temperature ||
                                       formattedContent.windSpeed) && (
-                                      <div className="flex items-start space-x-4">
-                                        <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-lg">
-                                          🌤️
+                                      <div>
+                                        <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                                          Weather Conditions
                                         </div>
-                                        <div>
-                                          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                                            Weather Conditions
-                                          </div>
-                                          <div className="text-base text-gray-900 mt-1 space-y-1">
-                                            {formattedContent.weather && (
-                                              <div>
-                                                {formattedContent.weather}
-                                              </div>
-                                            )}
-                                            {formattedContent.temperature && (
-                                              <div>
-                                                {formattedContent.temperature}
-                                              </div>
-                                            )}
-                                            {formattedContent.windSpeed && (
-                                              <div>
-                                                {formattedContent.windSpeed}
-                                              </div>
-                                            )}
-                                          </div>
+                                        <div className="text-sm text-gray-900 space-y-1">
+                                          {formattedContent.weather && (
+                                            <div>
+                                              {formattedContent.weather}
+                                            </div>
+                                          )}
+                                          {formattedContent.temperature && (
+                                            <div>
+                                              {formattedContent.temperature}
+                                            </div>
+                                          )}
+                                          {formattedContent.windSpeed && (
+                                            <div>
+                                              {formattedContent.windSpeed}
+                                            </div>
+                                          )}
                                         </div>
                                       </div>
                                     )}
