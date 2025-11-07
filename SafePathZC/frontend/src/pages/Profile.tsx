@@ -40,12 +40,15 @@ const Profile = () => {
       if (userProfilePicture) {
         setProfilePicture(userProfilePicture);
       } else if (parsedUser.profilePicture) {
-        // Migrate from user data to user-specific key
+        // Profile picture exists in user data from backend - use it immediately
         setProfilePicture(parsedUser.profilePicture);
         localStorage.setItem(
           `user_profile_picture_${userKey}`,
           parsedUser.profilePicture
         );
+      } else {
+        // No profile picture found, set to null
+        setProfilePicture(null);
       }
 
       // Only fetch fresh data for regular users, not admins
@@ -73,8 +76,13 @@ const Profile = () => {
         setUser(freshUserData);
         localStorage.setItem("user_data", JSON.stringify(freshUserData));
 
-        // Update profile picture if available from backend
+        // Update profile picture from backend response
+        console.log(
+          "🖼️ Backend profile picture:",
+          freshUserData.profilePicture ? "EXISTS" : "NULL"
+        );
         if (freshUserData.profilePicture) {
+          console.log("✅ Setting profile picture from backend");
           setProfilePicture(freshUserData.profilePicture);
           // Also update localStorage for consistency
           if (freshUserData.email) {
@@ -83,9 +91,12 @@ const Profile = () => {
               freshUserData.profilePicture
             );
           }
-          // Notify NavigationBar to update profile picture
-          window.dispatchEvent(new Event("userDataChanged"));
+        } else {
+          console.log("⚠️ No profile picture in backend response");
+          setProfilePicture(null);
         }
+        // Always notify NavigationBar of data change
+        window.dispatchEvent(new Event("userDataChanged"));
       }
     } catch (error) {
       console.error("Error fetching fresh user data:", error);
