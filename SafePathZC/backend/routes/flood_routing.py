@@ -29,12 +29,17 @@ from services.transportation_modes import (
 logger = logging.getLogger(__name__)
 
 
-def has_dead_end_segment(coordinates: List[List[float]], threshold_m: float = 50.0) -> bool:
+def has_dead_end_segment(coordinates: List[List[float]], threshold_m: float = 100.0) -> bool:
     """
     Detect if a route has dead-end segments (goes out and comes back).
     
     A dead-end occurs when the route backtracks - going to a point and returning
     along a similar path. This creates "leaking" colored segments on the map.
+    
+    ENHANCED DETECTION:
+    - Checks for loops (returning close to earlier points)
+    - Detects sharp U-turns (>135 degree direction changes)
+    - Validates reasonable route progression toward destination
     
     Args:
         coordinates: List of [lng, lat] coordinate pairs
@@ -46,42 +51,63 @@ def has_dead_end_segment(coordinates: List[List[float]], threshold_m: float = 50
     if len(coordinates) < 4:
         return False
     
-    # Check if any segment comes within threshold of an earlier segment
-    # (indicating the route doubled back)
-    for i in range(len(coordinates) - 1):
-        p1_lng, p1_lat = coordinates[i]
-        p2_lng, p2_lat = coordinates[i + 1]
-        
-        # Check against segments at least 2 steps earlier (to avoid adjacent segments)
-        for j in range(max(0, i - 10), i - 1):
-            p3_lng, p3_lat = coordinates[j]
-            p4_lng, p4_lat = coordinates[j + 1]
+    # METHOD 1: Check for loops - route returning close to earlier positions
+    # This catches "there and back" patterns
+    for i in range(len(coordinates)):
+        # Look ahead at least 5 points to avoid flagging minor wiggles
+        for j in range(i + 5, len(coordinates)):
+            p1_lng, p1_lat = coordinates[i]
+            p2_lng, p2_lat = coordinates[j]
             
-            # Calculate distance between segment midpoints
-            mid1_lng = (p1_lng + p2_lng) / 2
-            mid1_lat = (p1_lat + p2_lat) / 2
-            mid2_lng = (p3_lng + p4_lng) / 2
-            mid2_lat = (p3_lat + p4_lat) / 2
-            
-            # Simple distance calculation (approximate for short distances)
-            dx = (mid1_lng - mid2_lng) * 111320 * math.cos(math.radians(mid1_lat))
-            dy = (mid1_lat - mid2_lat) * 110540
+            # Calculate distance between these points
+            dx = (p2_lng - p1_lng) * 111320 * math.cos(math.radians(p1_lat))
+            dy = (p2_lat - p1_lat) * 110540
             distance = math.sqrt(dx*dx + dy*dy)
             
-            # Check if segments are moving in opposite directions (backtracking)
+            # If we return very close to where we were, it's likely a dead-end
             if distance < threshold_m:
-                # Calculate direction vectors
-                dir1_lng = p2_lng - p1_lng
-                dir1_lat = p2_lat - p1_lat
-                dir2_lng = p4_lng - p3_lng
-                dir2_lat = p4_lat - p3_lat
+                # Calculate total path distance between these points
+                path_distance = 0
+                for k in range(i, j):
+                    dx_seg = (coordinates[k+1][0] - coordinates[k][0]) * 111320 * math.cos(math.radians(coordinates[k][1]))
+                    dy_seg = (coordinates[k+1][1] - coordinates[k][1]) * 110540
+                    path_distance += math.sqrt(dx_seg*dx_seg + dy_seg*dy_seg)
                 
-                # Dot product: negative means opposite directions
-                dot_product = dir1_lng * dir2_lng + dir1_lat * dir2_lat
-                
-                if dot_product < -0.5:  # Moving in opposite directions
-                    logger.warning(f"Dead-end detected: segment {i} backtracks to segment {j}")
+                # If path distance is significantly longer than direct distance, it's a dead-end
+                if path_distance > distance * 3.0:  # Path is 3x longer than direct distance
+                    logger.warning(f"Dead-end loop detected: points {i} and {j} are {distance:.0f}m apart but path is {path_distance:.0f}m")
                     return True
+    
+    # METHOD 2: Check for sharp U-turns (>135 degrees)
+    # This catches routes that turn back on themselves
+    for i in range(1, len(coordinates) - 1):
+        p_prev = coordinates[i - 1]
+        p_curr = coordinates[i]
+        p_next = coordinates[i + 1]
+        
+        # Calculate vectors
+        vec1_lng = p_curr[0] - p_prev[0]
+        vec1_lat = p_curr[1] - p_prev[1]
+        vec2_lng = p_next[0] - p_curr[0]
+        vec2_lat = p_next[1] - p_curr[1]
+        
+        # Normalize vectors
+        len1 = math.sqrt(vec1_lng**2 + vec1_lat**2)
+        len2 = math.sqrt(vec2_lng**2 + vec2_lat**2)
+        
+        if len1 > 1e-8 and len2 > 1e-8:  # Avoid division by zero
+            vec1_lng /= len1
+            vec1_lat /= len1
+            vec2_lng /= len2
+            vec2_lat /= len2
+            
+            # Dot product: -1 = opposite directions (180° turn)
+            dot = vec1_lng * vec2_lng + vec1_lat * vec2_lat
+            
+            # If angle > 135 degrees (dot < -0.707), it's a sharp U-turn
+            if dot < -0.707:
+                logger.warning(f"Sharp U-turn detected at point {i}: {math.degrees(math.acos(max(-1, min(1, dot)))):.0f}°")
+                return True
     
     return False
 
@@ -179,9 +205,9 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                             coordinates = geometry.get("coordinates", [])
                             
                             if coordinates:
-                                # Validate: Skip routes with dead-end segments
-                                if has_dead_end_segment(coordinates, threshold_m=50.0):
-                                    logger.info(f"Skipping OSRM route: contains dead-end segment")
+                                # Validate: Skip routes with dead-end segments (increased threshold to 100m)
+                                if has_dead_end_segment(coordinates, threshold_m=100.0):
+                                    logger.info(f"Skipping OSRM route: contains dead-end segment (route backtracks on itself)")
                                     continue
                                 
                                 # Analyze flood risk
@@ -260,14 +286,15 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                 coordinates = geometry.get("coordinates", [])
                                 route_distance = route_data.get("distance", 0)
                                 
-                                # Validate: Skip routes that are too much longer than baseline (>50% longer)
+                                # Validate: Skip routes that are too much longer than baseline (>30% longer)
                                 # This filters out routes with dead-end segments or unreasonable detours
-                                if baseline_distance > 0 and route_distance > baseline_distance * 1.5:
-                                    logger.info(f"Skipping waypoint route with offset {offset_factor}: too long ({route_distance:.0f}m vs baseline {baseline_distance:.0f}m)")
+                                if baseline_distance > 0 and route_distance > baseline_distance * 1.3:
+                                    logger.info(f"Skipping waypoint route with offset {offset_factor}: too long ({route_distance:.0f}m vs baseline {baseline_distance:.0f}m, {((route_distance/baseline_distance - 1) * 100):.0f}% longer)")
                                     continue
                                 
                                 # Validate: Skip routes with dead-end segments (backtracking)
-                                if has_dead_end_segment(coordinates, threshold_m=50.0):
+                                # Increased threshold to 100m to catch more dead-ends
+                                if has_dead_end_segment(coordinates, threshold_m=100.0):
                                     logger.info(f"Skipping waypoint route with offset {offset_factor}: contains dead-end segment")
                                     continue
                                 
