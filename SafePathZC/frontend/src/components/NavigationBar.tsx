@@ -148,17 +148,9 @@ export const NavigationBar = () => {
         {/* User Icon */}
         <div>
           <Link
-            to={
-              user?.role === "admin" || user?.userType === "admin"
-                ? "/admin"
-                : "/profile"
-            }
+            to="/profile"
             className={`flex items-center justify-center w-7 h-7 md:w-8 md:h-8 rounded-full transition-all duration-200 overflow-hidden ${
-              isActive(
-                user?.role === "admin" || user?.userType === "admin"
-                  ? "/admin"
-                  : "/profile"
-              )
+              isActive("/profile")
                 ? "bg-blue-700 bg-opacity-80"
                 : "bg-white bg-opacity-20 hover:bg-opacity-30"
             }`}
