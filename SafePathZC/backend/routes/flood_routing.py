@@ -325,6 +325,88 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                 except Exception as e:
                     logger.warning(f"Waypoint route with offset {offset_factor} failed: {e}")
         
+        # Strategy 2.5: Use local A* routing with different risk profiles to generate truly distinct routes
+        # This uses the enhanced flood penalties (50x for safe, 5x for manageable, 1.1x for prone)
+        if len(all_routes) < 5:
+            logger.info("Strategy 2.5: Generating A* routes with different flood risk profiles...")
+            try:
+                routing_service = get_routing_service()
+                
+                # Convert transport mode
+                mode_map = {
+                    'car': 'car',
+                    'motorcycle': 'motorcycle',
+                    'walking': 'walking',
+                    'public_transport': 'car',
+                    'bicycle': 'car',
+                    'truck': 'car'
+                }
+                mode = mode_map.get(request.transport_mode, 'car')
+                
+                # Generate routes with different risk profiles
+                risk_profiles = ['safe', 'manageable', 'prone']
+                
+                for risk_profile in risk_profiles:
+                    if len(all_routes) >= 5:
+                        break
+                    
+                    try:
+                        logger.info(f"  Trying A* routing with risk_profile='{risk_profile}'...")
+                        
+                        # Calculate route using A* with specific risk profile
+                        route_coords = routing_service.calculate_route(
+                            start_coord,
+                            end_coord,
+                            mode=mode,
+                            risk_profile=risk_profile
+                        )
+                        
+                        if route_coords and len(route_coords) >= 2:
+                            # Convert to [lng, lat] format
+                            coordinates = [[coord.lng, coord.lat] for coord in route_coords]
+                            
+                            # Validate route
+                            if has_dead_end_segment(coordinates, threshold_m=400.0):
+                                logger.info(f"  Skipping A* {risk_profile} route: contains dead-end segment")
+                                continue
+                            
+                            # Get route info
+                            route_info_data = routing_service.get_route_info(route_coords, mode)
+                            
+                            # Analyze flood risk
+                            flood_analysis = analyze_route_flood_risk(
+                                coordinates,
+                                buffer_meters=50.0,
+                                weather_data=request.weather_data
+                            )
+                            
+                            # Create route info
+                            route_info = {
+                                "geometry": {
+                                    "type": "LineString",
+                                    "coordinates": coordinates
+                                },
+                                "distance": route_info_data["distance"],
+                                "duration": route_info_data["duration"],
+                                "flood_percentage": flood_analysis["flooded_percentage"],
+                                "flooded_distance": flood_analysis["flooded_distance_m"],
+                                "risk_level": flood_analysis["risk_level"],
+                                "weather_impact": flood_analysis.get("weather_impact", "none"),
+                                "source": f"a_star_{risk_profile}"
+                            }
+                            
+                            # Adjust for transportation mode
+                            route_info = adjust_route_for_transportation_mode(route_info, request.transport_mode)
+                            
+                            all_routes.append(route_info)
+                            logger.info(f"  ✓ Added A* {risk_profile} route: {route_info['distance']:.0f}m, {route_info['flood_percentage']:.1f}% flooded")
+                            
+                    except Exception as e:
+                        logger.warning(f"  A* routing with {risk_profile} profile failed: {e}")
+                        
+            except Exception as e:
+                logger.warning(f"Strategy 2.5 (A* routing) failed: {e}")
+        
         # Strategy 3: Fallback to simple PostgreSQL routing when OSRM services unavailable
         if len(all_routes) == 0:
             logger.info("Strategy 3: Trying simple PostgreSQL routing...")

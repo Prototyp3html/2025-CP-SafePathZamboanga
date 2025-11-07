@@ -116,9 +116,9 @@ class RoadSegment:
         Args:
             transportation_mode: Type of transport (car/motorcycle/walking) - affects speed/roads
             risk_profile: Flood risk tolerance (safe/manageable/prone) - PRIMARY route differentiator
-                - "safe": Heavily avoids flooded roads (10x penalty)
-                - "manageable": Moderate avoidance (3x penalty)  
-                - "prone": Minimal avoidance (1.2x penalty) - shortest path
+                - "safe": Heavily avoids flooded roads (50x penalty) - forces significant detours
+                - "manageable": Moderate avoidance (5x penalty) - balanced approach
+                - "prone": Minimal avoidance (1.1x penalty) - shortest path, ignores floods
             flood_lookup_cache: Optional pre-built dict mapping osm_id -> is_flooded (fast O(1) lookup)
         """
         base_cost = self.length_m
@@ -128,18 +128,29 @@ class RoadSegment:
         is_flooded = self.flooded
         
         # If this segment has no flood data but we have a flood lookup cache, check it (O(1) lookup!)
-        if not is_flooded and flood_lookup_cache and self.osm_id:
-            is_flooded = flood_lookup_cache.get(self.osm_id, False)
+        if not is_flooded and flood_lookup_cache:
+            # Try OSM ID lookup first (fastest)
+            if self.osm_id:
+                is_flooded = flood_lookup_cache.get(self.osm_id, False)
+            
+            # If still not flooded, check coordinates (more reliable for cross-dataset matching)
+            if not is_flooded and len(self.coordinates) > 0:
+                # Check if any coordinate in this segment matches a flooded coordinate
+                for coord in self.coordinates:
+                    coord_key = (round(coord.lat, 4), round(coord.lng, 4))
+                    if flood_lookup_cache.get(coord_key, False):
+                        is_flooded = True
+                        break
         
         if risk_profile == "safe":
-            # SAFE ROUTE: Extremely high penalty for flooded roads
-            flood_factor = 10.0 if is_flooded else 1.0
+            # SAFE ROUTE: VERY aggressive penalty for flooded roads - forces alternate paths
+            flood_factor = 50.0 if is_flooded else 1.0  # Increased from 10x to 50x penalty
         elif risk_profile == "manageable":
             # MANAGEABLE ROUTE: Moderate penalty for flooded roads
-            flood_factor = 3.0 if is_flooded else 1.0
+            flood_factor = 5.0 if is_flooded else 1.0  # Increased from 3x to 5x penalty
         else:  # "prone"
             # FLOOD-PRONE ROUTE: Minimal penalty - takes shortest path
-            flood_factor = 1.2 if is_flooded else 1.0
+            flood_factor = 1.1 if is_flooded else 1.0  # Reduced from 1.2x to 1.1x - almost no penalty
         
         # Apply terrain difficulty (elevation, surface)
         terrain_factor = self.get_terrain_difficulty()
@@ -548,10 +559,23 @@ class LocalRoutingService:
             flood_service = get_flood_service()
             if flood_service:
                 logger.info(f"Building flood cache from {len(flood_service.road_segments)} segments...")
+                
+                # Build BOTH osm_id lookup AND coordinate-based lookup
+                # Since zcroadmap and terrain_roads might have different OSM IDs
                 for seg in flood_service.road_segments:
-                    if seg.osm_id and seg.flooded:  # Only cache flooded segments to save memory
+                    # OSM ID lookup (fast but may not match)
+                    if seg.osm_id and seg.flooded:
                         flood_cache[seg.osm_id] = True
-                logger.info(f"Flood cache built: {len(flood_cache)} flooded segments indexed")
+                    
+                    # Coordinate-based lookup (slower but more reliable)
+                    # Store flooded status for each coordinate
+                    if seg.flooded and len(seg.coordinates) > 0:
+                        for coord in seg.coordinates:
+                            # Round coordinates to ~10m precision for matching
+                            coord_key = (round(coord.lat, 4), round(coord.lng, 4))
+                            flood_cache[coord_key] = True
+                
+                logger.info(f"Flood cache built: {len(flood_cache)} flooded entries indexed (osm_ids + coordinates)")
         
         open_set = [(0, start)]  # (f_score, coordinate)
         came_from = {}
@@ -619,9 +643,9 @@ class LocalRoutingService:
                 
                 logger.info(f"Successfully calculated route with {len(path)} waypoint nodes")
                 
-                # Simplify the path - only keep points where direction changes significantly
-                # Tolerance of 100 meters - very aggressive simplification for clean, navigable routes
-                simplified_path = self._simplify_path(path, tolerance=100.0)
+                # Simplify the path - keep most detail for accurate flood analysis
+                # Tolerance of 20 meters - preserves route detail for flood analysis
+                simplified_path = self._simplify_path(path, tolerance=20.0)
                 
                 logger.info(f"Simplified route to {len(simplified_path)} points")
                 
