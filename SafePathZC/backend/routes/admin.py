@@ -226,32 +226,63 @@ async def update_report_status(
     if update_data.status:
         report.status = update_data.status
         
-        # If report is approved, also approve the corresponding forum post
+        # If report is approved, create or approve the corresponding forum post
         if update_data.status == "approved":
             try:
                 from models import Post
-                # Find forum post that contains this report ID
+                # Find existing forum post that contains this report ID
                 forum_post = db.query(Post).filter(
                     Post.content.contains(f"📋 Report ID: #{report_id}"),
-                    Post.category == "reports",
-                    Post.is_approved == False
+                    Post.category == "reports"
                 ).first()
                 
                 # Try legacy format if not found
                 if not forum_post:
                     forum_post = db.query(Post).filter(
                         Post.content.contains(f"Report ID:** #{report_id}"),
-                        Post.category == "reports",
-                        Post.is_approved == False
+                        Post.category == "reports"
                     ).first()
                 
                 if forum_post:
+                    # Approve existing forum post
                     forum_post.is_approved = True
                     forum_post.updated_at = datetime.utcnow()
-                    print(f"Auto-approved forum post {forum_post.id} for report {report_id}")
+                    print(f"Auto-approved existing forum post {forum_post.id} for report {report_id}")
+                else:
+                    # Create new forum post for the approved report
+                    severity_text = report.urgency.upper() if report.urgency in ["severe", "moderate", "low"] else "MODERATE"
+                    
+                    post_content = f"""{report.category.upper()} ALERT
+
+📍 Location: {report.location_address}
+
+📋 Report ID: #{report.id}
+
+📝 Description: {report.description}
+
+⚠️ Severity: {severity_text}
+
+Please exercise caution when traveling through this area and consider alternative routes if possible.
+
+Status: ✅ Verified by Admin"""
+                    
+                    new_forum_post = Post(
+                        title=f"{report.category.title()} Report - {report.location_address}",
+                        content=post_content,
+                        category="reports",
+                        is_urgent=report.urgency == "severe",
+                        is_approved=True,  # Auto-approve since report is approved
+                        author_id=1,  # Use system/admin author ID
+                        location_lat=report.location_lat,
+                        location_lng=report.location_lng
+                    )
+                    
+                    db.add(new_forum_post)
+                    db.flush()  # Get the ID
+                    print(f"Created and approved new forum post {new_forum_post.id} for report {report_id}")
                 
             except Exception as e:
-                print(f"Failed to auto-approve forum post for report {report_id}: {e}")
+                print(f"Failed to create/approve forum post for report {report_id}: {e}")
     
     if update_data.admin_notes:
         report.admin_notes = update_data.admin_notes
@@ -699,16 +730,23 @@ async def create_report(
             # If admin token verification fails, treat as regular user
             pass
     
-    # Determine status based on user type
+    # Determine status based on user type and severity
     if is_admin:
         status = "approved"  # Auto-approve admin reports
         is_visible = True    # Make visible immediately  
         admin_notes = f"Auto-approved admin report created by {admin_user.name}"
     else:
-        status = "pending"   # Regular users need approval
-        is_visible = False   # Hidden until approved
-        admin_notes = None
-        print(f"📋 User creating report (pending approval): {report_data.title}")
+        # Auto-approve low and medium severity reports for regular users
+        if report_data.urgency in ["low", "medium"]:
+            status = "approved"  # Auto-approve low/medium severity
+            is_visible = True    # Make visible immediately
+            admin_notes = f"Auto-approved {report_data.urgency} severity report"
+            print(f"✅ Auto-approved {report_data.urgency} severity report: {report_data.title}")
+        else:
+            status = "pending"   # High/critical severity needs manual approval
+            is_visible = False   # Hidden until approved
+            admin_notes = None
+            print(f"📋 High/critical severity report requires approval: {report_data.title}")
     
     new_report = Report(
         title=report_data.title,
@@ -728,6 +766,45 @@ async def create_report(
     db.add(new_report)
     db.commit()
     db.refresh(new_report)
+    
+    # If report is auto-approved, create forum post immediately
+    if status == "approved":
+        try:
+            from models import Post
+            
+            severity_text = report_data.urgency.upper() if report_data.urgency in ["severe", "moderate", "low"] else "MODERATE"
+            
+            post_content = f"""{report_data.category.upper()} ALERT
+
+📍 Location: {report_data.location_address}
+
+📋 Report ID: #{new_report.id}
+
+📝 Description: {report_data.description}
+
+⚠️ Severity: {severity_text}
+
+Please exercise caution when traveling through this area and consider alternative routes if possible.
+
+Status: ✅ Verified by Admin"""
+            
+            new_forum_post = Post(
+                title=f"{report_data.category.title()} Report - {report_data.location_address}",
+                content=post_content,
+                category="reports",
+                is_urgent=report_data.urgency == "severe",
+                is_approved=True,  # Auto-approve since report is approved
+                author_id=1,  # Use system/admin author ID
+                location_lat=report_data.location_lat,
+                location_lng=report_data.location_lng
+            )
+            
+            db.add(new_forum_post)
+            db.commit()
+            print(f"Created forum post {new_forum_post.id} for auto-approved report {new_report.id}")
+            
+        except Exception as e:
+            print(f"Failed to create forum post for auto-approved report {new_report.id}: {e}")
     
     return {"message": "Report submitted successfully", "id": new_report.id}
 
@@ -765,6 +842,46 @@ async def create_admin_report(
     db.add(new_report)
     db.commit()
     db.refresh(new_report)
+    
+    # Create forum post for admin report
+    try:
+        from models import Post
+        
+        severity_text = report_data.urgency.upper() if report_data.urgency in ["severe", "moderate", "low"] else "MODERATE"
+        
+        post_content = f"""{report_data.category.upper()} ALERT
+
+📍 Location: {report_data.location_address}
+
+📋 Report ID: #{new_report.id}
+
+📝 Description: {report_data.description}
+
+⚠️ Severity: {severity_text}
+
+👑 Reported by: Admin
+
+Please exercise caution when traveling through this area and consider alternative routes if possible.
+
+Status: ✅ Verified by Admin"""
+        
+        new_forum_post = Post(
+            title=f"{report_data.category.title()} Report - {report_data.location_address}",
+            content=post_content,
+            category="reports",
+            is_urgent=report_data.urgency == "severe",
+            is_approved=True,  # Auto-approve admin reports
+            author_id=1,  # Use system/admin author ID
+            location_lat=report_data.location_lat,
+            location_lng=report_data.location_lng
+        )
+        
+        db.add(new_forum_post)
+        db.commit()
+        print(f"Created forum post {new_forum_post.id} for admin report {new_report.id}")
+        
+    except Exception as e:
+        print(f"Failed to create forum post for admin report {new_report.id}: {e}")
     
     print(f"✅ Auto-approved admin report {new_report.id} created")
     

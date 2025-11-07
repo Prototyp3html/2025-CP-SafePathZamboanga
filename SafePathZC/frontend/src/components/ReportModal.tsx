@@ -257,62 +257,10 @@ export const ReportModal = ({
         body: JSON.stringify(reportData),
       });
 
-      let reportId = null;
       if (reportResponse.ok) {
         const reportResult = await reportResponse.json();
-        reportId = reportResult.id;
+        const reportId = reportResult.id;
         console.log("Report record created:", reportResult);
-      }
-
-      // Then, create forum post for community visibility
-      const postData = {
-        title: `${
-          reportType.charAt(0).toUpperCase() + reportType.slice(1)
-        } Report - ${location}`,
-        content: `${reportType.toUpperCase()} ALERT
-
-Location: ${location}
-
-Description: ${description}
-
-Severity: ${
-          severity === "severe"
-            ? "HIGH"
-            : severity === "moderate"
-            ? "MODERATE"
-            : "LOW"
-        }${
-          weatherData
-            ? `
-
-Weather Conditions: ${weatherData.current.condition.text}
-Temperature: ${weatherData.current.temp_c}°C
-Wind Speed: ${weatherData.current.wind_kph} km/h`
-            : ""
-        }
-
-Please exercise caution when traveling through this area and consider alternative routes if possible.`,
-        category: "reports",
-        tags: [reportType, ...(severity === "severe" ? ["urgent"] : [])],
-        is_urgent: severity === "severe",
-      };
-
-      const forumApiUrl =
-        import.meta.env.VITE_API_URL ||
-        import.meta.env.VITE_BACKEND_URL ||
-        "http://localhost:8001";
-      const response = await fetch(`${forumApiUrl}/api/forum/posts`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(postData),
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        console.log("Report posted to forum:", result);
 
         // Update user's reports count
         try {
@@ -347,7 +295,7 @@ Please exercise caution when traveling through this area and consider alternativ
         notification.reports.submitted(reportId);
         onClose();
       } else {
-        throw new Error(`Failed to submit report: ${response.status}`);
+        throw new Error(`Failed to submit report: ${reportResponse.status}`);
       }
     } catch (error) {
       console.error("Error submitting report:", error);

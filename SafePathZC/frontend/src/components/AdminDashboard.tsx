@@ -925,9 +925,7 @@ export const AdminDashboard: React.FC = () => {
                   <p className="text-emerald-100 text-sm font-medium">
                     Total Users
                   </p>
-                  <p className="text-3xl font-bold">
-                    {stats.users}
-                  </p>
+                  <p className="text-3xl font-bold">{stats.users}</p>
                 </div>
                 <Users className="w-8 h-8 text-emerald-200" />
               </div>
@@ -951,9 +949,7 @@ export const AdminDashboard: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-purple-100 text-sm font-medium">Admins</p>
-                  <p className="text-3xl font-bold">
-                    {stats.admins}
-                  </p>
+                  <p className="text-3xl font-bold">{stats.admins}</p>
                 </div>
                 <Shield className="w-8 h-8 text-purple-200" />
               </div>
