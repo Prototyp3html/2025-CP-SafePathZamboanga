@@ -1263,9 +1263,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const [routeDetails, setRouteDetails] = useState<RouteDetails | null>(null);
   const [showRouteModal, setShowRouteModal] = useState(false);
   const [mapLayer, setMapLayer] = useState("street");
-  const [showTerrainData, setShowTerrainData] = useState(false);
-  const [terrainData, setTerrainData] = useState<TerrainData | null>(null);
-  const [isTerrainMode, setIsTerrainMode] = useState(false);
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState<
     "safe" | "manageable" | "prone" | null
@@ -1398,7 +1395,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const markersRef = useRef<L.Marker[]>([]);
   const circleMarkersRef = useRef<L.CircleMarker[]>([]);
   const layersRef = useRef<Record<string, L.TileLayer>>({});
-  const terrainPopupRef = useRef<L.CircleMarker | null>(null);
   const terrainOverlayRef = useRef<L.LayerGroup | null>(null);
   const floodHeatmapRef = useRef<L.LayerGroup | null>(null);
   const routeLayersRef = useRef<L.Polyline[]>([]);
@@ -4178,26 +4174,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     lat: number,
     lng: number
   ): Promise<number> => {
-    // Try to find nearby terrain feature (if terrain data is a FeatureCollection)
-    if (terrainData && "features" in terrainData) {
-      const nearbyFeature = (terrainData as any).features.find((f: any) => {
-        const coords = f.geometry.coordinates;
-        if (f.geometry.type === "LineString") {
-          return coords.some((c: number[]) => {
-            const distance = Math.sqrt(
-              Math.pow(c[1] - lat, 2) + Math.pow(c[0] - lng, 2)
-            );
-            return distance < 0.001; // ~100m
-          });
-        }
-        return false;
-      });
-
-      if (nearbyFeature?.properties?.elev_mean !== undefined) {
-        return nearbyFeature.properties.elev_mean;
-      }
-    }
-
     // Fallback: estimate based on distance from coast
     const coastalPoint = { lat: 6.9056, lng: 122.0756 };
     const distanceFromCoast =
@@ -8294,7 +8270,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           console.log("🗺️ Route Planner button clicked - opening modal...");
           e.stopPropagation();
           setShowRoutePlannerModal(true);
-          setIsTerrainMode(false);
           console.log(`📋 Modal state: showRoutePlannerModal = true`);
         };
 
@@ -8406,24 +8381,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         locationBtn.appendChild(locationIcon);
         locationBtn.title = "Use My Location";
 
-        // 2. Terrain analysis button
-        const terrainBtn = L.DomUtil.create(
-          "button",
-          "leaflet-control-custom",
-          menuContainer
-        );
-        styleSubBtn(terrainBtn);
-        const terrainIcon = document.createElement("img");
-        terrainIcon.src = "/icons/terrain.png";
-        terrainIcon.style.cssText = `
-            width: 24px;
-            height: 24px;
-            filter: brightness(0) invert(1);
-          `;
-        terrainBtn.appendChild(terrainIcon);
-        terrainBtn.title = "Terrain Analysis";
-
-        // 3. Map view toggle button
+        // 2. Map view toggle button
         const mapViewBtn = L.DomUtil.create(
           "button",
           "leaflet-control-custom",
@@ -8479,13 +8437,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               "Your browser doesn't support location services."
             );
           }
-        };
-
-        // Terrain button functionality
-        terrainBtn.onclick = (e: Event) => {
-          e.stopPropagation();
-          setIsTerrainMode((prev) => !prev);
-          setRouteMode(false);
         };
 
         // Map view toggle functionality
@@ -8680,46 +8631,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     // Add new layer
     layersRef.current[mapLayer].addTo(mapRef.current);
   }, [mapLayer]);
-
-  // Map click handlers (only for terrain mode now)
-  useEffect(() => {
-    if (!mapRef.current) return;
-
-    const handleMapClick = async (e: L.LeafletMouseEvent) => {
-      if (isTerrainMode) {
-        // Terrain analysis
-        const { lat, lng } = e.latlng;
-        const elevationData = await getElevationData(lat, lng);
-
-        if (elevationData) {
-          setTerrainData(elevationData);
-          setShowTerrainData(true);
-
-          // Add temporary marker with elevation color
-          const elevationMarker = L.circleMarker(e.latlng, {
-            radius: 8,
-            fillColor: getElevationColor(elevationData.elevation),
-            color: "#000",
-            weight: 2,
-            opacity: 1,
-            fillOpacity: 0.5,
-          }).addTo(mapRef.current!);
-
-          // Remove previous terrain marker if exists
-          if (terrainPopupRef.current) {
-            mapRef.current!.removeLayer(terrainPopupRef.current);
-          }
-          terrainPopupRef.current = elevationMarker;
-        }
-      }
-    };
-
-    mapRef.current.on("click", handleMapClick);
-
-    return () => {
-      mapRef.current!.off("click", handleMapClick);
-    };
-  }, [isTerrainMode]);
 
   const handleStartDirectionsToDestination = useCallback(
     async (destination: {
@@ -9244,12 +9155,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     });
     routeLayersRef.current = [];
 
-    // Clear terrain marker
-    if (terrainPopupRef.current) {
-      mapRef.current!.removeLayer(terrainPopupRef.current);
-      terrainPopupRef.current = null;
-    }
-
     // Clear terrain overlay and flood heatmap if clearing all
     if (terrainOverlayRef.current && mapRef.current) {
       mapRef.current.removeLayer(terrainOverlayRef.current);
@@ -9711,24 +9616,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           </div>
         )}
 
-        {isTerrainMode && (
-          <div
-            style={{
-              background: "#f0f8e6",
-              display: "flex",
-              padding: "8px 12px",
-              flexDirection: "column",
-              borderRadius: "4px",
-              gap: "3px",
-              flexGrow: 1,
-            }}
-          >
-            <p style={{ margin: 0 }}>
-              Click on the map to analyze terrain elevation
-            </p>
-          </div>
-        )}
-
         {isEducationalMode && pathfindingStep === "idle" && (
           <div
             style={{
@@ -9805,7 +9692,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           </div>
         )}
 
-        {(startPoint || endPoint || isTerrainMode || showTerrainOverlay) && (
+        {(startPoint || endPoint || showTerrainOverlay) && (
           <button
             onClick={resetRoute}
             style={{
@@ -10166,180 +10053,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           }}
           setRouteOptions={() => {}} // Empty function since we're not using it
         />
-      )}
-
-      {/* Terrain Data Modal */}
-      {showTerrainData && terrainData && (
-        <div
-          style={{
-            backgroundColor: "white",
-            borderRadius: "10px",
-            boxShadow: "0 5px 20px rgba(0,0,0,0.2)",
-            padding: "20px",
-            marginTop: "20px",
-            position: "relative",
-            border: "2px solid #27ae60",
-          }}
-        >
-          <button
-            onClick={() => setShowTerrainData(false)}
-            style={{
-              position: "absolute",
-              top: "15px",
-              right: "15px",
-              background: "none",
-              border: "none",
-              fontSize: "1.5rem",
-              cursor: "pointer",
-              color: "#888",
-              fontWeight: "bold",
-            }}
-          >
-            ×
-          </button>
-
-          <h2
-            style={{
-              marginTop: "0",
-              marginBottom: "15px",
-              color: "#27ae60",
-              borderBottom: "2px solid #f0f0f0",
-              paddingBottom: "10px",
-            }}
-          >
-            🗻 Terrain Analysis
-          </h2>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-              gap: "15px",
-              marginBottom: "20px",
-            }}
-          >
-            <div
-              style={{
-                background: "#f8f9fa",
-                padding: "15px",
-                borderRadius: "8px",
-                textAlign: "center",
-              }}
-            >
-              <div style={{ fontSize: "2rem", marginBottom: "5px" }}>📏</div>
-              <div
-                style={{
-                  fontSize: "1.2rem",
-                  fontWeight: "bold",
-                  color: "#2c3e50",
-                }}
-              >
-                {terrainData.elevation}m
-              </div>
-              <div style={{ fontSize: "0.9rem", color: "#666" }}>Elevation</div>
-            </div>
-
-            <div
-              style={{
-                background: "#f8f9fa",
-                padding: "15px",
-                borderRadius: "8px",
-                textAlign: "center",
-              }}
-            >
-              <div style={{ fontSize: "2rem", marginBottom: "5px" }}>⛰️</div>
-              <div
-                style={{
-                  fontSize: "1.2rem",
-                  fontWeight: "bold",
-                  color: "#2c3e50",
-                }}
-              >
-                {terrainData.slope}°
-              </div>
-              <div style={{ fontSize: "0.9rem", color: "#666" }}>Slope</div>
-            </div>
-
-            <div
-              style={{
-                background: "#f8f9fa",
-                padding: "15px",
-                borderRadius: "8px",
-                textAlign: "center",
-              }}
-            >
-              <div style={{ fontSize: "2rem", marginBottom: "5px" }}>💧</div>
-              <div
-                style={{
-                  fontSize: "1.2rem",
-                  fontWeight: "bold",
-                  color:
-                    terrainData.floodRisk === "High"
-                      ? "#e74c3c"
-                      : terrainData.floodRisk === "Medium"
-                      ? "#f39c12"
-                      : "#27ae60",
-                }}
-              >
-                {terrainData.floodRisk}
-              </div>
-              <div style={{ fontSize: "0.9rem", color: "#666" }}>
-                Flood Risk
-              </div>
-            </div>
-
-            <div
-              style={{
-                background: "#f8f9fa",
-                padding: "15px",
-                borderRadius: "8px",
-                textAlign: "center",
-              }}
-            >
-              <div style={{ fontSize: "2rem", marginBottom: "5px" }}>🌍</div>
-              <div
-                style={{
-                  fontSize: "1.2rem",
-                  fontWeight: "bold",
-                  color: "#2c3e50",
-                }}
-              >
-                {terrainData.terrainType}
-              </div>
-              <div style={{ fontSize: "0.9rem", color: "#666" }}>
-                Terrain Type
-              </div>
-            </div>
-          </div>
-
-          <div
-            style={{
-              background: "#e8f5e8",
-              padding: "15px",
-              borderRadius: "8px",
-              borderLeft: "4px solid #27ae60",
-            }}
-          >
-            <h4 style={{ margin: "0 0 10px 0", color: "#2c3e50" }}>
-              📍 Location Details
-            </h4>
-            <p style={{ margin: "0", fontSize: "0.9rem", color: "#666" }}>
-              <strong>Coordinates:</strong> {terrainData.lat}, {terrainData.lng}
-            </p>
-            {terrainData.floodRisk === "High" && (
-              <p
-                style={{
-                  margin: "10px 0 0 0",
-                  fontSize: "0.9rem",
-                  color: "#e74c3c",
-                }}
-              >
-                ⚠️ <strong>Warning:</strong> This area has high flood risk due
-                to low elevation.
-              </p>
-            )}
-          </div>
-        </div>
       )}
 
       {/* Flood-Risk Route Details Modal */}
