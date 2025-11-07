@@ -55,8 +55,18 @@ export const NavigationBar = () => {
       }
     };
 
+    // Listen for custom logout event (for same-tab changes)
+    const handleUserChange = () => {
+      loadUserProfile();
+    };
+
     window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
+    window.addEventListener("userDataChanged", handleUserChange);
+
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("userDataChanged", handleUserChange);
+    };
   }, []);
 
   const isActive = (path: string) => {

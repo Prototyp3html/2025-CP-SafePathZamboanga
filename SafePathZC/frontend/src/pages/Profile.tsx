@@ -72,6 +72,20 @@ const Profile = () => {
         console.log("✅ Fresh user data for Profile:", freshUserData);
         setUser(freshUserData);
         localStorage.setItem("user_data", JSON.stringify(freshUserData));
+
+        // Update profile picture if available from backend
+        if (freshUserData.profilePicture) {
+          setProfilePicture(freshUserData.profilePicture);
+          // Also update localStorage for consistency
+          if (freshUserData.email) {
+            localStorage.setItem(
+              `user_profile_picture_${freshUserData.email}`,
+              freshUserData.profilePicture
+            );
+          }
+          // Notify NavigationBar to update profile picture
+          window.dispatchEvent(new Event("userDataChanged"));
+        }
       }
     } catch (error) {
       console.error("Error fetching fresh user data:", error);
@@ -82,6 +96,9 @@ const Profile = () => {
     setIsLoggedIn(true);
     setUser(userData);
     setShowAuthModal(false);
+
+    // Notify NavigationBar and other components of user data change
+    window.dispatchEvent(new Event("userDataChanged"));
   };
 
   const handleLogout = () => {
@@ -99,6 +116,9 @@ const Profile = () => {
     setIsLoggedIn(false);
     setUser(null);
     setProfilePicture(null);
+
+    // Notify NavigationBar and other components of user data change
+    window.dispatchEvent(new Event("userDataChanged"));
   };
 
   const handleLoginClick = () => {
