@@ -475,36 +475,59 @@ class LocalRoutingService:
         logger.info(f"Added {connections_added} intersection connections (50m threshold)")
         logger.info(f"Final routing graph: {len(self.routing_graph)} nodes")
     
-    def find_nearest_road_point(self, target: Coordinate, max_distance: float = 5000) -> Optional[Coordinate]:
-        """Find the nearest point on the road network"""
-        nearest_point = None
-        min_distance = float('inf')
+    def get_node_connectivity(self, node: Coordinate) -> int:
+        """Get the number of connections for a node in the graph"""
+        if not hasattr(self, 'routing_graph') or node not in self.routing_graph:
+            return 0
+        return len(self.routing_graph[node].connected_segments)
+    
+    def find_nearest_road_point(self, target: Coordinate, max_distance: float = 5000, min_connections: int = 2) -> Optional[Coordinate]:
+        """Find the nearest well-connected point on the road network
+        
+        Args:
+            target: Target coordinate to snap to road
+            max_distance: Maximum search distance in meters
+            min_connections: Minimum number of connections required (2 = avoid dead-ends)
+        
+        Returns:
+            Best connected road point within range, or None if not found
+        """
+        candidates = []  # List of (distance, connectivity, coordinate)
         
         logger.info(f"Searching for nearest road point to ({target.lat}, {target.lng}) within {max_distance}m")
         
+        # Collect all candidates within range
         for segment in self.road_segments:
             for coord in segment.coordinates:
                 distance = target.distance_to(coord)
-                if distance < min_distance and distance <= max_distance:
-                    min_distance = distance
-                    nearest_point = coord
+                if distance <= max_distance:
+                    connectivity = self.get_node_connectivity(coord)
+                    candidates.append((distance, connectivity, coord))
         
-        if nearest_point:
-            logger.info(f"Found nearest road point at ({nearest_point.lat}, {nearest_point.lng}) - {min_distance:.1f}m away")
-        else:
+        if not candidates:
             logger.warning(f"No road point found within {max_distance}m of ({target.lat}, {target.lng})")
-            # Try with larger radius as fallback
-            logger.info(f"Trying larger search radius...")
-            for segment in self.road_segments[:100]:  # Check first 100 segments as sample
-                for coord in segment.coordinates:
-                    distance = target.distance_to(coord)
-                    if distance < min_distance:
-                        min_distance = distance
-                        nearest_point = coord
-            if nearest_point:
-                logger.info(f"Fallback: Found road point {min_distance:.1f}m away (beyond normal radius)")
+            return None
         
-        return nearest_point
+        # Sort by: 1) Good connectivity first, 2) Then by distance
+        # Prioritize points with min_connections or more
+        well_connected = [(d, c, coord) for d, c, coord in candidates if c >= min_connections]
+        poorly_connected = [(d, c, coord) for d, c, coord in candidates if c < min_connections]
+        
+        if well_connected:
+            # Pick closest well-connected point
+            well_connected.sort(key=lambda x: x[0])
+            distance, connectivity, nearest_point = well_connected[0]
+            logger.info(f"Found well-connected road point at ({nearest_point.lat}, {nearest_point.lng}) - {distance:.1f}m away, {connectivity} connections")
+            return nearest_point
+        elif poorly_connected:
+            # Fallback: pick the best-connected point even if below threshold
+            poorly_connected.sort(key=lambda x: (-x[1], x[0]))  # Sort by connectivity desc, then distance asc
+            distance, connectivity, nearest_point = poorly_connected[0]
+            logger.warning(f"⚠️ Using poorly-connected road point at ({nearest_point.lat}, {nearest_point.lng}) - {distance:.1f}m away, only {connectivity} connection(s)")
+            logger.warning(f"⚠️ This waypoint may cause routing failures. Consider moving it to a major road.")
+            return nearest_point
+        
+        return None
     
     def calculate_route(self, start: Coordinate, end: Coordinate, mode: str = "car", risk_profile: str = "safe") -> Optional[List[Coordinate]]:
         """Calculate route using A* algorithm with terrain awareness

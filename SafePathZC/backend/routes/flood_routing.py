@@ -343,6 +343,15 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                 }
                 mode = mode_map.get(request.transport_mode, 'car')
                 
+                # Build waypoint sequence: A -> C -> D -> ... -> B
+                waypoint_sequence = [start_coord]
+                if request.waypoints and len(request.waypoints) > 0:
+                    for wp in request.waypoints:
+                        waypoint_sequence.append(Coordinate(lat=wp['lat'], lng=wp['lng']))
+                waypoint_sequence.append(end_coord)
+                
+                logger.info(f"  A* routing will pass through {len(waypoint_sequence)} points (including start/end)")
+                
                 # Generate routes with different risk profiles
                 risk_profiles = ['safe', 'manageable', 'prone']
                 
@@ -353,25 +362,90 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                     try:
                         logger.info(f"  Trying A* routing with risk_profile='{risk_profile}'...")
                         
-                        # Calculate route using A* with specific risk profile
-                        route_coords = routing_service.calculate_route(
-                            start_coord,
-                            end_coord,
-                            mode=mode,
-                            risk_profile=risk_profile
-                        )
+                        # Calculate route through all waypoints: A->C, C->D, ..., X->B
+                        all_segment_coords = []
+                        total_distance = 0
+                        total_duration = 0
+                        route_failed = False
+                        
+                        for i in range(len(waypoint_sequence) - 1):
+                            segment_start = waypoint_sequence[i]
+                            segment_end = waypoint_sequence[i + 1]
+                            
+                            logger.info(f"    Routing segment {i+1}/{len(waypoint_sequence)-1}: ({segment_start.lat:.4f}, {segment_start.lng:.4f}) -> ({segment_end.lat:.4f}, {segment_end.lng:.4f})")
+                            
+                            # Try A* first
+                            segment_coords = routing_service.calculate_route(
+                                segment_start,
+                                segment_end,
+                                mode=mode,
+                                risk_profile=risk_profile
+                            )
+                            
+                            # If A* fails, fallback to OSRM for this segment
+                            if not segment_coords or len(segment_coords) < 2:
+                                logger.warning(f"    A* failed for segment {i+1}, trying OSRM fallback...")
+                                try:
+                                    osrm_endpoint = get_osrm_endpoint_for_mode(request.transport_mode)
+                                    osrm_coords_str = f"{segment_start.lng},{segment_start.lat};{segment_end.lng},{segment_end.lat}"
+                                    osrm_request_url = f"{osrm_endpoint}/{osrm_coords_str}?overview=full&geometries=geojson&steps=false"
+                                    
+                                    async with httpx.AsyncClient() as client:
+                                        response = await client.get(osrm_request_url, timeout=30.0)
+                                        if response.status_code == 200:
+                                            osrm_data = response.json()
+                                            if osrm_data.get("code") == "Ok" and osrm_data.get("routes"):
+                                                osrm_route = osrm_data["routes"][0]
+                                                segment_coords = [
+                                                    Coordinate(lat=coord[1], lng=coord[0])
+                                                    for coord in osrm_route["geometry"]["coordinates"]
+                                                ]
+                                                logger.info(f"    ✓ OSRM fallback succeeded for segment {i+1}")
+                                            else:
+                                                logger.warning(f"    OSRM fallback failed for segment {i+1}")
+                                                route_failed = True
+                                                break
+                                        else:
+                                            logger.warning(f"    OSRM fallback HTTP error for segment {i+1}: {response.status_code}")
+                                            route_failed = True
+                                            break
+                                except Exception as e:
+                                    logger.warning(f"    OSRM fallback exception for segment {i+1}: {str(e)}")
+                                    route_failed = True
+                                    break
+                            
+                            if not segment_coords or len(segment_coords) < 2:
+                                logger.warning(f"    Both A* and OSRM failed for segment {i+1}, skipping entire route")
+                                route_failed = True
+                                break
+                            
+                            # Get route info for this segment
+                            segment_info = routing_service.get_route_info(segment_coords, mode)
+                            total_distance += segment_info["distance"]
+                            total_duration += segment_info["duration"]
+                            
+                            # Add coordinates (avoid duplicates at waypoints)
+                            if i == 0:
+                                all_segment_coords.extend(segment_coords)
+                            else:
+                                # Skip first point of subsequent segments (it's the last point of previous segment)
+                                all_segment_coords.extend(segment_coords[1:])
+                        
+                        if route_failed:
+                            logger.warning(f"  A* {risk_profile} route failed - couldn't complete all segments")
+                            continue
+                        
+                        route_coords = all_segment_coords
+                        
+                        route_coords = all_segment_coords
                         
                         if route_coords and len(route_coords) >= 2:
                             # Convert to [lng, lat] format
                             coordinates = [[coord.lng, coord.lat] for coord in route_coords]
                             
-                            # Validate route
-                            if has_dead_end_segment(coordinates, threshold_m=400.0):
-                                logger.info(f"  Skipping A* {risk_profile} route: contains dead-end segment")
-                                continue
-                            
-                            # Get route info
-                            route_info_data = routing_service.get_route_info(route_coords, mode)
+                            # Skip dead-end validation for waypoint routes - they intentionally 
+                            # route through specific points which may require backtracking
+                            # Only check OSRM routes (Strategy 1) for dead-ends
                             
                             # Analyze flood risk
                             flood_analysis = analyze_route_flood_risk(
@@ -386,20 +460,20 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                     "type": "LineString",
                                     "coordinates": coordinates
                                 },
-                                "distance": route_info_data["distance"],
-                                "duration": route_info_data["duration"],
+                                "distance": total_distance,
+                                "duration": total_duration,
                                 "flood_percentage": flood_analysis["flooded_percentage"],
                                 "flooded_distance": flood_analysis["flooded_distance_m"],
                                 "risk_level": flood_analysis["risk_level"],
                                 "weather_impact": flood_analysis.get("weather_impact", "none"),
-                                "source": f"a_star_{risk_profile}"
+                                "source": f"a_star_{risk_profile}_waypoints"
                             }
                             
                             # Adjust for transportation mode
                             route_info = adjust_route_for_transportation_mode(route_info, request.transport_mode)
                             
                             all_routes.append(route_info)
-                            logger.info(f"  ✓ Added A* {risk_profile} route: {route_info['distance']:.0f}m, {route_info['flood_percentage']:.1f}% flooded")
+                            logger.info(f"  ✓ Added A* {risk_profile} route through waypoints: {route_info['distance']:.0f}m, {route_info['flood_percentage']:.1f}% flooded")
                             
                     except Exception as e:
                         logger.warning(f"  A* routing with {risk_profile} profile failed: {e}")
