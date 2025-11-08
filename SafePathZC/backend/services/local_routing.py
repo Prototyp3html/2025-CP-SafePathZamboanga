@@ -116,9 +116,9 @@ class RoadSegment:
         Args:
             transportation_mode: Type of transport (car/motorcycle/walking) - affects speed/roads
             risk_profile: Flood risk tolerance (safe/manageable/prone) - PRIMARY route differentiator
-                - "safe": Heavily avoids flooded roads (10x penalty)
-                - "manageable": Moderate avoidance (3x penalty)  
-                - "prone": Minimal avoidance (1.2x penalty) - shortest path
+                - "safe": Heavily avoids flooded roads (50x penalty) - forces significant detours
+                - "manageable": Moderate avoidance (5x penalty) - balanced approach
+                - "prone": Minimal avoidance (1.1x penalty) - shortest path, ignores floods
             flood_lookup_cache: Optional pre-built dict mapping osm_id -> is_flooded (fast O(1) lookup)
         """
         base_cost = self.length_m
@@ -128,18 +128,29 @@ class RoadSegment:
         is_flooded = self.flooded
         
         # If this segment has no flood data but we have a flood lookup cache, check it (O(1) lookup!)
-        if not is_flooded and flood_lookup_cache and self.osm_id:
-            is_flooded = flood_lookup_cache.get(self.osm_id, False)
+        if not is_flooded and flood_lookup_cache:
+            # Try OSM ID lookup first (fastest)
+            if self.osm_id:
+                is_flooded = flood_lookup_cache.get(self.osm_id, False)
+            
+            # If still not flooded, check coordinates (more reliable for cross-dataset matching)
+            if not is_flooded and len(self.coordinates) > 0:
+                # Check if any coordinate in this segment matches a flooded coordinate
+                for coord in self.coordinates:
+                    coord_key = (round(coord.lat, 4), round(coord.lng, 4))
+                    if flood_lookup_cache.get(coord_key, False):
+                        is_flooded = True
+                        break
         
         if risk_profile == "safe":
-            # SAFE ROUTE: Extremely high penalty for flooded roads
-            flood_factor = 10.0 if is_flooded else 1.0
+            # SAFE ROUTE: VERY aggressive penalty for flooded roads - forces alternate paths
+            flood_factor = 50.0 if is_flooded else 1.0  # Increased from 10x to 50x penalty
         elif risk_profile == "manageable":
             # MANAGEABLE ROUTE: Moderate penalty for flooded roads
-            flood_factor = 3.0 if is_flooded else 1.0
+            flood_factor = 5.0 if is_flooded else 1.0  # Increased from 3x to 5x penalty
         else:  # "prone"
             # FLOOD-PRONE ROUTE: Minimal penalty - takes shortest path
-            flood_factor = 1.2 if is_flooded else 1.0
+            flood_factor = 1.1 if is_flooded else 1.0  # Reduced from 1.2x to 1.1x - almost no penalty
         
         # Apply terrain difficulty (elevation, surface)
         terrain_factor = self.get_terrain_difficulty()
@@ -464,36 +475,59 @@ class LocalRoutingService:
         logger.info(f"Added {connections_added} intersection connections (50m threshold)")
         logger.info(f"Final routing graph: {len(self.routing_graph)} nodes")
     
-    def find_nearest_road_point(self, target: Coordinate, max_distance: float = 5000) -> Optional[Coordinate]:
-        """Find the nearest point on the road network"""
-        nearest_point = None
-        min_distance = float('inf')
+    def get_node_connectivity(self, node: Coordinate) -> int:
+        """Get the number of connections for a node in the graph"""
+        if not hasattr(self, 'routing_graph') or node not in self.routing_graph:
+            return 0
+        return len(self.routing_graph[node].connected_segments)
+    
+    def find_nearest_road_point(self, target: Coordinate, max_distance: float = 5000, min_connections: int = 2) -> Optional[Coordinate]:
+        """Find the nearest well-connected point on the road network
+        
+        Args:
+            target: Target coordinate to snap to road
+            max_distance: Maximum search distance in meters
+            min_connections: Minimum number of connections required (2 = avoid dead-ends)
+        
+        Returns:
+            Best connected road point within range, or None if not found
+        """
+        candidates = []  # List of (distance, connectivity, coordinate)
         
         logger.info(f"Searching for nearest road point to ({target.lat}, {target.lng}) within {max_distance}m")
         
+        # Collect all candidates within range
         for segment in self.road_segments:
             for coord in segment.coordinates:
                 distance = target.distance_to(coord)
-                if distance < min_distance and distance <= max_distance:
-                    min_distance = distance
-                    nearest_point = coord
+                if distance <= max_distance:
+                    connectivity = self.get_node_connectivity(coord)
+                    candidates.append((distance, connectivity, coord))
         
-        if nearest_point:
-            logger.info(f"Found nearest road point at ({nearest_point.lat}, {nearest_point.lng}) - {min_distance:.1f}m away")
-        else:
+        if not candidates:
             logger.warning(f"No road point found within {max_distance}m of ({target.lat}, {target.lng})")
-            # Try with larger radius as fallback
-            logger.info(f"Trying larger search radius...")
-            for segment in self.road_segments[:100]:  # Check first 100 segments as sample
-                for coord in segment.coordinates:
-                    distance = target.distance_to(coord)
-                    if distance < min_distance:
-                        min_distance = distance
-                        nearest_point = coord
-            if nearest_point:
-                logger.info(f"Fallback: Found road point {min_distance:.1f}m away (beyond normal radius)")
+            return None
         
-        return nearest_point
+        # Sort by: 1) Good connectivity first, 2) Then by distance
+        # Prioritize points with min_connections or more
+        well_connected = [(d, c, coord) for d, c, coord in candidates if c >= min_connections]
+        poorly_connected = [(d, c, coord) for d, c, coord in candidates if c < min_connections]
+        
+        if well_connected:
+            # Pick closest well-connected point
+            well_connected.sort(key=lambda x: x[0])
+            distance, connectivity, nearest_point = well_connected[0]
+            logger.info(f"Found well-connected road point at ({nearest_point.lat}, {nearest_point.lng}) - {distance:.1f}m away, {connectivity} connections")
+            return nearest_point
+        elif poorly_connected:
+            # Fallback: pick the best-connected point even if below threshold
+            poorly_connected.sort(key=lambda x: (-x[1], x[0]))  # Sort by connectivity desc, then distance asc
+            distance, connectivity, nearest_point = poorly_connected[0]
+            logger.warning(f"⚠️ Using poorly-connected road point at ({nearest_point.lat}, {nearest_point.lng}) - {distance:.1f}m away, only {connectivity} connection(s)")
+            logger.warning(f"⚠️ This waypoint may cause routing failures. Consider moving it to a major road.")
+            return nearest_point
+        
+        return None
     
     def calculate_route(self, start: Coordinate, end: Coordinate, mode: str = "car", risk_profile: str = "safe") -> Optional[List[Coordinate]]:
         """Calculate route using A* algorithm with terrain awareness
@@ -548,10 +582,23 @@ class LocalRoutingService:
             flood_service = get_flood_service()
             if flood_service:
                 logger.info(f"Building flood cache from {len(flood_service.road_segments)} segments...")
+                
+                # Build BOTH osm_id lookup AND coordinate-based lookup
+                # Since zcroadmap and terrain_roads might have different OSM IDs
                 for seg in flood_service.road_segments:
-                    if seg.osm_id and seg.flooded:  # Only cache flooded segments to save memory
+                    # OSM ID lookup (fast but may not match)
+                    if seg.osm_id and seg.flooded:
                         flood_cache[seg.osm_id] = True
-                logger.info(f"Flood cache built: {len(flood_cache)} flooded segments indexed")
+                    
+                    # Coordinate-based lookup (slower but more reliable)
+                    # Store flooded status for each coordinate
+                    if seg.flooded and len(seg.coordinates) > 0:
+                        for coord in seg.coordinates:
+                            # Round coordinates to ~10m precision for matching
+                            coord_key = (round(coord.lat, 4), round(coord.lng, 4))
+                            flood_cache[coord_key] = True
+                
+                logger.info(f"Flood cache built: {len(flood_cache)} flooded entries indexed (osm_ids + coordinates)")
         
         open_set = [(0, start)]  # (f_score, coordinate)
         came_from = {}
@@ -619,9 +666,9 @@ class LocalRoutingService:
                 
                 logger.info(f"Successfully calculated route with {len(path)} waypoint nodes")
                 
-                # Simplify the path - only keep points where direction changes significantly
-                # Tolerance of 100 meters - very aggressive simplification for clean, navigable routes
-                simplified_path = self._simplify_path(path, tolerance=100.0)
+                # Simplify the path - keep most detail for accurate flood analysis
+                # Tolerance of 20 meters - preserves route detail for flood analysis
+                simplified_path = self._simplify_path(path, tolerance=20.0)
                 
                 logger.info(f"Simplified route to {len(simplified_path)} points")
                 
