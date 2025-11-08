@@ -55,7 +55,12 @@ interface ForumStats {
 // Helper function to format report content for better display
 // Function to remove all emojis from text
 const removeEmojis = (text: string) => {
-  return text.replace(/[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '').trim();
+  return text
+    .replace(
+      /[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu,
+      ""
+    )
+    .trim();
 };
 
 const formatReportContent = (content: string) => {
@@ -71,16 +76,24 @@ const formatReportContent = (content: string) => {
   lines.forEach((line) => {
     const trimmed = line.trim();
     if (trimmed.includes("Location:"))
-      reportData.location = removeEmojis(trimmed.replace("Location:", "").trim());
+      reportData.location = removeEmojis(
+        trimmed.replace("Location:", "").trim()
+      );
     if (trimmed.includes("Description:"))
-      reportData.description = removeEmojis(trimmed.replace("Description:", "").trim());
+      reportData.description = removeEmojis(
+        trimmed.replace("Description:", "").trim()
+      );
     if (trimmed.includes("Severity:"))
-      reportData.severity = removeEmojis(trimmed.replace("Severity:", "").trim());
+      reportData.severity = removeEmojis(
+        trimmed.replace("Severity:", "").trim()
+      );
     if (trimmed.includes("Weather Conditions:"))
-      reportData.weather = removeEmojis(trimmed.replace("Weather Conditions:", "").trim());
+      reportData.weather = removeEmojis(
+        trimmed.replace("Weather Conditions:", "").trim()
+      );
     if (trimmed.includes("Temperature:"))
       reportData.temperature = removeEmojis(trimmed.trim());
-    if (trimmed.includes("Wind Speed:")) 
+    if (trimmed.includes("Wind Speed:"))
       reportData.windSpeed = removeEmojis(trimmed.trim());
     if (trimmed.includes("ALERT"))
       reportData.type = removeEmojis(trimmed.replace("ALERT", "").trim());

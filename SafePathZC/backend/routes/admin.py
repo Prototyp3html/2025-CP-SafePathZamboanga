@@ -463,9 +463,9 @@ async def delete_report(
         # Delete the original report
         db.delete(report)
         
-        # Update the user's report count if the report had a user_id
-        if report.user_id:
-            user = db.query(User).filter(User.id == report.user_id).first()
+        # Update the user's report count if the report had a reporter_id
+        if hasattr(report, 'reporter_id') and report.reporter_id and report.reporter_id != "anonymous":
+            user = db.query(User).filter(User.id == report.reporter_id).first()
             if user and user.reports_submitted > 0:
                 user.reports_submitted -= 1
                 print(f"📉 Decremented user {user.name}'s report count to {user.reports_submitted}")
@@ -556,7 +556,7 @@ async def recalculate_user_report_counts(
         
         for user in all_users:
             # Count actual reports for this user
-            actual_count = db.query(Report).filter(Report.user_id == user.id).count()
+            actual_count = db.query(Report).filter(Report.reporter_id == str(user.id)).count()
             old_count = user.reports_submitted
             
             if actual_count != old_count:
