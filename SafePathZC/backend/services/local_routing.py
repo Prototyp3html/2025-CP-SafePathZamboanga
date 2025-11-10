@@ -144,13 +144,13 @@ class RoadSegment:
         
         if risk_profile == "safe":
             # SAFE ROUTE: VERY aggressive penalty for flooded roads - forces alternate paths
-            flood_factor = 50.0 if is_flooded else 1.0  # Increased from 10x to 50x penalty
+            flood_factor = 50.0 if is_flooded else 1.0 
         elif risk_profile == "manageable":
             # MANAGEABLE ROUTE: Moderate penalty for flooded roads
-            flood_factor = 5.0 if is_flooded else 1.0  # Increased from 3x to 5x penalty
-        else:  # "prone"
+            flood_factor = 5.0 if is_flooded else 1.0  
+        else:  
             # FLOOD-PRONE ROUTE: Minimal penalty - takes shortest path
-            flood_factor = 1.1 if is_flooded else 1.0  # Reduced from 1.2x to 1.1x - almost no penalty
+            flood_factor = 1.1 if is_flooded else 1.0 
         
         # Apply terrain difficulty (elevation, surface)
         terrain_factor = self.get_terrain_difficulty()
@@ -252,6 +252,19 @@ class LocalRoutingService:
             return True
             
         try:
+            # Log file path and timestamp for verification
+            import os
+            from datetime import datetime
+            
+            if os.path.exists(self.geojson_path):
+                file_mtime = os.path.getmtime(self.geojson_path)
+                file_timestamp = datetime.fromtimestamp(file_mtime)
+                logger.info(f"📂 Loading GeoJSON from: {self.geojson_path}")
+                logger.info(f"⏰ File last modified: {file_timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+            else:
+                logger.error(f"❌ GeoJSON file not found: {self.geojson_path}")
+                return False
+            
             with open(self.geojson_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
@@ -337,7 +350,14 @@ class LocalRoutingService:
                     logger.error(f"Properties: {properties}")
                     continue
             
-            logger.info(f"Loaded {len(self.road_segments)} road segments")
+            # Calculate flood statistics
+            total_roads = len(self.road_segments)
+            flooded_roads = sum(1 for seg in self.road_segments if seg.flooded)
+            flood_percentage = (flooded_roads / total_roads * 100) if total_roads > 0 else 0
+            
+            logger.info(f"✅ Loaded {total_roads} road segments")
+            logger.info(f"🌊 Flooded roads: {flooded_roads} ({flood_percentage:.1f}%)")
+            logger.info(f"✔️  Safe roads: {total_roads - flooded_roads} ({100-flood_percentage:.1f}%)")
             
             # Build spatial grid index for fast lookups
             self._build_spatial_index()

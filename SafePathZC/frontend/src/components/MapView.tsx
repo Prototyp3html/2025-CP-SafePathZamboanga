@@ -13,6 +13,7 @@ import "leaflet-control-geocoder";
 import "leaflet/dist/leaflet.css";
 import "leaflet-control-geocoder/dist/Control.Geocoder.css";
 import "leaflet-routing-machine";
+import "leaflet.heat"; // Heat layer plugin for area heatmaps
 import "../App.css";
 import { RouteModal } from "./RouteModal";
 import { AlertBanner } from "./AlertBanner";
@@ -1263,7 +1264,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const [routeDetails, setRouteDetails] = useState<RouteDetails | null>(null);
   const [showRouteModal, setShowRouteModal] = useState(false);
   const [mapLayer, setMapLayer] = useState("street");
-  const [showTerrainOverlay, setShowTerrainOverlay] = useState(false);
+  // 3-way toggle: "off" | "terrain" | "heatmap"
+  const [terrainMode, setTerrainMode] = useState<"off" | "terrain" | "heatmap">("off");
   const [selectedRoute, setSelectedRoute] = useState<
     "safe" | "manageable" | "prone" | null
   >(null);
@@ -1396,7 +1398,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const circleMarkersRef = useRef<L.CircleMarker[]>([]);
   const layersRef = useRef<Record<string, L.TileLayer>>({});
   const terrainOverlayRef = useRef<L.LayerGroup | null>(null);
-  const floodHeatmapRef = useRef<L.LayerGroup | null>(null);
+  const floodHeatmapRef = useRef<L.LayerGroup | L.Layer | null>(null);
   const routeLayersRef = useRef<L.Polyline[]>([]);
   const placeMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const placeDataRef = useRef<Map<string, PlaceDefinition>>(new Map());
@@ -7772,26 +7774,185 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     );
   };
 
-  // DEM overlay doesn't need to update on map movement (it's a static image)
-  // Only toggle visibility based on showTerrainOverlay state
+  // Create slope-based heatmap (elevation gain visualization - AREA COVERAGE)
+  const createSlopeHeatmap = () => {
+    if (!mapRef.current || !terrainRoadsData) return;
 
-  // Handle terrain overlay toggle
+    // Remove existing overlays
+    if (floodHeatmapRef.current) {
+      mapRef.current.removeLayer(floodHeatmapRef.current);
+    }
+
+    // Collect all elevation points with their slope intensity for area heatmap
+    const heatPoints: [number, number, number][] = [];
+    let minSlope = Infinity;
+    let maxSlope = 0;
+
+    // First pass: collect all GPS points with elevation data and calculate slopes
+    terrainRoadsData.features.forEach((feature) => {
+      const elevMin = feature.properties.elev_min;
+      const elevMax = feature.properties.elev_max;
+      const length = feature.properties.length_m;
+
+      // Skip roads with invalid elevation data
+      if (
+        elevMin == null ||
+        elevMax == null ||
+        !isFinite(elevMin) ||
+        !isFinite(elevMax) ||
+        length <= 0 ||
+        !isFinite(length)
+      ) {
+        return;
+      }
+
+      // Calculate slope percentage for this road segment
+      const elevationGain = elevMax - elevMin;
+      const slopePercent = (elevationGain / length) * 100;
+
+      // Track min/max for normalization
+      minSlope = Math.min(minSlope, slopePercent);
+      maxSlope = Math.max(maxSlope, slopePercent);
+
+      // Add all coordinate points from this road with their slope intensity
+      feature.geometry.coordinates.forEach((coord) => {
+        const [lng, lat] = coord;
+        // Normalize slope to 0-1 range for heatmap intensity
+        const intensity = Math.min(1, slopePercent / 25); // Cap at 25% slope
+        heatPoints.push([lat, lng, intensity]);
+      });
+    });
+
+    console.log(
+      `📊 Heatmap data: ${heatPoints.length} points, slope range: ${minSlope.toFixed(1)}% - ${maxSlope.toFixed(1)}%`
+    );
+
+    // Create continuous area heatmap using Leaflet.heat
+    // @ts-ignore - Leaflet.heat plugin
+    if (typeof L.heatLayer === "function") {
+      const heatLayer = L.heatLayer(heatPoints, {
+        radius: 60, // Increased radius for better coverage (in pixels)
+        blur: 80, // Increased blur to fill gaps between roads
+        maxZoom: 17, // Max zoom to display heatmap
+        max: 1.0, // Maximum intensity value
+        minOpacity: 0.3, // Minimum opacity to ensure visibility
+        gradient: {
+          // Custom color gradient from green (flat) to red (steep)
+          0.0: "#00FF00", // Flat (0-2%)
+          0.2: "#7FFF00", // Gentle (2-5%)
+          0.4: "#FFFF00", // Moderate (5-10%)
+          0.6: "#FFA500", // Steep (10-15%)
+          0.8: "#FF4500", // Very steep (15-25%)
+          1.0: "#FF0000", // Extreme (>25%)
+        },
+      });
+
+      floodHeatmapRef.current = heatLayer;
+      heatLayer.addTo(mapRef.current);
+
+      console.log(`🗺️ Created continuous slope heatmap overlay`);
+    } else {
+      console.error(
+        "❌ Leaflet.heat plugin not loaded - using fallback visualization"
+      );
+
+      // Fallback: Create grid-based heatmap using rectangles
+      const gridSize = 0.002; // ~200m grid cells for better coverage
+      const gridData: Map<
+        string,
+        { totalIntensity: number; count: number }
+      > = new Map();
+
+      // Aggregate points into grid cells
+      heatPoints.forEach(([lat, lng, intensity]) => {
+        const gridLat = Math.floor(lat / gridSize) * gridSize;
+        const gridLng = Math.floor(lng / gridSize) * gridSize;
+        const key = `${gridLat},${gridLng}`;
+
+        if (!gridData.has(key)) {
+          gridData.set(key, { totalIntensity: 0, count: 0 });
+        }
+
+        const cell = gridData.get(key)!;
+        cell.totalIntensity += intensity;
+        cell.count += 1;
+      });
+
+      // Create rectangles for each grid cell
+      const rectangles: L.Rectangle[] = [];
+
+      gridData.forEach((data, key) => {
+        const [latStr, lngStr] = key.split(",");
+        const gridLat = parseFloat(latStr);
+        const gridLng = parseFloat(lngStr);
+
+        const avgIntensity = data.totalIntensity / data.count;
+
+        // Determine color based on average intensity
+        let color: string;
+        if (avgIntensity < 0.2) color = "#00FF00"; // Flat
+        else if (avgIntensity < 0.4) color = "#7FFF00"; // Gentle
+        else if (avgIntensity < 0.6) color = "#FFFF00"; // Moderate
+        else if (avgIntensity < 0.8) color = "#FFA500"; // Steep
+        else color = "#FF0000"; // Extreme
+
+        const rect = L.rectangle(
+          [
+            [gridLat, gridLng],
+            [gridLat + gridSize, gridLng + gridSize],
+          ],
+          {
+            color: color,
+            fillColor: color,
+            fillOpacity: 0.4,
+            weight: 0,
+            interactive: false,
+          }
+        );
+
+        rectangles.push(rect);
+      });
+
+      floodHeatmapRef.current = L.layerGroup(rectangles);
+      floodHeatmapRef.current.addTo(mapRef.current);
+
+      console.log(
+        `�️ Created grid-based slope heatmap with ${rectangles.length} cells (fallback mode)`
+      );
+    }
+  };
+
+  // DEM overlay doesn't need to update on map movement (it's a static image)
+  // Only toggle visibility based on terrainMode state
+
+  // Handle terrain/heatmap overlay toggle
   useEffect(() => {
-    if (showTerrainOverlay && mapRef.current) {
+    if (!mapRef.current) return;
+
+    // Clean up existing overlays
+    if (terrainOverlayRef.current) {
+      mapRef.current.removeLayer(terrainOverlayRef.current);
+      terrainOverlayRef.current = null;
+    }
+    if (floodHeatmapRef.current) {
+      mapRef.current.removeLayer(floodHeatmapRef.current);
+      floodHeatmapRef.current = null;
+    }
+
+    // Apply based on mode
+    if (terrainMode === "terrain") {
       console.log("🎯 Terrain overlay enabled");
       createTerrainOverlay();
-    } else if (mapRef.current) {
-      if (terrainOverlayRef.current) {
-        mapRef.current.removeLayer(terrainOverlayRef.current);
-        terrainOverlayRef.current = null;
-      }
+    } else if (terrainMode === "heatmap") {
+      console.log("🔥 Slope heatmap enabled");
+      createSlopeHeatmap();
     }
-  }, [showTerrainOverlay]);
+  }, [terrainMode]);
 
   // Auto-enable terrain overlay when switching to terrain map
   useEffect(() => {
-    if (mapLayer === "terrain") {
-      setShowTerrainOverlay(true);
+    if (mapLayer === "terrain" && terrainMode === "off") {
+      setTerrainMode("terrain");
     }
   }, [mapLayer]);
 
@@ -8510,7 +8671,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
         // Add text
         const text = document.createElement("span");
-        text.innerText = "Show Terrain";
+        text.innerText = "Normal View";
         text.style.color = isDarkMode ? "#000000" : "#000000";
 
         // Append elements
@@ -8521,15 +8682,38 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         btn.onclick = (e: Event) => {
           e.stopPropagation();
           console.log(
-            "🎯 Terrain button clicked! Current state:",
-            showTerrainOverlay
+            "🎯 Terrain button clicked! Current mode:",
+            terrainMode
           );
-          setShowTerrainOverlay((prev) => {
-            const newState = !prev;
-            console.log("🔄 Setting terrain overlay to:", newState);
-            text.innerText = newState ? "Hide Terrain" : "Show Terrain";
-            btn.style.background = newState ? "#f0f0f0" : "#ffffff";
-            return newState;
+          setTerrainMode((prev) => {
+            // Cycle through: off → terrain → heatmap → off
+            let newMode: "off" | "terrain" | "heatmap";
+            if (prev === "off") {
+              newMode = "terrain";
+            } else if (prev === "terrain") {
+              newMode = "heatmap";
+            } else {
+              newMode = "off";
+            }
+            
+            console.log("🔄 Setting terrain mode to:", newMode);
+            
+            // Update button appearance based on mode
+            if (newMode === "off") {
+              text.innerText = "Normal View";
+              btn.style.background = "#ffffff";
+              icon.src = "/icons/mountain.png";
+            } else if (newMode === "terrain") {
+              text.innerText = "Terrain View";
+              btn.style.background = "#e8f5e9";
+              icon.src = "/icons/mountain.png";
+            } else {
+              text.innerText = "Slope Heatmap";
+              btn.style.background = "#ffe0b2";
+              icon.src = "/icons/mountain.png";
+            }
+            
+            return newMode;
           });
         };
 
@@ -9165,8 +9349,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       floodHeatmapRef.current = null;
     }
 
-    // Reset terrain overlay state
-    setShowTerrainOverlay(false);
+    // Reset terrain mode to normal
+    setTerrainMode("off");
   };
 
   return (
@@ -9692,7 +9876,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           </div>
         )}
 
-        {(startPoint || endPoint || showTerrainOverlay) && (
+        {(startPoint || endPoint || terrainMode !== "off") && (
           <button
             onClick={resetRoute}
             style={{
@@ -9754,8 +9938,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           </div>
         )}
 
-        {/* Elevation Legend */}
-        {showTerrainOverlay &&
+        {/* Elevation/Slope Legend */}
+        {terrainMode !== "off" &&
           (() => {
             const isDarkMode =
               document.documentElement.classList.contains("dark");
@@ -9788,7 +9972,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     fontWeight: "600",
                   }}
                 >
-                  🗺️ Terrain Elevation
+                  {terrainMode === "terrain" ? "🗺️ Terrain Elevation" : "📊 Slope Intensity"}
                 </h4>
 
                 <div
@@ -9798,102 +9982,53 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     gap: "6px",
                   }}
                 >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: "20px",
-                        height: "14px",
-                        background: "#e8f4e8",
-                        borderRadius: "2px",
-                        border: "1px solid rgba(0,0,0,0.2)",
-                      }}
-                    ></div>
-                    <span style={{ color: textColor }}>
-                      0-50m (Low/Coastal)
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: "20px",
-                        height: "14px",
-                        background: "#b8d98e",
-                        borderRadius: "2px",
-                        border: "1px solid rgba(0,0,0,0.2)",
-                      }}
-                    ></div>
-                    <span style={{ color: textColor }}>50-150m (Plains)</span>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: "20px",
-                        height: "14px",
-                        background: "#d4c896",
-                        borderRadius: "2px",
-                        border: "1px solid rgba(0,0,0,0.2)",
-                      }}
-                    ></div>
-                    <span style={{ color: textColor }}>150-300m (Hills)</span>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: "20px",
-                        height: "14px",
-                        background: "#c4a57b",
-                        borderRadius: "2px",
-                        border: "1px solid rgba(0,0,0,0.2)",
-                      }}
-                    ></div>
-                    <span style={{ color: textColor }}>
-                      300-600m (Mountains)
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: "20px",
-                        height: "14px",
-                        background: "#9d8b70",
-                        borderRadius: "2px",
-                        border: "1px solid rgba(0,0,0,0.2)",
-                      }}
-                    ></div>
-                    <span style={{ color: textColor }}>
-                      600m+ (High Mountains)
-                    </span>
-                  </div>
+                  {terrainMode === "terrain" ? (
+                    <>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div style={{ width: "20px", height: "14px", background: "#e8f4e8", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
+                        <span style={{ color: textColor }}>0-50m (Low/Coastal)</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div style={{ width: "20px", height: "14px", background: "#b8d98e", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
+                        <span style={{ color: textColor }}>50-150m (Plains)</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div style={{ width: "20px", height: "14px", background: "#d4c896", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
+                        <span style={{ color: textColor }}>150-300m (Hills)</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div style={{ width: "20px", height: "14px", background: "#c4a57b", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
+                        <span style={{ color: textColor }}>300-500m (Highlands)</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div style={{ width: "20px", height: "14px", background: "#00FF00", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
+                        <span style={{ color: textColor }}>0-2% (Flat)</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div style={{ width: "20px", height: "14px", background: "#7FFF00", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
+                        <span style={{ color: textColor }}>2-5% (Gentle)</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div style={{ width: "20px", height: "14px", background: "#FFFF00", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
+                        <span style={{ color: textColor }}>5-10% (Moderate)</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div style={{ width: "20px", height: "14px", background: "#FFA500", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
+                        <span style={{ color: textColor }}>10-15% (Steep)</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div style={{ width: "20px", height: "14px", background: "#FF4500", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
+                        <span style={{ color: textColor }}>15-25% (Very Steep)</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div style={{ width: "20px", height: "14px", background: "#FF0000", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
+                        <span style={{ color: textColor }}>&gt;25% (Extreme)</span>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <div
@@ -9907,7 +10042,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     color: isDarkMode ? "#9ca3af" : "#666",
                   }}
                 >
-                  🌍 Topographic heatmap overlay
+                  {terrainMode === "terrain" ? "🌍 Topographic overlay" : "📈 Slope gradient heatmap"}
                 </div>
               </div>
             );

@@ -1,0 +1,276 @@
+<!-- 
+  Example Admin Panel Button for Flood Data Update
+  Add this to your admin dashboard
+-->
+
+<!-- Add this to your admin page HTML -->
+<div class="flood-update-panel">
+  <h3>🌊 Flood Data Management</h3>
+  
+  <!-- Status Display -->
+  <div id="flood-status" class="status-card">
+    <p>Loading status...</p>
+  </div>
+  
+  <!-- Update Button -->
+  <button id="update-flood-data" class="btn btn-primary">
+    🔄 Update Flood Data Now
+  </button>
+  
+  <!-- Progress Display -->
+  <div id="update-progress" class="progress-display" style="display: none;">
+    <p>⏳ Updating flood data... This may take 2-3 minutes</p>
+    <div class="spinner"></div>
+  </div>
+  
+  <!-- Result Display -->
+  <div id="update-result" class="result-display" style="display: none;"></div>
+</div>
+
+<!-- Add this JavaScript -->
+<script>
+// Flood Data Update Functions
+const FloodDataManager = {
+  baseUrl: 'http://localhost:8000/api',  // Change to your API URL
+  
+  // Load current status
+  async loadStatus() {
+    try {
+      const response = await fetch(`${this.baseUrl}/flood-data/status`);
+      const data = await response.json();
+      
+      this.displayStatus(data);
+    } catch (error) {
+      console.error('Failed to load status:', error);
+      document.getElementById('flood-status').innerHTML = 
+        '<p class="error">❌ Failed to load status</p>';
+    }
+  },
+  
+  // Display status
+  displayStatus(data) {
+    const statusDiv = document.getElementById('flood-status');
+    
+    const hoursOld = data.hours_old || 0;
+    const statusEmoji = data.status === 'current' ? '✅' : '⚠️';
+    const statusColor = data.status === 'current' ? 'green' : 'orange';
+    
+    statusDiv.innerHTML = `
+      <div class="status-info">
+        <h4>${statusEmoji} Status: ${data.status}</h4>
+        <p><strong>Last Updated:</strong> ${new Date(data.last_updated).toLocaleString()}</p>
+        <p><strong>Age:</strong> ${hoursOld.toFixed(1)} hours old</p>
+        <p><strong>Total Roads:</strong> ${data.metadata?.total_roads || 'N/A'}</p>
+        <p><strong>Flooded Roads:</strong> ${data.metadata?.flooded_roads || 'N/A'}</p>
+        <p><strong>Current Rainfall:</strong> ${data.metadata?.current_rainfall_mm || 0}mm</p>
+        <p style="color: ${statusColor}"><strong>${data.recommendation}</strong></p>
+      </div>
+    `;
+  },
+  
+  // Trigger update
+  async updateData() {
+    const button = document.getElementById('update-flood-data');
+    const progress = document.getElementById('update-progress');
+    const result = document.getElementById('update-result');
+    
+    // Disable button and show progress
+    button.disabled = true;
+    progress.style.display = 'block';
+    result.style.display = 'none';
+    
+    try {
+      const response = await fetch(`${this.baseUrl}/flood-data/update`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        // Success
+        result.className = 'result-display success';
+        result.innerHTML = `
+          <h4>✅ Update Successful!</h4>
+          <p><strong>Total Roads:</strong> ${data.metadata?.total_roads || 'N/A'}</p>
+          <p><strong>Flooded Roads:</strong> ${data.metadata?.flooded_roads || 'N/A'}</p>
+          <p><strong>Current Rainfall:</strong> ${data.metadata?.current_rainfall_mm || 0}mm</p>
+          <p><strong>Updated:</strong> ${new Date(data.timestamp).toLocaleString()}</p>
+          <p><em>Data sources: OpenStreetMap, Open-Elevation, Open-Meteo</em></p>
+        `;
+        
+        // Reload status
+        setTimeout(() => this.loadStatus(), 1000);
+      } else {
+        throw new Error(data.detail || 'Update failed');
+      }
+    } catch (error) {
+      // Error
+      result.className = 'result-display error';
+      result.innerHTML = `
+        <h4>❌ Update Failed</h4>
+        <p>${error.message}</p>
+        <p>Please check your internet connection and try again.</p>
+      `;
+    } finally {
+      // Re-enable button and hide progress
+      button.disabled = false;
+      progress.style.display = 'none';
+      result.style.display = 'block';
+    }
+  },
+  
+  // Initialize
+  init() {
+    // Load initial status
+    this.loadStatus();
+    
+    // Set up update button
+    document.getElementById('update-flood-data').addEventListener('click', () => {
+      this.updateData();
+    });
+    
+    // Auto-refresh status every 5 minutes
+    setInterval(() => this.loadStatus(), 5 * 60 * 1000);
+  }
+};
+
+// Initialize when page loads
+document.addEventListener('DOMContentLoaded', () => {
+  FloodDataManager.init();
+});
+</script>
+
+<!-- Add this CSS -->
+<style>
+.flood-update-panel {
+  max-width: 600px;
+  margin: 20px auto;
+  padding: 20px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.flood-update-panel h3 {
+  margin-top: 0;
+  color: #2c5aa0;
+}
+
+.status-card {
+  background: #f5f5f5;
+  padding: 15px;
+  border-radius: 6px;
+  margin-bottom: 15px;
+}
+
+.status-info h4 {
+  margin-top: 0;
+}
+
+.status-info p {
+  margin: 5px 0;
+}
+
+.btn {
+  padding: 12px 24px;
+  font-size: 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn-primary {
+  background: #2c5aa0;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #1e3a6f;
+}
+
+.btn-primary:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.progress-display {
+  margin-top: 15px;
+  padding: 15px;
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 6px;
+  text-align: center;
+}
+
+.spinner {
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #2c5aa0;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin: 10px auto;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.result-display {
+  margin-top: 15px;
+  padding: 15px;
+  border-radius: 6px;
+}
+
+.result-display.success {
+  background: #d4edda;
+  border: 1px solid #c3e6cb;
+  color: #155724;
+}
+
+.result-display.error {
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+  color: #721c24;
+}
+
+.result-display h4 {
+  margin-top: 0;
+}
+</style>
+
+<!-- 
+  USAGE INSTRUCTIONS:
+  
+  1. Copy this entire file content
+  2. Paste into your admin dashboard page
+  3. Change the baseUrl in JavaScript to your actual API URL
+  4. Style as needed to match your design
+  
+  FEATURES:
+  - Shows current data status (age, roads count, etc)
+  - One-click manual update button
+  - Progress indicator during update
+  - Success/error messages
+  - Auto-refreshes status every 5 minutes
+  
+  ALTERNATIVE (Simple Button Only):
+  If you just want a simple button without status:
+  
+  <button onclick="updateFloodData()">Update Flood Data</button>
+  
+  <script>
+  async function updateFloodData() {
+    const response = await fetch('http://localhost:8000/api/flood-data/update', {
+      method: 'POST'
+    });
+    const data = await response.json();
+    alert(data.message);
+  }
+  </script>
+-->

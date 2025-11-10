@@ -1,5 +1,25 @@
 #!/usr/bin/env python3
 """
+⚠️ OBSOLETE FILE - NO LONGER USED ⚠️
+
+This script was used for MANUAL import of terrain data into PostgreSQL/PostGIS.
+
+AS OF NOVEMBER 8, 2025, THIS IS NO LONGER NEEDED BECAUSE:
+1. The system now auto-generates terrain_roads.geojson via flood_data_updater.py
+2. Routing reads directly from geojson files (not from PostgreSQL)
+3. OSRM is used for routing (not PostgreSQL pgRouting)
+
+NEW AUTOMATED WORKFLOW:
+- Use: backend/services/flood_data_updater.py
+- Automatically fetches from OpenStreetMap, Open-Elevation, and Open-Meteo APIs
+- Generates fresh terrain_roads.geojson every 6 hours
+- No manual imports needed!
+
+See: backend/OBSOLETE_FILES.md for details
+
+---
+
+OLD DESCRIPTION (for reference):
 PostGIS Data Import Script for SafePath Zamboanga
 Imports terrain_roads.geojson into PostGIS database with optimized spatial indexing
 """

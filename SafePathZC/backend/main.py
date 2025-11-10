@@ -15,6 +15,7 @@ import asyncio
 import logging
 from dotenv import load_dotenv
 from services.local_routing import get_routing_service, get_flood_service, Coordinate
+from services.flood_data_updater import FloodDataUpdater
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -1785,6 +1786,151 @@ async def clear_search_history(db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Search history cleared successfully"}
 
+
+# ============================================================================
+# FLOOD DATA UPDATE ENDPOINTS
+# ============================================================================
+
+@app.post("/api/flood-data/update")
+async def update_flood_data():
+    """
+    Update flood analysis data from live APIs
+    
+    This endpoint fetches latest data from:
+    - OpenStreetMap (road network)
+    - Open-Elevation API (elevation data)
+    - Open-Meteo API (weather and rainfall)
+    
+    Returns updated terrain_roads.geojson with current flood risk assessment
+    """
+    try:
+        logger.info("Starting flood data update...")
+        
+        async with FloodDataUpdater() as updater:
+            output_path = await updater.generate_updated_terrain_geojson()
+        
+        if not output_path:
+            raise HTTPException(status_code=500, detail="Failed to generate flood data")
+        
+        # Get statistics
+        with open(output_path, 'r', encoding='utf-8') as f:
+            geojson = json.load(f)
+        
+        metadata = geojson.get('metadata', {})
+        
+        return {
+            "status": "success",
+            "message": "Flood data updated successfully",
+            "output_file": output_path,
+            "metadata": metadata,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Flood data update failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/flood-data/status")
+async def get_flood_data_status():
+    """
+    Get current flood data file status and metadata
+    """
+    try:
+        from pathlib import Path
+        data_path = Path(__file__).parent / "data" / "terrain_roads.geojson"
+        
+        if not data_path.exists():
+            return {
+                "status": "missing",
+                "message": "Flood data file not found. Please run update.",
+                "last_updated": None
+            }
+        
+        # Get file modification time
+        mod_time = datetime.fromtimestamp(data_path.stat().st_mtime)
+        
+        # Read metadata from file
+        with open(data_path, 'r', encoding='utf-8') as f:
+            geojson = json.load(f)
+        
+        metadata = geojson.get('metadata', {})
+        
+        # Check if data is stale (older than 6 hours)
+        hours_old = (datetime.now() - mod_time).total_seconds() / 3600
+        is_stale = hours_old > 6
+        
+        return {
+            "status": "stale" if is_stale else "current",
+            "file_path": str(data_path),
+            "file_size_mb": round(data_path.stat().st_size / (1024 * 1024), 2),
+            "last_updated": mod_time.isoformat(),
+            "hours_old": round(hours_old, 2),
+            "metadata": metadata,
+            "recommendation": "Update recommended" if is_stale else "Data is current"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get flood data status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/flood-data/metadata")
+async def get_flood_data_metadata():
+    """
+    Get detailed metadata about current flood analysis data
+    """
+    try:
+        from pathlib import Path
+        data_path = Path(__file__).parent / "data" / "terrain_roads.geojson"
+        
+        if not data_path.exists():
+            raise HTTPException(status_code=404, detail="Flood data file not found")
+        
+        with open(data_path, 'r', encoding='utf-8') as f:
+            geojson = json.load(f)
+        
+        features = geojson.get('features', [])
+        metadata = geojson.get('metadata', {})
+        
+        # Calculate additional statistics
+        flood_levels = {}
+        total_length = 0
+        flooded_length = 0
+        
+        for feature in features:
+            props = feature.get('properties', {})
+            level = props.get('flood_level', 'unknown')
+            flood_levels[level] = flood_levels.get(level, 0) + 1
+            
+            length = props.get('length_m', 0)
+            total_length += length
+            
+            if props.get('flooded') == "1":
+                flooded_length += length
+        
+        return {
+            "metadata": metadata,
+            "statistics": {
+                "total_roads": len(features),
+                "total_length_km": round(total_length / 1000, 2),
+                "flooded_length_km": round(flooded_length / 1000, 2),
+                "flood_level_distribution": flood_levels,
+                "flooded_percentage": round((flooded_length / total_length * 100) if total_length > 0 else 0, 2)
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get flood metadata: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# END FLOOD DATA UPDATE ENDPOINTS
+# ============================================================================
+
 # Helper functions for routing and elevation
 def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate distance between two points using Haversine formula (returns meters)"""
@@ -2737,9 +2883,73 @@ async def get_routes_summary(db: Session = Depends(get_db)):
 
 # Routing services are initialized via get_routing_service() and get_flood_service()
 
+# Background task for auto-updating flood data
+background_tasks_running = False
+
+async def flood_data_update_loop():
+    """Background task that updates flood data every 6 hours"""
+    from services.flood_data_updater import update_flood_data
+    
+    logger.info("🔄 Flood data auto-update scheduler started")
+    logger.info("📅 Will update every 6 hours at: 12:00 AM, 6:00 AM, 12:00 PM, 6:00 PM")
+    
+    while background_tasks_running:
+        try:
+            # Calculate time until next scheduled update (12am, 6am, 12pm, 6pm)
+            now = datetime.now()
+            current_hour = now.hour
+            
+            # Determine next update hour
+            update_hours = [0, 6, 12, 18]  # 12am, 6am, 12pm, 6pm
+            next_hour = None
+            for hour in update_hours:
+                if current_hour < hour:
+                    next_hour = hour
+                    break
+            
+            if next_hour is None:
+                next_hour = update_hours[0]  # Next day at midnight
+            
+            # Calculate seconds until next update
+            if next_hour > current_hour:
+                hours_until = next_hour - current_hour
+            else:
+                hours_until = (24 - current_hour) + next_hour
+            
+            seconds_until = hours_until * 3600 - (now.minute * 60) - now.second
+            
+            logger.info(f"⏰ Next flood data update in {hours_until} hours ({seconds_until} seconds)")
+            
+            # Wait until next scheduled time
+            await asyncio.sleep(seconds_until)
+            
+            # Perform the update
+            logger.info("🚀 Starting scheduled flood data update...")
+            output_path = await update_flood_data()
+            
+            if output_path:
+                logger.info(f"✅ Flood data updated successfully: {output_path}")
+                
+                # Reload flood service with new data
+                flood_service = get_flood_service()
+                flood_service.load_road_network()
+                logger.info(f"🔄 Flood service reloaded with {len(flood_service.road_segments)} segments")
+            else:
+                logger.error("❌ Flood data update failed")
+                
+        except asyncio.CancelledError:
+            logger.info("🛑 Flood data update scheduler stopped")
+            break
+        except Exception as e:
+            logger.error(f"❌ Error in flood data update loop: {e}", exc_info=True)
+            # Wait 1 hour before retrying on error
+            await asyncio.sleep(3600)
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize routing and flood services on startup"""
+    global background_tasks_running
+    
     try:
         # Initialize routing service (zcroadmap.geojson - has highway classification)
         routing_service = get_routing_service()
@@ -2778,6 +2988,18 @@ async def startup_event():
         init_demo_user(db)
     finally:
         db.close()
+    
+    # Start background flood data update scheduler
+    background_tasks_running = True
+    asyncio.create_task(flood_data_update_loop())
+    logger.info("✅ Background flood data updater started")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up on shutdown"""
+    global background_tasks_running
+    background_tasks_running = False
+    logger.info("🛑 Application shutting down...")
 
 async def get_local_route(start_lat: float, start_lng: float, end_lat: float, end_lng: float, mode: str = "car", risk_profile: str = "safe"):
     """Get route using local routing service with specific transportation mode and flood risk profile
