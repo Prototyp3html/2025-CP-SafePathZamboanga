@@ -102,7 +102,7 @@ interface TerrainRoadFeature {
     elev_min?: number;
     elev_max?: number;
     flooded?: string;
-    
+
     // New database properties
     osm_way_id?: string;
     road_name?: string;
@@ -130,7 +130,9 @@ interface TerrainRoadsData {
 }
 
 // Helper functions for backward compatibility between old and new data formats
-const isFloodProne = (properties: TerrainRoadFeature["properties"]): boolean => {
+const isFloodProne = (
+  properties: TerrainRoadFeature["properties"]
+): boolean => {
   // Check new database format first
   if (typeof properties.is_flood_prone === "boolean") {
     return properties.is_flood_prone;
@@ -143,7 +145,9 @@ const isFloodProne = (properties: TerrainRoadFeature["properties"]): boolean => 
   return false;
 };
 
-const getRoadLength = (properties: TerrainRoadFeature["properties"]): number => {
+const getRoadLength = (
+  properties: TerrainRoadFeature["properties"]
+): number => {
   // Try legacy format first
   if (typeof properties.length_m === "number") {
     return properties.length_m;
@@ -1302,7 +1306,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const [showRouteModal, setShowRouteModal] = useState(false);
   const [mapLayer, setMapLayer] = useState("street");
   // 3-way toggle: "off" | "terrain" | "heatmap"
-  const [terrainMode, setTerrainMode] = useState<"off" | "terrain" | "heatmap">("off");
+  const [terrainMode, setTerrainMode] = useState<"off" | "terrain" | "heatmap">(
+    "off"
+  );
   const [selectedRoute, setSelectedRoute] = useState<
     "safe" | "manageable" | "prone" | null
   >(null);
@@ -2442,24 +2448,36 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     try {
       console.log("🗺️ Loading terrain roads data from database...");
-      const response = await fetch(`${API_URL}/api/terrain/export/geojson?include_flood_data=true`);
+      const response = await fetch(
+        `${API_URL}/api/terrain/export/geojson?include_flood_data=true`
+      );
 
       if (!response.ok) {
-        throw new Error(`Failed to load terrain roads from database API: ${response.status}`);
+        throw new Error(
+          `Failed to load terrain roads from database API: ${response.status}`
+        );
       }
 
       const data: TerrainRoadsData = await response.json();
 
-      console.log(`✅ Loaded ${data.features.length} terrain road features from database`);
+      console.log(
+        `✅ Loaded ${data.features.length} terrain road features from database`
+      );
       console.log("📊 Database road data:", {
         totalFeatures: data.features.length,
-        floodedRoads: data.features.filter((f) => isFloodProne(f.properties)).length,
-        safeRoads: data.features.filter((f) => !isFloodProne(f.properties)).length,
-        averageLength: data.features.length > 0 ? 
-          (
-            data.features.reduce((sum, f) => sum + getRoadLength(f.properties), 0) /
-            data.features.length
-          ).toFixed(2) + "m" : "0m",
+        floodedRoads: data.features.filter((f) => isFloodProne(f.properties))
+          .length,
+        safeRoads: data.features.filter((f) => !isFloodProne(f.properties))
+          .length,
+        averageLength:
+          data.features.length > 0
+            ? (
+                data.features.reduce(
+                  (sum, f) => sum + getRoadLength(f.properties),
+                  0
+                ) / data.features.length
+              ).toFixed(2) + "m"
+            : "0m",
       });
 
       const { metas, spatialIndex } = buildTerrainSpatialIndex(data.features);
@@ -2473,7 +2491,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       setTerrainRoadsData(data);
       setTerrainRoadsLoaded(true);
     } catch (error) {
-      console.error("❌ Failed to load terrain roads data from database:", error);
+      console.error(
+        "❌ Failed to load terrain roads data from database:",
+        error
+      );
       setTerrainRoadsLoaded(true); // Mark as loaded to prevent retry loops
     }
   };
@@ -2785,8 +2806,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       });
 
       // Assess flood risk for this segment
-      const floodedNearby = nearbyRoads.filter(
-        (road) => isFloodProne(road.properties)
+      const floodedNearby = nearbyRoads.filter((road) =>
+        isFloodProne(road.properties)
       );
       if (floodedNearby.length > 0) {
         floodedSegments++;
@@ -7859,7 +7880,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     });
 
     console.log(
-      `📊 Heatmap data: ${heatPoints.length} points, slope range: ${minSlope.toFixed(1)}% - ${maxSlope.toFixed(1)}%`
+      `📊 Heatmap data: ${
+        heatPoints.length
+      } points, slope range: ${minSlope.toFixed(1)}% - ${maxSlope.toFixed(1)}%`
     );
 
     // Create continuous area heatmap using Leaflet.heat
@@ -7893,10 +7916,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
       // Fallback: Create grid-based heatmap using rectangles
       const gridSize = 0.002; // ~200m grid cells for better coverage
-      const gridData: Map<
-        string,
-        { totalIntensity: number; count: number }
-      > = new Map();
+      const gridData: Map<string, { totalIntensity: number; count: number }> =
+        new Map();
 
       // Aggregate points into grid cells
       heatPoints.forEach(([lat, lng, intensity]) => {
@@ -8716,10 +8737,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
         btn.onclick = (e: Event) => {
           e.stopPropagation();
-          console.log(
-            "🎯 Terrain button clicked! Current mode:",
-            terrainMode
-          );
+          console.log("🎯 Terrain button clicked! Current mode:", terrainMode);
           setTerrainMode((prev) => {
             // Cycle through: off → terrain → heatmap → off
             let newMode: "off" | "terrain" | "heatmap";
@@ -8730,9 +8748,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             } else {
               newMode = "off";
             }
-            
+
             console.log("🔄 Setting terrain mode to:", newMode);
-            
+
             // Update button appearance based on mode
             if (newMode === "off") {
               text.innerText = "Normal View";
@@ -8747,7 +8765,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               btn.style.background = "#ffe0b2";
               icon.src = "/icons/mountain.png";
             }
-            
+
             return newMode;
           });
         };
@@ -10007,7 +10025,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     fontWeight: "600",
                   }}
                 >
-                  {terrainMode === "terrain" ? "🗺️ Terrain Elevation" : "📊 Slope Intensity"}
+                  {terrainMode === "terrain"
+                    ? "🗺️ Terrain Elevation"
+                    : "📊 Slope Intensity"}
                 </h4>
 
                 <div
@@ -10019,48 +10039,202 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                 >
                   {terrainMode === "terrain" ? (
                     <>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#e8f4e8", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
-                        <span style={{ color: textColor }}>0-50m (Low/Coastal)</span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#e8f4e8",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
+                        <span style={{ color: textColor }}>
+                          0-50m (Low/Coastal)
+                        </span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#b8d98e", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
-                        <span style={{ color: textColor }}>50-150m (Plains)</span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#b8d98e",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
+                        <span style={{ color: textColor }}>
+                          50-150m (Plains)
+                        </span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#d4c896", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
-                        <span style={{ color: textColor }}>150-300m (Hills)</span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#d4c896",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
+                        <span style={{ color: textColor }}>
+                          150-300m (Hills)
+                        </span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#c4a57b", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
-                        <span style={{ color: textColor }}>300-500m (Highlands)</span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#c4a57b",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
+                        <span style={{ color: textColor }}>
+                          300-500m (Highlands)
+                        </span>
                       </div>
                     </>
                   ) : (
                     <>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#00FF00", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#00FF00",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
                         <span style={{ color: textColor }}>0-2% (Flat)</span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#7FFF00", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#7FFF00",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
                         <span style={{ color: textColor }}>2-5% (Gentle)</span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#FFFF00", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
-                        <span style={{ color: textColor }}>5-10% (Moderate)</span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#FFFF00",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
+                        <span style={{ color: textColor }}>
+                          5-10% (Moderate)
+                        </span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#FFA500", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#FFA500",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
                         <span style={{ color: textColor }}>10-15% (Steep)</span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#FF4500", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
-                        <span style={{ color: textColor }}>15-25% (Very Steep)</span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#FF4500",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
+                        <span style={{ color: textColor }}>
+                          15-25% (Very Steep)
+                        </span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#FF0000", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
-                        <span style={{ color: textColor }}>&gt;25% (Extreme)</span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#FF0000",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
+                        <span style={{ color: textColor }}>
+                          &gt;25% (Extreme)
+                        </span>
                       </div>
                     </>
                   )}
@@ -10077,7 +10251,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     color: isDarkMode ? "#9ca3af" : "#666",
                   }}
                 >
-                  {terrainMode === "terrain" ? "🌍 Topographic overlay" : "📈 Slope gradient heatmap"}
+                  {terrainMode === "terrain"
+                    ? "🌍 Topographic overlay"
+                    : "📈 Slope gradient heatmap"}
                 </div>
               </div>
             );

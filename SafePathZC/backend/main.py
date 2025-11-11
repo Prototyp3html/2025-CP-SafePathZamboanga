@@ -15,7 +15,6 @@ import asyncio
 import logging
 from dotenv import load_dotenv
 from services.local_routing import get_routing_service, get_flood_service, Coordinate
-from services.flood_data_updater import FloodDataUpdater
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -1810,8 +1809,14 @@ async def update_flood_data():
     try:
         logger.info("Starting flood data update...")
         
-        async with FloodDataUpdater() as updater:
-            output_path = await updater.generate_updated_terrain_geojson()
+        # Use new database-powered updater
+        from services.database_flood_updater import update_flood_data_database, update_flood_data
+        
+        # Update database first
+        update_stats = await update_flood_data_database()
+        
+        # Generate legacy GeoJSON file for compatibility
+        output_path = await update_flood_data()
         
         if not output_path:
             raise HTTPException(status_code=500, detail="Failed to generate flood data")
