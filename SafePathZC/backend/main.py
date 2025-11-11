@@ -285,6 +285,10 @@ app.include_router(forum_router)
 app.include_router(flood_routing_router)  # Flood-aware routing with 3 distinct routes
 app.include_router(geocoding_router, prefix="/api/geocoding", tags=["geocoding"])
 
+# Add terrain database API routes
+from routes.terrain_api import router as terrain_router
+app.include_router(terrain_router)
+
 # Debug endpoint to check OSRM configuration
 @app.get("/debug/osrm-config")
 async def debug_osrm_config():
@@ -2887,11 +2891,12 @@ async def get_routes_summary(db: Session = Depends(get_db)):
 background_tasks_running = False
 
 async def flood_data_update_loop():
-    """Background task that updates flood data every 6 hours"""
-    from services.flood_data_updater import update_flood_data
+    """Background task that updates flood data every 6 hours - DATABASE VERSION"""
+    from services.database_flood_updater import update_flood_data_database, update_flood_data
     
-    logger.info("🔄 Flood data auto-update scheduler started")
+    logger.info("🔄 DATABASE Flood data auto-update scheduler started")
     logger.info("📅 Will update every 6 hours at: 12:00 AM, 6:00 AM, 12:00 PM, 6:00 PM")
+    logger.info("💾 Using PostgreSQL database storage (Railway-compatible)")
     
     while background_tasks_running:
         try:
@@ -2923,19 +2928,35 @@ async def flood_data_update_loop():
             # Wait until next scheduled time
             await asyncio.sleep(seconds_until)
             
-            # Perform the update
-            logger.info("🚀 Starting scheduled flood data update...")
-            output_path = await update_flood_data()
-            
-            if output_path:
-                logger.info(f"✅ Flood data updated successfully: {output_path}")
+            # Perform the DATABASE update
+            logger.info("🚀 Starting scheduled DATABASE terrain data update...")
+            try:
+                update_stats = await update_flood_data_database()
                 
-                # Reload flood service with new data
-                flood_service = get_flood_service()
-                flood_service.load_road_network()
-                logger.info(f"🔄 Flood service reloaded with {len(flood_service.road_segments)} segments")
-            else:
-                logger.error("❌ Flood data update failed")
+                if update_stats and update_stats.get('status') == 'completed':
+                    logger.info(f"✅ Database terrain data updated successfully!")
+                    logger.info(f"📊 Roads processed: {update_stats.get('roads_processed', 0)}")
+                    logger.info(f"💾 Success rate: {update_stats.get('success_rate', 0):.1f}%")
+                    
+                    # Also create GeoJSON file for backward compatibility
+                    legacy_path = await update_flood_data()
+                    if legacy_path:
+                        logger.info(f"📁 Legacy GeoJSON exported: {legacy_path}")
+                    
+                    # Reload flood service with new data
+                    flood_service = get_flood_service()
+                    flood_service.load_road_network()
+                    logger.info(f"🔄 Flood service reloaded with {len(flood_service.road_segments)} segments")
+                else:
+                    logger.error("❌ Database terrain data update failed")
+                    
+            except Exception as e:
+                logger.error(f"❌ Database terrain data update error: {e}")
+                # Fallback to legacy system
+                logger.info("🔄 Attempting legacy file-based update as fallback...")
+                legacy_path = await update_flood_data()
+                if legacy_path:
+                    logger.info(f"✅ Fallback update successful: {legacy_path}")
                 
         except asyncio.CancelledError:
             logger.info("🛑 Flood data update scheduler stopped")

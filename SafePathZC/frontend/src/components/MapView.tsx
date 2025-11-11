@@ -94,13 +94,29 @@ interface TerrainData {
 interface TerrainRoadFeature {
   type: "Feature";
   properties: {
-    osm_id: string;
-    road_id: number;
-    length_m: number;
-    elev_mean: number;
-    elev_min: number;
-    elev_max: number;
-    flooded: string;
+    // Legacy properties (for backward compatibility)
+    osm_id?: string;
+    road_id?: number;
+    length_m?: number;
+    elev_mean?: number;
+    elev_min?: number;
+    elev_max?: number;
+    flooded?: string;
+    
+    // New database properties
+    osm_way_id?: string;
+    road_name?: string;
+    highway_type?: string;
+    avg_elevation?: number;
+    min_elevation?: number;
+    max_elevation?: number;
+    elevation_variance?: number;
+    flood_risk_level?: string;
+    flood_risk_score?: number;
+    is_flood_prone?: boolean;
+    rainfall_impact?: number;
+    weather_conditions?: string;
+    last_updated?: string;
   };
   geometry: {
     type: "LineString";
@@ -112,6 +128,29 @@ interface TerrainRoadsData {
   type: "FeatureCollection";
   features: TerrainRoadFeature[];
 }
+
+// Helper functions for backward compatibility between old and new data formats
+const isFloodProne = (properties: TerrainRoadFeature["properties"]): boolean => {
+  // Check new database format first
+  if (typeof properties.is_flood_prone === "boolean") {
+    return properties.is_flood_prone;
+  }
+  // Fallback to legacy format
+  if (typeof properties.flooded === "string") {
+    return properties.flooded === "1";
+  }
+  // Default to safe if no flood data
+  return false;
+};
+
+const getRoadLength = (properties: TerrainRoadFeature["properties"]): number => {
+  // Try legacy format first
+  if (typeof properties.length_m === "number") {
+    return properties.length_m;
+  }
+  // For new format, we'd need to calculate from geometry or use a default
+  return 0; // Default length if not available
+};
 
 interface TerrainFeatureMeta {
   minLat: number;
@@ -389,9 +428,7 @@ const buildTerrainSpatialIndex = (
     const roadIdRaw =
       road.properties.road_id ?? road.properties.osm_id ?? String(idx);
     const roadId = String(roadIdRaw);
-    const floodedValue = `${road.properties.flooded ?? ""}`.toLowerCase();
-    const flooded =
-      floodedValue === "1" || floodedValue === "true" || floodedValue === "yes";
+    const flooded = isFloodProne(road.properties);
     const elevationValue = Number(road.properties.elev_mean);
     const elevation =
       Number.isFinite(elevationValue) && elevationValue > -5000
@@ -760,7 +797,7 @@ const pickTerrainWaypoint = (
       continue;
     }
 
-    const flooded = road.properties.flooded === "1";
+    const flooded = isFloodProne(road.properties);
     if (floodPreference === "avoid" && flooded) {
       continue;
     }
@@ -2404,27 +2441,25 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     if (terrainRoadsLoaded) return;
 
     try {
-      console.log("🗺️ Loading terrain roads data...");
-      const response = await fetch("/data/terrain_roads.geojson");
+      console.log("🗺️ Loading terrain roads data from database...");
+      const response = await fetch(`${API_URL}/api/terrain/export/geojson?include_flood_data=true`);
 
       if (!response.ok) {
-        throw new Error(`Failed to load terrain roads: ${response.status}`);
+        throw new Error(`Failed to load terrain roads from database API: ${response.status}`);
       }
 
       const data: TerrainRoadsData = await response.json();
 
-      console.log(`✅ Loaded ${data.features.length} terrain road features`);
-      console.log("📊 Sample road data:", {
+      console.log(`✅ Loaded ${data.features.length} terrain road features from database`);
+      console.log("📊 Database road data:", {
         totalFeatures: data.features.length,
-        floodedRoads: data.features.filter((f) => f.properties.flooded === "1")
-          .length,
-        safeRoads: data.features.filter((f) => f.properties.flooded === "0")
-          .length,
-        averageLength:
+        floodedRoads: data.features.filter((f) => isFloodProne(f.properties)).length,
+        safeRoads: data.features.filter((f) => !isFloodProne(f.properties)).length,
+        averageLength: data.features.length > 0 ? 
           (
-            data.features.reduce((sum, f) => sum + f.properties.length_m, 0) /
+            data.features.reduce((sum, f) => sum + getRoadLength(f.properties), 0) /
             data.features.length
-          ).toFixed(2) + "m",
+          ).toFixed(2) + "m" : "0m",
       });
 
       const { metas, spatialIndex } = buildTerrainSpatialIndex(data.features);
@@ -2438,7 +2473,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       setTerrainRoadsData(data);
       setTerrainRoadsLoaded(true);
     } catch (error) {
-      console.error("❌ Failed to load terrain roads data:", error);
+      console.error("❌ Failed to load terrain roads data from database:", error);
       setTerrainRoadsLoaded(true); // Mark as loaded to prevent retry loops
     }
   };
@@ -2751,7 +2786,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
       // Assess flood risk for this segment
       const floodedNearby = nearbyRoads.filter(
-        (road) => road.properties.flooded === "1"
+        (road) => isFloodProne(road.properties)
       );
       if (floodedNearby.length > 0) {
         floodedSegments++;
@@ -7685,7 +7720,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     // Color code roads based on flood risk and elevation
     terrainRoadsData.features.forEach((feature) => {
-      const isFlooded = feature.properties.flooded === "1";
+      const isFlooded = isFloodProne(feature.properties);
       const elevation = feature.properties.elev_mean;
       const length = feature.properties.length_m;
       const hasValidElevation =
@@ -7829,8 +7864,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     // Create continuous area heatmap using Leaflet.heat
     // @ts-ignore - Leaflet.heat plugin
-    if (typeof L.heatLayer === "function") {
-      const heatLayer = L.heatLayer(heatPoints, {
+    if (typeof (L as any).heatLayer === "function") {
+      const heatLayer = (L as any).heatLayer(heatPoints, {
         radius: 60, // Increased radius for better coverage (in pixels)
         blur: 80, // Increased blur to fill gaps between roads
         maxZoom: 17, // Max zoom to display heatmap
