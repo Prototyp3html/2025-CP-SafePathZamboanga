@@ -15,16 +15,17 @@ The terrain button now cycles through **3 different views** instead of just show
 **Button Location:** Top-right corner of the map (mountain icon button)
 
 **Click Behavior:**
+
 - **1st Click:** Normal → Terrain View (green background)
-- **2nd Click:** Terrain → Slope Heatmap (orange background)  
+- **2nd Click:** Terrain → Slope Heatmap (orange background)
 - **3rd Click:** Slope Heatmap → Normal (white background)
 
 ### Visual Indicators:
 
-| Mode | Button Text | Button Color | Icon |
-|------|-------------|--------------|------|
-| **Normal** | "Normal View" | White | 🏔️ Mountain |
-| **Terrain** | "Terrain View" | Light Green (#e8f5e9) | 🏔️ Mountain |
+| Mode        | Button Text     | Button Color           | Icon        |
+| ----------- | --------------- | ---------------------- | ----------- |
+| **Normal**  | "Normal View"   | White                  | 🏔️ Mountain |
+| **Terrain** | "Terrain View"  | Light Green (#e8f5e9)  | 🏔️ Mountain |
 | **Heatmap** | "Slope Heatmap" | Light Orange (#ffe0b2) | 🏔️ Mountain |
 
 ---
@@ -34,11 +35,13 @@ The terrain button now cycles through **3 different views** instead of just show
 **Purpose:** Show elevation/topography overlay
 
 **Visualization:**
+
 - Uses OpenTopoMap tiles
 - Semi-transparent overlay (60% opacity)
 - Shows contour lines and elevation shading
 
 **Legend:**
+
 - 0-50m: Light green (Low/Coastal)
 - 50-150m: Medium green (Plains)
 - 150-300m: Yellow-green (Hills)
@@ -52,14 +55,14 @@ The terrain button now cycles through **3 different views** instead of just show
 
 ### Color Coding:
 
-| Slope | Color | Intensity | Description |
-|-------|-------|-----------|-------------|
-| **0-2%** | 🟢 Green | Flat | Very easy terrain |
-| **2-5%** | 🟡 Chartreuse | Gentle | Easy terrain |
-| **5-10%** | 🟡 Yellow | Moderate | Noticeable incline |
-| **10-15%** | 🟠 Orange | Steep | Challenging climb |
-| **15-25%** | 🔴 Orange-Red | Very Steep | Very difficult climb |
-| **>25%** | 🔴 Red | Extreme | Dangerous steep terrain |
+| Slope      | Color         | Intensity  | Description             |
+| ---------- | ------------- | ---------- | ----------------------- |
+| **0-2%**   | 🟢 Green      | Flat       | Very easy terrain       |
+| **2-5%**   | 🟡 Chartreuse | Gentle     | Easy terrain            |
+| **5-10%**  | 🟡 Yellow     | Moderate   | Noticeable incline      |
+| **10-15%** | 🟠 Orange     | Steep      | Challenging climb       |
+| **15-25%** | 🔴 Orange-Red | Very Steep | Very difficult climb    |
+| **>25%**   | 🔴 Red        | Extreme    | Dangerous steep terrain |
 
 ### Calculation Method:
 
@@ -74,6 +77,7 @@ const slopeAngle = Math.atan(elevationGain / length) * (180 / Math.PI);
 ### Interactive Features:
 
 **Click on any road** to see detailed popup:
+
 - Road name
 - Slope percentage (e.g., "8.5%")
 - Slope angle (e.g., "4.9°")
@@ -93,7 +97,9 @@ const slopeAngle = Math.atan(elevationGain / length) * (180 / Math.PI);
 const [showTerrainOverlay, setShowTerrainOverlay] = useState(false);
 
 // New: 3-way toggle
-const [terrainMode, setTerrainMode] = useState<"off" | "terrain" | "heatmap">("off");
+const [terrainMode, setTerrainMode] = useState<"off" | "terrain" | "heatmap">(
+  "off"
+);
 ```
 
 ### Mode Switching Logic:
@@ -109,11 +115,13 @@ setTerrainMode((prev) => {
 ### Key Functions:
 
 1. **`createTerrainOverlay()`**
+
    - Creates topographic tile layer
    - Uses OpenTopoMap
    - 60% opacity overlay
 
 2. **`createSlopeHeatmap()`** ⭐ NEW
+
    - Loads terrain_roads.geojson
    - Calculates slope for each segment
    - Color-codes based on steepness
@@ -131,6 +139,7 @@ setTerrainMode((prev) => {
 **File:** `backend/data/terrain_roads.geojson`
 
 **Required Fields:**
+
 ```json
 {
   "properties": {
@@ -145,6 +154,7 @@ setTerrainMode((prev) => {
 ```
 
 **Data Points:**
+
 - 10,461 road segments
 - 87,682 elevation points
 - NASA SRTM elevation data (30m accuracy)
@@ -156,16 +166,19 @@ setTerrainMode((prev) => {
 ### For Users:
 
 1. **Cyclists/Motorcyclists**
+
    - See steep hills before choosing route
    - Avoid exhausting climbs
    - Plan easier alternative routes
 
 2. **Truck Drivers**
+
    - Identify steep gradients (engine strain)
    - Plan fuel consumption
    - Avoid dangerous steep descents
 
 3. **Pedestrians**
+
    - Find flat walking routes
    - Avoid tiring uphill walks
    - Accessibility planning
@@ -178,18 +191,21 @@ setTerrainMode((prev) => {
 ### Real-World Examples:
 
 **Scenario 1: Delivery Driver**
+
 - Switches to Slope Heatmap
 - Sees Veterans Ave has 12% slope (orange)
 - Chooses alternative flat route (green)
 - Saves fuel and time
 
 **Scenario 2: Cyclist**
+
 - Planning training ride
 - Wants challenging hills
 - Uses heatmap to find steep roads (red/orange)
 - Creates workout route
 
 **Scenario 3: Accessibility**
+
 - Wheelchair user planning route
 - Needs flat terrain only
 - Filters for green roads (0-2% slope)
@@ -224,20 +240,24 @@ setTerrainMode((prev) => {
 ### Potential Improvements:
 
 1. **Filter by Slope**
+
    - Add slider to show only roads within slope range
    - E.g., "Show only roads with 0-5% slope"
 
 2. **Slope-Based Routing**
+
    - Add "Flat Route" preference
    - Avoid steep hills in route calculation
    - Useful for cyclists, accessibility
 
 3. **Custom Color Schemes**
+
    - Allow users to customize heatmap colors
    - High-contrast mode for accessibility
    - Colorblind-friendly palettes
 
 4. **Export Slope Data**
+
    - Download slope analysis as CSV
    - Share heatmap as image
    - Generate elevation profile graphs
@@ -254,16 +274,19 @@ setTerrainMode((prev) => {
 ### How to Test:
 
 1. **Start Frontend:**
+
    ```powershell
    cd frontend
    npm run dev
    ```
 
 2. **Open Map:**
+
    - Go to http://localhost:5173
    - Wait for map to load
 
 3. **Test Toggle:**
+
    - Click terrain button (top-right)
    - Verify: Changes from "Normal View" to "Terrain View" (green bg)
    - Click again
@@ -272,6 +295,7 @@ setTerrainMode((prev) => {
    - Verify: Returns to "Normal View" (white bg)
 
 4. **Test Heatmap:**
+
    - Click to "Slope Heatmap" mode
    - Click on colored roads
    - Verify: Popup shows slope data
@@ -291,7 +315,7 @@ setTerrainMode((prev) => {
 ✅ Slope heatmap appears in Heatmap mode  
 ✅ Legend updates based on mode  
 ✅ Popups show detailed slope info  
-✅ Clear All resets to Normal View  
+✅ Clear All resets to Normal View
 
 ---
 
@@ -302,6 +326,7 @@ setTerrainMode((prev) => {
 **File:** `frontend/src/components/MapView.tsx`
 
 **Changes:**
+
 1. Replaced `showTerrainOverlay` boolean with `terrainMode` enum
 2. Updated button to cycle through 3 states
 3. Added `createSlopeHeatmap()` function
@@ -331,11 +356,11 @@ This is a **frontend-only feature** using existing terrain data.
 ## Summary
 
 🎯 **Before:** Simple on/off terrain toggle  
-🎯 **After:** 3-way cycle: Normal → Terrain → Heatmap  
+🎯 **After:** 3-way cycle: Normal → Terrain → Heatmap
 
 ✨ **New Feature:** Slope-based heatmap showing road steepness  
 📊 **Visualization:** Color-coded roads from green (flat) to red (extreme)  
 🎨 **Interactive:** Click roads for detailed slope analysis  
-🗺️ **Data-Driven:** Uses real NASA elevation data  
+🗺️ **Data-Driven:** Uses real NASA elevation data
 
 **Result:** Users can now see not just where mountains are, but exactly how steep each road is! 🚵‍♂️🚗
