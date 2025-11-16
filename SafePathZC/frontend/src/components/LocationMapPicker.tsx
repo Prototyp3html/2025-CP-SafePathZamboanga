@@ -82,12 +82,18 @@ export const LocationMapPicker = ({
       const { lat, lng } = e.latlng;
       setSelectedLocation({ lat, lng });
 
-      // Update or create marker
-      if (markerRef.current) {
-        markerRef.current.setLatLng([lat, lng]);
-      } else {
+      // Create marker on first click, update on subsequent clicks
+      if (!markerRef.current) {
+        const customIcon = L.icon({
+          iconUrl: "/icons/location.png",
+          iconRetinaUrl: "/icons/location.png",
+          shadowUrl: "/icons/location.png",
+          iconSize: [32, 32],
+          iconAnchor: [16, 32],
+        });
+        
         markerRef.current = L.marker([lat, lng], {
-          icon: L.Icon.Default.prototype,
+          icon: customIcon,
           draggable: true,
         })
           .addTo(map)
@@ -95,10 +101,11 @@ export const LocationMapPicker = ({
             if (markerRef.current) {
               const position = markerRef.current.getLatLng();
               setSelectedLocation({ lat: position.lat, lng: position.lng });
-              // Trigger location name fetch
               getLocationName(position.lat, position.lng);
             }
           });
+      } else {
+        markerRef.current.setLatLng([lat, lng]);
       }
 
       // Fetch location name
@@ -159,18 +166,34 @@ export const LocationMapPicker = ({
   const getLocationName = async (lat: number, lng: number) => {
     try {
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`
       );
       const data = await response.json();
 
       if (data.address) {
-        const locationName =
-          data.address.neighbourhood ||
-          data.address.suburb ||
-          data.address.town ||
-          data.address.city ||
-          data.address.county ||
-          "Selected Location";
+        // Build a complete address with street, barangay, and city
+        const parts = [];
+        
+        // Add street if available
+        if (data.address.road) {
+          parts.push(data.address.road);
+        }
+        
+        // Add neighbourhood/barangay
+        if (data.address.neighbourhood) {
+          parts.push(data.address.neighbourhood);
+        } else if (data.address.suburb) {
+          parts.push(data.address.suburb);
+        }
+        
+        // Add city/town
+        if (data.address.city) {
+          parts.push(data.address.city);
+        } else if (data.address.town) {
+          parts.push(data.address.town);
+        }
+
+        const locationName = parts.length > 0 ? parts.join(", ") : "Selected Location";
 
         onChange(locationName);
 
@@ -201,12 +224,18 @@ export const LocationMapPicker = ({
       mapRef.current.setView([lat, lng], 16);
     }
 
-    // Update or create marker
-    if (markerRef.current) {
-      markerRef.current.setLatLng([lat, lng]);
-    } else {
+    // Create or update marker
+    if (!markerRef.current) {
+      const customIcon = L.icon({
+        iconUrl: "/icons/location.png",
+        iconRetinaUrl: "/icons/location.png",
+        shadowUrl: "/icons/location.png",
+        iconSize: [32, 32],
+        iconAnchor: [16, 32],
+      });
+      
       markerRef.current = L.marker([lat, lng], {
-        icon: L.Icon.Default.prototype,
+        icon: customIcon,
         draggable: true,
       })
         .addTo(mapRef.current!)
@@ -217,6 +246,8 @@ export const LocationMapPicker = ({
             getLocationName(position.lat, position.lng);
           }
         });
+    } else {
+      markerRef.current.setLatLng([lat, lng]);
     }
 
     if (onLocationSelect) {
