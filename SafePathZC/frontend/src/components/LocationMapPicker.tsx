@@ -65,6 +65,7 @@ export const LocationMapPicker = ({
       zoom: 13,
       zoomControl: true,
       scrollWheelZoom: true,
+      attributionControl: true,
     });
 
     // Add tile layer
@@ -116,6 +117,7 @@ export const LocationMapPicker = ({
 
     return () => {
       map.off("click", handleMapClick);
+      map.remove();
     };
   }, [disabled]);
 

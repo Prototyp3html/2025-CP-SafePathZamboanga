@@ -959,6 +959,45 @@ body {
   padding: 0 !important;
 }
 
+/* Hide all circles and unwanted overlays */
+.location-map-picker .leaflet-circle {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+.location-map-picker svg circle {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+.location-map-picker svg path[fill*="rgba"] {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+.location-map-picker .leaflet-overlay-pane svg circle {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Ensure overlay pane doesn't interfere */
+.location-map-picker .leaflet-overlay-pane {
+  overflow: hidden !important;
+}
+
+/* Hide all circles in location picker map */
+.location-map-picker .leaflet-pane svg circle {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+.location-map-picker .leaflet-pane svg path[fill*="rgb(37, 99, 235)"],
+.location-map-picker .leaflet-pane svg path[fill*="#2563eb"],
+.location-map-picker .leaflet-pane svg ellipse {
+  display: none !important;
+  visibility: hidden !important;
+}
+
 /* Ensure map controls don't interfere */
 .location-map-picker .leaflet-control {
   background-color: rgba(255, 255, 255, 0.9);
