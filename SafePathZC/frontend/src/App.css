@@ -1210,3 +1210,14 @@ body {
   display: none !important;
 }
 
+/* Hide all SVG circles */
+.location-map-picker svg circle {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Prevent any overlays from showing */
+.location-map-picker .leaflet-pane > svg > g circle {
+  display: none !important;
+}
+

@@ -6,13 +6,16 @@ import {
   type ZamboCityLocation,
 } from "../utils/zamboCityLocations";
 
-// Fix Leaflet default marker icons
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "/icons/location.png",
-  iconUrl: "/icons/location.png",
-  shadowUrl: "/icons/location.png",
-});
+// Create custom marker icon for location picker - using SVG to avoid duplication
+const createCustomMarkerIcon = () => {
+  return L.icon({
+    iconUrl:
+      "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDMyIDQwIj48cGF0aCBkPSJNMTYgMEM4LjMgMCAyIDUuOCAyIDE0YzAgNC41IDIuNCA4LjYgNi4zIDEwLjdsOC4yIDEyLjcgOC4yLTEyLjdjMy45LTIuMSA2LjMtNi4yIDYuMy0xMC43IDAtOC4yLTYuMy0xNC0xNC03LTEweiIgZmlsbD0iIzIzNjNlYiIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIi8+PC9zdmc+",
+    iconSize: [32, 40],
+    iconAnchor: [16, 40],
+    popupAnchor: [0, -40],
+  });
+};
 
 interface LocationMapPickerProps {
   value: string;
@@ -82,9 +85,10 @@ export const LocationMapPicker = ({
       setSelectedLocation({ lat, lng });
 
       if (!markerRef.current) {
-        markerRef.current = L.marker([lat, lng], { draggable: true }).addTo(
-          map
-        );
+        markerRef.current = L.marker([lat, lng], {
+          draggable: true,
+          icon: createCustomMarkerIcon(),
+        }).addTo(map);
         markerRef.current.on("dragend", () => {
           if (markerRef.current) {
             const pos = markerRef.current.getLatLng();
@@ -202,9 +206,10 @@ export const LocationMapPicker = ({
     }
 
     if (!markerRef.current) {
-      markerRef.current = L.marker([lat, lng], { draggable: true }).addTo(
-        mapRef.current!
-      );
+      markerRef.current = L.marker([lat, lng], {
+        draggable: true,
+        icon: createCustomMarkerIcon(),
+      }).addTo(mapRef.current!);
       markerRef.current.on("dragend", () => {
         if (markerRef.current) {
           const pos = markerRef.current.getLatLng();
