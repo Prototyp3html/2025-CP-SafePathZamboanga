@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { notification } from "@/utils/notifications";
-import { LocationAutocomplete } from "./LocationAutocomplete";
+import { LocationMapPicker } from "./LocationMapPicker";
 
 interface ReportModalProps {
   onClose: () => void;
@@ -467,33 +467,22 @@ export const ReportModal = ({
             )}
           </div>
 
-          {/* Location Input with Autocomplete */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+          {/* Location Input with Map Picker */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-3">
               <i className="fas fa-map-marker-alt mr-1"></i>
               Location in Zamboanga City
             </label>
-            <LocationAutocomplete
+            <LocationMapPicker
               value={location}
               onChange={setLocation}
               onLocationSelect={handleLocationSelect}
               placeholder="Search for areas like: Sinunuc, Tetuan, City Hall, RT Lim..."
               disabled={!isLoggedIn}
               required
-              className="text-sm"
             />
-            {locationCoordinates && (
-              <div className="mt-2 text-xs text-green-600 bg-green-50 p-2 rounded-md">
-                <i className="fas fa-check-circle mr-1"></i>
-                Location confirmed: {location}
-                <div className="text-gray-500 mt-1">
-                  Coordinates: {locationCoordinates.lat.toFixed(6)},{" "}
-                  {locationCoordinates.lng.toFixed(6)}
-                </div>
-              </div>
-            )}
             {!isLoggedIn && (
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 mt-3">
                 Please log in to select a location for your report
               </p>
             )}
