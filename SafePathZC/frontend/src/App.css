@@ -1192,3 +1192,21 @@ body {
   }
 }
 
+/* Hide all circles and overlays in location picker map */
+.location-map-picker .leaflet-circle,
+.location-map-picker .leaflet-circle-marker,
+.location-map-picker circle[fill] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Hide accuracy circles specifically */
+.location-map-picker .leaflet-overlay-pane circle {
+  display: none !important;
+}
+
+.location-map-picker .leaflet-overlay-pane svg circle {
+  display: none !important;
+}
+

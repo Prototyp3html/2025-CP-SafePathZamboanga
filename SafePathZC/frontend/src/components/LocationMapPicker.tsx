@@ -59,7 +59,6 @@ export const LocationMapPicker = ({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    // Create map
     const map = L.map(containerRef.current, {
       center: [CITY_CENTER.lat, CITY_CENTER.lng],
       zoom: 13,
@@ -68,7 +67,6 @@ export const LocationMapPicker = ({
       attributionControl: true,
     });
 
-    // Add tile layer
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: "© OpenStreetMap contributors",
@@ -76,40 +74,28 @@ export const LocationMapPicker = ({
 
     mapRef.current = map;
 
-    // Handle map clicks
+    // Handle map clicks - only add marker, no circles
     const handleMapClick = (e: L.LeafletMouseEvent) => {
       if (disabled) return;
 
       const { lat, lng } = e.latlng;
       setSelectedLocation({ lat, lng });
 
-      // Create marker on first click, update on subsequent clicks
       if (!markerRef.current) {
-        const customIcon = L.icon({
-          iconUrl: "/icons/location.png",
-          iconRetinaUrl: "/icons/location.png",
-          shadowUrl: "/icons/location.png",
-          iconSize: [32, 32],
-          iconAnchor: [16, 32],
+        markerRef.current = L.marker([lat, lng], { draggable: true }).addTo(
+          map
+        );
+        markerRef.current.on("dragend", () => {
+          if (markerRef.current) {
+            const pos = markerRef.current.getLatLng();
+            setSelectedLocation({ lat: pos.lat, lng: pos.lng });
+            getLocationName(pos.lat, pos.lng);
+          }
         });
-        
-        markerRef.current = L.marker([lat, lng], {
-          icon: customIcon,
-          draggable: true,
-        })
-          .addTo(map)
-          .on("dragend", () => {
-            if (markerRef.current) {
-              const position = markerRef.current.getLatLng();
-              setSelectedLocation({ lat: position.lat, lng: position.lng });
-              getLocationName(position.lat, position.lng);
-            }
-          });
       } else {
         markerRef.current.setLatLng([lat, lng]);
       }
 
-      // Fetch location name
       getLocationName(lat, lng);
     };
 
@@ -117,7 +103,10 @@ export const LocationMapPicker = ({
 
     return () => {
       map.off("click", handleMapClick);
-      map.remove();
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
     };
   }, [disabled]);
 
@@ -164,7 +153,7 @@ export const LocationMapPicker = ({
     return () => clearTimeout(timeoutId);
   }, [value]);
 
-  // Fetch location name from coordinates using reverse geocoding
+  // Fetch location name from coordinates
   const getLocationName = async (lat: number, lng: number) => {
     try {
       const response = await fetch(
@@ -173,29 +162,16 @@ export const LocationMapPicker = ({
       const data = await response.json();
 
       if (data.address) {
-        // Build a complete address with street, barangay, and city
         const parts = [];
-        
-        // Add street if available
-        if (data.address.road) {
-          parts.push(data.address.road);
-        }
-        
-        // Add neighbourhood/barangay
-        if (data.address.neighbourhood) {
+        if (data.address.road) parts.push(data.address.road);
+        if (data.address.neighbourhood)
           parts.push(data.address.neighbourhood);
-        } else if (data.address.suburb) {
-          parts.push(data.address.suburb);
-        }
-        
-        // Add city/town
-        if (data.address.city) {
-          parts.push(data.address.city);
-        } else if (data.address.town) {
-          parts.push(data.address.town);
-        }
+        else if (data.address.suburb) parts.push(data.address.suburb);
+        if (data.address.city) parts.push(data.address.city);
+        else if (data.address.town) parts.push(data.address.town);
 
-        const locationName = parts.length > 0 ? parts.join(", ") : "Selected Location";
+        const locationName =
+          parts.length > 0 ? parts.join(", ") : "Selected Location";
 
         onChange(locationName);
 
@@ -221,33 +197,21 @@ export const LocationMapPicker = ({
     setSelectedLocation({ lat, lng });
     setShowSuggestions(false);
 
-    // Update map
     if (mapRef.current) {
       mapRef.current.setView([lat, lng], 16);
     }
 
-    // Create or update marker
     if (!markerRef.current) {
-      const customIcon = L.icon({
-        iconUrl: "/icons/location.png",
-        iconRetinaUrl: "/icons/location.png",
-        shadowUrl: "/icons/location.png",
-        iconSize: [32, 32],
-        iconAnchor: [16, 32],
+      markerRef.current = L.marker([lat, lng], { draggable: true }).addTo(
+        mapRef.current!
+      );
+      markerRef.current.on("dragend", () => {
+        if (markerRef.current) {
+          const pos = markerRef.current.getLatLng();
+          setSelectedLocation({ lat: pos.lat, lng: pos.lng });
+          getLocationName(pos.lat, pos.lng);
+        }
       });
-      
-      markerRef.current = L.marker([lat, lng], {
-        icon: customIcon,
-        draggable: true,
-      })
-        .addTo(mapRef.current!)
-        .on("dragend", () => {
-          if (markerRef.current) {
-            const position = markerRef.current.getLatLng();
-            setSelectedLocation({ lat: position.lat, lng: position.lng });
-            getLocationName(position.lat, position.lng);
-          }
-        });
     } else {
       markerRef.current.setLatLng([lat, lng]);
     }
@@ -269,13 +233,9 @@ export const LocationMapPicker = ({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onFocus={() => {
-            if (suggestions.length > 0) {
-              setShowSuggestions(true);
-            }
+            if (suggestions.length > 0) setShowSuggestions(true);
           }}
-          onBlur={() => {
-            setTimeout(() => setShowSuggestions(false), 150);
-          }}
+          onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
           placeholder={placeholder}
           disabled={disabled}
           required={required}
@@ -346,46 +306,13 @@ export const LocationMapPicker = ({
         )}
       </div>
 
-      {/* Map Container - Fixed Size */}
-      <div className="w-full h-64 max-h-64 rounded-lg overflow-hidden border-2 border-gray-300 bg-gray-100 relative flex-shrink-0">
+      {/* Map Container - Fixed Size, No Circles */}
+      <div className="w-full rounded-lg overflow-hidden border-2 border-gray-300 bg-gray-100 flex-shrink-0">
         <div
           ref={containerRef}
-          className="w-full h-full"
-          style={{ height: "256px" }}
+          className="w-full"
+          style={{ height: "256px", width: "100%" }}
         />
-        
-        {/* Map Instructions Overlay */}
-        {!selectedLocation && (
-          <div className="absolute inset-0 pointer-events-none flex items-center justify-center bg-black bg-opacity-5">
-            <div className="text-center">
-              <div className="text-gray-600 text-sm font-medium">
-                <i className="fas fa-mouse-pointer mr-2"></i>
-                Click on map to select location
-              </div>
-            </div>
-          </div>
-        )}
-        
-        
-        {/* Map Controls Help */}
-        <div className="absolute top-3 right-3 bg-white rounded-lg shadow-md p-2 text-xs text-gray-600 z-40">
-          <div className="flex flex-col space-y-1">
-            <div className="flex items-center">
-              <i className="fas fa-search mr-2 text-blue-500"></i>
-              <span>Search to navigate</span>
-            </div>
-            <div className="flex items-center">
-              <i className="fas fa-mouse-pointer mr-2 text-blue-500"></i>
-              <span>Click to pin marker</span>
-            </div>
-            {selectedLocation && (
-              <div className="flex items-center">
-                <i className="fas fa-arrows-alt mr-2 text-blue-500"></i>
-                <span>Drag marker to adjust</span>
-              </div>
-            )}
-          </div>
-        </div>
       </div>
 
       {/* Help Text */}
