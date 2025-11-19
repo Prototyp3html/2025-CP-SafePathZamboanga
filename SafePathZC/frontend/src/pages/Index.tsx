@@ -3,6 +3,7 @@ import { MapView } from "../components/MapView"; // Your new MapView component
 import { NavigationBar } from "../components/NavigationBar";
 import { ReportModal } from "../components/ReportModal";
 import { EmergencyModal } from "../components/EmergencyModal";
+import { WelcomeModal } from "../components/WelcomeModal";
 import { useNavigate } from "react-router-dom";
 
 const Index = () => {
@@ -11,6 +12,7 @@ const Index = () => {
   >(null);
   const [selectedRoute, setSelectedRoute] = useState<string>("");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -19,6 +21,12 @@ const Index = () => {
     // Check login status
     const token = localStorage.getItem("user_token");
     setIsLoggedIn(!!token);
+
+    // Check if welcome modal should be shown
+    const welcomeSkipped = localStorage.getItem("safePathWelcomeSkipped");
+    if (!welcomeSkipped) {
+      setShowWelcome(true);
+    }
 
     // Check for search parameters
     const urlParams = new URLSearchParams(window.location.search);
@@ -74,6 +82,7 @@ const Index = () => {
       </main>
 
       {/* Modals */}
+      <WelcomeModal isOpen={showWelcome} onClose={() => setShowWelcome(false)} />
       {activeModal === "report" && (
         <ReportModal
           onClose={() => setActiveModal(null)}
