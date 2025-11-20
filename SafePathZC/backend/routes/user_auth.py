@@ -32,7 +32,10 @@ def get_db():
 class UserRegister(BaseModel):
     email: EmailStr
     password: str
-    name: str
+    name: str  # Full name (constructed from firstName + middleName + lastName)
+    firstName: str
+    middleName: Optional[str] = None
+    lastName: str
     phone: Optional[str] = None
 
 class UserLogin(BaseModel):
@@ -125,6 +128,9 @@ async def register_user(user_data: UserRegister, db: Session = Depends(get_db)):
         email=user_data.email,
         password_hash=hash_password(user_data.password),
         name=user_data.name,
+        first_name=user_data.firstName,
+        middle_name=user_data.middleName,
+        last_name=user_data.lastName,
         phone=user_data.phone,
         joined_at=datetime.utcnow(),
         last_activity=datetime.utcnow()

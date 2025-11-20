@@ -31,6 +31,7 @@ from routes.forum import router as forum_router
 from routes.flood_routing import router as flood_routing_router
 from routes.geocoding import router as geocoding_router
 from routes.terrain_api import router as terrain_router
+from routes.oauth import router as oauth_router
 
 # Load environment variables
 load_dotenv()
@@ -282,6 +283,7 @@ app.add_middleware(
 # Include admin routes
 app.include_router(admin_router)
 app.include_router(user_auth_router)
+app.include_router(oauth_router)  # OAuth routes for Google and Facebook login
 app.include_router(forum_router)
 app.include_router(flood_routing_router)  # Flood-aware routing with 3 distinct routes
 app.include_router(geocoding_router, prefix="/api/geocoding", tags=["geocoding"])
