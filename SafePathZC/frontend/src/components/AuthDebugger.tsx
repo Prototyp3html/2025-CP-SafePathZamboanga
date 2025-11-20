@@ -33,7 +33,7 @@ export const AuthDebugger: React.FC<AuthDebuggerProps> = ({
     try {
       const parts = token.split(".");
       if (parts.length !== 3) return null;
-      
+
       const payload = JSON.parse(atob(parts[1]));
       return payload;
     } catch (error) {
@@ -53,7 +53,7 @@ export const AuthDebugger: React.FC<AuthDebuggerProps> = ({
       const decoded = decodeJWT(adminToken);
       const now = Date.now() / 1000;
       const isExpired = decoded?.exp && decoded.exp < now;
-      
+
       setAdminTokenInfo({
         token: adminToken.substring(0, 20) + "...",
         decoded,
@@ -71,7 +71,7 @@ export const AuthDebugger: React.FC<AuthDebuggerProps> = ({
       const decoded = decodeJWT(userToken);
       const now = Date.now() / 1000;
       const isExpired = decoded?.exp && decoded.exp < now;
-      
+
       setUserTokenInfo({
         token: userToken.substring(0, 20) + "...",
         decoded,
@@ -97,7 +97,7 @@ export const AuthDebugger: React.FC<AuthDebuggerProps> = ({
     setIsLoading(true);
     try {
       const adminToken = localStorage.getItem("admin_token");
-      
+
       if (!adminToken) {
         setBackendStatus({
           status: "error",
@@ -123,7 +123,9 @@ export const AuthDebugger: React.FC<AuthDebuggerProps> = ({
         const errorData = await response.json();
         setBackendStatus({
           status: "error",
-          error: `HTTP ${response.status}: ${errorData.detail || response.statusText}`,
+          error: `HTTP ${response.status}: ${
+            errorData.detail || response.statusText
+          }`,
         });
         console.error("Backend auth test failed:", response.status, errorData);
       }
@@ -196,13 +198,13 @@ export const AuthDebugger: React.FC<AuthDebuggerProps> = ({
               )}
               <h4 className="font-semibold">Admin Token</h4>
             </div>
-            
+
             {adminTokenInfo.token && (
               <p className="text-sm text-gray-600 mb-2">
                 Token: {adminTokenInfo.token}
               </p>
             )}
-            
+
             {adminTokenInfo.decoded && (
               <div className="text-sm space-y-1">
                 <p>
@@ -216,12 +218,14 @@ export const AuthDebugger: React.FC<AuthDebuggerProps> = ({
                 <p>
                   <span className="font-medium">Expires:</span>{" "}
                   {adminTokenInfo.decoded.exp
-                    ? new Date(adminTokenInfo.decoded.exp * 1000).toLocaleString()
+                    ? new Date(
+                        adminTokenInfo.decoded.exp * 1000
+                      ).toLocaleString()
                     : "N/A"}
                 </p>
               </div>
             )}
-            
+
             {adminTokenInfo.error && (
               <p className="text-sm text-red-600 mt-2">
                 Error: {adminTokenInfo.error}
@@ -241,13 +245,13 @@ export const AuthDebugger: React.FC<AuthDebuggerProps> = ({
               )}
               <h4 className="font-semibold">User Token</h4>
             </div>
-            
+
             {userTokenInfo.token && (
               <p className="text-sm text-gray-600 mb-2">
                 Token: {userTokenInfo.token}
               </p>
             )}
-            
+
             {userTokenInfo.decoded && (
               <div className="text-sm space-y-1">
                 <p>
@@ -261,12 +265,14 @@ export const AuthDebugger: React.FC<AuthDebuggerProps> = ({
                 <p>
                   <span className="font-medium">Expires:</span>{" "}
                   {userTokenInfo.decoded.exp
-                    ? new Date(userTokenInfo.decoded.exp * 1000).toLocaleString()
+                    ? new Date(
+                        userTokenInfo.decoded.exp * 1000
+                      ).toLocaleString()
                     : "N/A"}
                 </p>
               </div>
             )}
-            
+
             {userTokenInfo.error && (
               <p className="text-sm text-red-600 mt-2">
                 Error: {userTokenInfo.error}
@@ -286,17 +292,15 @@ export const AuthDebugger: React.FC<AuthDebuggerProps> = ({
               )}
               <h4 className="font-semibold">Backend Authentication Test</h4>
             </div>
-            
-            <p className="text-sm text-gray-600">
-              Backend URL: {BACKEND_URL}
-            </p>
-            
+
+            <p className="text-sm text-gray-600">Backend URL: {BACKEND_URL}</p>
+
             {backendStatus.status === "success" && (
               <p className="text-sm text-green-600 mt-2">
                 ✅ Backend authentication working correctly
               </p>
             )}
-            
+
             {backendStatus.error && (
               <p className="text-sm text-red-600 mt-2">
                 Error: {backendStatus.error}
