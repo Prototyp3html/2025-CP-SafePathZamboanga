@@ -40,7 +40,7 @@ export const AdminAuth: React.FC<AdminAuthProps> = ({
       if (response.ok) {
         // Store admin token
         localStorage.setItem("admin_token", data.token);
-        localStorage.setItem("admin_user", JSON.stringify(data.user));
+        localStorage.setItem("admin_data", JSON.stringify(data.user));
 
         // Clear form
         setEmail("");
