@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import logging
 
 from services.terrain_database import TerrainDatabaseService
+from services.elevation_heatmap_service import get_elevation_heatmap_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/terrain", tags=["terrain"])
@@ -327,5 +328,38 @@ async def get_legacy_geojson():
             return geojson
             
     except Exception as e:
+        logger.error(f"Error in legacy GeoJSON endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/elevation_heatmap_grid")
+async def get_elevation_heatmap_grid(sample_rate: int = Query(10, description="Pixel sampling rate (higher = less detailed but faster)")):
+    """
+    Get elevation data as [lat, lon, intensity] array for Leaflet.heat heatmap.
+    Uses COP30 DEM (Digital Elevation Model) TIF file for full terrain coverage.
+    
+    Args:
+        sample_rate: Sample every Nth pixel (higher = faster processing)
+    
+    Returns:
+        JSON with heatmap_data array of [lat, lon, intensity] tuples
+    """
+    try:
+        service = get_elevation_heatmap_service()
+        heatmap_data = service.get_elevation_grid(sample_rate=sample_rate)
+        
+        if not heatmap_data:
+            raise HTTPException(status_code=404, detail="No elevation data available")
+        
+        return {
+            "type": "heatmap",
+            "source": "COP30 DEM (Digital Elevation Model)",
+            "point_count": len(heatmap_data),
+            "heatmap_data": heatmap_data
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating elevation heatmap: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
         logger.error(f"Error in legacy GeoJSON endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))

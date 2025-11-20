@@ -7774,151 +7774,126 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     );
   };
 
-  // Create slope-based heatmap (elevation gain visualization - AREA COVERAGE)
-  const createSlopeHeatmap = () => {
-    if (!mapRef.current || !terrainRoadsData) return;
+  // Create elevation-based heatmap from COP30 DEM
+  const createSlopeHeatmap = async () => {
+    if (!mapRef.current) return;
 
     // Remove existing overlays
     if (floodHeatmapRef.current) {
       mapRef.current.removeLayer(floodHeatmapRef.current);
     }
 
-    // Collect all elevation points with their slope intensity for area heatmap
-    const heatPoints: [number, number, number][] = [];
-    let minSlope = Infinity;
-    let maxSlope = 0;
-
-    // First pass: collect all GPS points with elevation data and calculate slopes
-    terrainRoadsData.features.forEach((feature) => {
-      const elevMin = feature.properties.elev_min;
-      const elevMax = feature.properties.elev_max;
-      const length = feature.properties.length_m;
-
-      // Skip roads with invalid elevation data
-      if (
-        elevMin == null ||
-        elevMax == null ||
-        !isFinite(elevMin) ||
-        !isFinite(elevMax) ||
-        length <= 0 ||
-        !isFinite(length)
-      ) {
-        return;
+    try {
+      console.log("📡 Loading elevation heatmap from COP30 DEM...");
+      
+      // Fetch elevation heatmap from backend using environment-specific API URL
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
+      const response = await fetch(`${apiUrl}/api/terrain/elevation_heatmap_grid?sample_rate=15`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to load elevation heatmap: ${response.status}`);
       }
-
-      // Calculate slope percentage for this road segment
-      const elevationGain = elevMax - elevMin;
-      const slopePercent = (elevationGain / length) * 100;
-
-      // Track min/max for normalization
-      minSlope = Math.min(minSlope, slopePercent);
-      maxSlope = Math.max(maxSlope, slopePercent);
-
-      // Add all coordinate points from this road with their slope intensity
-      feature.geometry.coordinates.forEach((coord) => {
-        const [lng, lat] = coord;
-        // Normalize slope to 0-1 range for heatmap intensity
-        const intensity = Math.min(1, slopePercent / 25); // Cap at 25% slope
-        heatPoints.push([lat, lng, intensity]);
-      });
-    });
-
-    console.log(
-      `📊 Heatmap data: ${heatPoints.length} points, slope range: ${minSlope.toFixed(1)}% - ${maxSlope.toFixed(1)}%`
-    );
-
-    // Create continuous area heatmap using Leaflet.heat
-    // @ts-ignore - Leaflet.heat plugin
-    if (typeof L.heatLayer === "function") {
-      const heatLayer = L.heatLayer(heatPoints, {
-        radius: 60, // Increased radius for better coverage (in pixels)
-        blur: 80, // Increased blur to fill gaps between roads
-        maxZoom: 17, // Max zoom to display heatmap
-        max: 1.0, // Maximum intensity value
-        minOpacity: 0.3, // Minimum opacity to ensure visibility
-        gradient: {
-          // Custom color gradient from green (flat) to red (steep)
-          0.0: "#00FF00", // Flat (0-2%)
-          0.2: "#7FFF00", // Gentle (2-5%)
-          0.4: "#FFFF00", // Moderate (5-10%)
-          0.6: "#FFA500", // Steep (10-15%)
-          0.8: "#FF4500", // Very steep (15-25%)
-          1.0: "#FF0000", // Extreme (>25%)
-        },
-      });
-
-      floodHeatmapRef.current = heatLayer;
-      heatLayer.addTo(mapRef.current);
-
-      console.log(`🗺️ Created continuous slope heatmap overlay`);
-    } else {
-      console.error(
-        "❌ Leaflet.heat plugin not loaded - using fallback visualization"
+      
+      const data = await response.json();
+      const heatPoints: [number, number, number][] = data.heatmap_data;
+      
+      console.log(
+        `✅ Loaded elevation heatmap with ${heatPoints.length} points from DEM`
       );
 
-      // Fallback: Create grid-based heatmap using rectangles
-      const gridSize = 0.002; // ~200m grid cells for better coverage
-      const gridData: Map<
-        string,
-        { totalIntensity: number; count: number }
-      > = new Map();
+      // Create continuous area heatmap using Leaflet.heat
+      // @ts-ignore - Leaflet.heat plugin
+      if (typeof L.heatLayer === "function") {
+        const heatLayer = L.heatLayer(heatPoints, {
+          radius: 60,
+          blur: 80,
+          maxZoom: 17,
+          max: 1.0,
+          minOpacity: 0.3,
+          gradient: {
+            // Color gradient: low (blue) to high elevation (red)
+            0.0: "#0033FF",
+            0.2: "#00CCFF",
+            0.4: "#00FF00",
+            0.6: "#FFFF00",
+            0.8: "#FF6600",
+            1.0: "#FF0000",
+          },
+        });
 
-      // Aggregate points into grid cells
-      heatPoints.forEach(([lat, lng, intensity]) => {
-        const gridLat = Math.floor(lat / gridSize) * gridSize;
-        const gridLng = Math.floor(lng / gridSize) * gridSize;
-        const key = `${gridLat},${gridLng}`;
+        floodHeatmapRef.current = heatLayer;
+        heatLayer.addTo(mapRef.current);
 
-        if (!gridData.has(key)) {
-          gridData.set(key, { totalIntensity: 0, count: 0 });
-        }
-
-        const cell = gridData.get(key)!;
-        cell.totalIntensity += intensity;
-        cell.count += 1;
-      });
-
-      // Create rectangles for each grid cell
-      const rectangles: L.Rectangle[] = [];
-
-      gridData.forEach((data, key) => {
-        const [latStr, lngStr] = key.split(",");
-        const gridLat = parseFloat(latStr);
-        const gridLng = parseFloat(lngStr);
-
-        const avgIntensity = data.totalIntensity / data.count;
-
-        // Determine color based on average intensity
-        let color: string;
-        if (avgIntensity < 0.2) color = "#00FF00"; // Flat
-        else if (avgIntensity < 0.4) color = "#7FFF00"; // Gentle
-        else if (avgIntensity < 0.6) color = "#FFFF00"; // Moderate
-        else if (avgIntensity < 0.8) color = "#FFA500"; // Steep
-        else color = "#FF0000"; // Extreme
-
-        const rect = L.rectangle(
-          [
-            [gridLat, gridLng],
-            [gridLat + gridSize, gridLng + gridSize],
-          ],
-          {
-            color: color,
-            fillColor: color,
-            fillOpacity: 0.4,
-            weight: 0,
-            interactive: false,
-          }
+        console.log(`🗺️ Created elevation heatmap overlay from DEM (${heatPoints.length} points)`);
+      } else {
+        console.error(
+          "❌ Leaflet.heat plugin not loaded - using fallback visualization"
         );
 
-        rectangles.push(rect);
-      });
+        // Fallback: Create grid-based heatmap using rectangles
+        const gridSize = 0.002;
+        const gridData: Map<
+          string,
+          { totalIntensity: number; count: number }
+        > = new Map();
 
-      floodHeatmapRef.current = L.layerGroup(rectangles);
-      floodHeatmapRef.current.addTo(mapRef.current);
+        heatPoints.forEach(([lat, lng, intensity]) => {
+          const gridLat = Math.floor(lat / gridSize) * gridSize;
+          const gridLng = Math.floor(lng / gridSize) * gridSize;
+          const key = `${gridLat},${gridLng}`;
 
-      console.log(
-        `�️ Created grid-based slope heatmap with ${rectangles.length} cells (fallback mode)`
-      );
+          if (!gridData.has(key)) {
+            gridData.set(key, { totalIntensity: 0, count: 0 });
+          }
+
+          const cell = gridData.get(key)!;
+          cell.totalIntensity += intensity;
+          cell.count += 1;
+        });
+
+        const rectangles: L.Rectangle[] = [];
+
+        gridData.forEach((data, key) => {
+          const [latStr, lngStr] = key.split(",");
+          const gridLat = parseFloat(latStr);
+          const gridLng = parseFloat(lngStr);
+
+          const avgIntensity = data.totalIntensity / data.count;
+
+          let color: string;
+          if (avgIntensity < 0.2) color = "#0033FF";
+          else if (avgIntensity < 0.4) color = "#00FF00";
+          else if (avgIntensity < 0.6) color = "#FFFF00";
+          else if (avgIntensity < 0.8) color = "#FF6600";
+          else color = "#FF0000";
+
+          const rect = L.rectangle(
+            [
+              [gridLat, gridLng],
+              [gridLat + gridSize, gridLng + gridSize],
+            ],
+            {
+              color: color,
+              fillColor: color,
+              fillOpacity: 0.4,
+              weight: 0,
+              interactive: false,
+            }
+          );
+
+          rectangles.push(rect);
+        });
+
+        floodHeatmapRef.current = L.layerGroup(rectangles);
+        floodHeatmapRef.current.addTo(mapRef.current);
+
+        console.log(
+          `🗺️ Created grid-based elevation heatmap with ${rectangles.length} cells (fallback mode)`
+        );
+      }
+    } catch (error) {
+      console.error("❌ Error loading elevation heatmap:", error);
+      notification.error("Heatmap Error", "Failed to load elevation heatmap");
     }
   };
 
@@ -7944,7 +7919,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       console.log("🎯 Terrain overlay enabled");
       createTerrainOverlay();
     } else if (terrainMode === "heatmap") {
-      console.log("🔥 Slope heatmap enabled");
+      console.log("🔥 Elevation heatmap enabled");
       createSlopeHeatmap();
     }
   }, [terrainMode]);
@@ -8708,7 +8683,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               btn.style.background = "#e8f5e9";
               icon.src = "/icons/mountain.png";
             } else {
-              text.innerText = "Slope Heatmap";
+              text.innerText = "Elevation Heatmap";
               btn.style.background = "#ffe0b2";
               icon.src = "/icons/mountain.png";
             }
