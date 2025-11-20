@@ -85,8 +85,8 @@ export const NavigationBar = () => {
     <>
       {/* Desktop & Tablet Navigation */}
       <nav className="bg-gradient-to-r from-blue-400 to-blue-600 text-white h-12 flex items-center px-4 md:px-6 shadow-lg w-full rounded-b-3xl">
-        {/* Logo */}
-        <div className="flex items-center space-x-2 md:space-x-3">
+        {/* Logo - Clickable to go home */}
+        <Link to="/" className="flex items-center space-x-2 md:space-x-3 hover:opacity-80 transition-opacity duration-200 cursor-pointer">
           <div className="flex items-center">
             <img
               src="/logo.png"
@@ -100,7 +100,7 @@ export const NavigationBar = () => {
           <div className="text-white font-bold text-sm tracking-wide sm:hidden">
             SAFEPATH
           </div>
-        </div>
+        </Link>
 
         {/* Desktop Navigation Links - Hidden on mobile */}
         <div className="hidden lg:flex flex-1 justify-center">
