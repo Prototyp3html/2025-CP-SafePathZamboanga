@@ -28,7 +28,6 @@ import {
 } from "lucide-react";
 import { notification } from "@/utils/notifications";
 import { useConfirmation } from "@/components/ui/confirmation-dialog";
-import { AuthDebugger } from "./AuthDebugger";
 
 interface Report {
   id: string;
@@ -120,8 +119,6 @@ export const AdminDashboard: React.FC = () => {
     reportId: null,
     reportTitle: "",
   });
-
-  const [showAuthDebugger, setShowAuthDebugger] = useState(false);
 
   const BACKEND_URL =
     import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
@@ -777,14 +774,6 @@ export const AdminDashboard: React.FC = () => {
                 >
                   <i className="fas fa-sync-alt text-sm"></i>
                   Sync Forum
-                </button>
-                <button
-                  onClick={() => setShowAuthDebugger(true)}
-                  className="px-3 py-2 bg-blue-100 text-blue-700 rounded-md text-sm font-medium hover:bg-blue-200 transition-colors duration-200 flex items-center gap-2 border border-blue-300"
-                  title="Debug authentication issues"
-                >
-                  <Shield className="w-4 h-4" />
-                  Debug Auth
                 </button>
               </div>
 
@@ -1457,12 +1446,6 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
       )}
-
-      {/* Auth Debugger Modal */}
-      <AuthDebugger
-        isOpen={showAuthDebugger}
-        onClose={() => setShowAuthDebugger(false)}
-      />
     </div>
   );
 };
