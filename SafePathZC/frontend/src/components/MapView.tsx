@@ -7786,9 +7786,16 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     try {
       console.log("📡 Loading elevation heatmap from COP30 DEM...");
       
-      // Fetch elevation heatmap from backend using environment-specific API URL
-      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8001";
-      const response = await fetch(`${apiUrl}/api/terrain/elevation_heatmap_grid?sample_rate=15`);
+      // Debug environment variables
+      console.log("🔍 Environment Debug:", {
+        VITE_API_URL: import.meta.env.VITE_API_URL,
+        VITE_BACKEND_URL: import.meta.env.VITE_BACKEND_URL,
+        API_URL_from_config: API_URL,
+        final_url: `${API_URL}/api/terrain/elevation_heatmap_grid?sample_rate=15`
+      });
+      
+      // Fetch elevation heatmap from backend using consistent API URL
+      const response = await fetch(`${API_URL}/api/terrain/elevation_heatmap_grid?sample_rate=15`);
       
       if (!response.ok) {
         throw new Error(`Failed to load elevation heatmap: ${response.status}`);
@@ -7893,7 +7900,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       }
     } catch (error) {
       console.error("❌ Error loading elevation heatmap:", error);
-      notification.error("Heatmap Error", "Failed to load elevation heatmap");
+      console.error("🔍 Error Details:", {
+        message: error.message,
+        stack: error.stack,
+        attempted_url: `${API_URL}/api/terrain/elevation_heatmap_grid?sample_rate=15`,
+        API_URL_value: API_URL
+      });
+      notification.error("Heatmap Error", `Failed to load elevation heatmap: ${error.message}`);
     }
   };
 
