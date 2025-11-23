@@ -140,7 +140,7 @@ export const WelcomeModal = ({ isOpen, onClose }: WelcomeModalProps) => {
     >
       <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto animate-scale-in border border-blue-100">
         {/* Header */}
-        <div className="bg-gradient-to-r from-wmsu-blue via-blue-600 to-blue-700 text-white p-6 sm:p-8 rounded-t-2xl relative">
+        <div className="bg-wmsu-blue text-white p-6 sm:p-8 rounded-t-2xl shadow-lg relative">
           <button
             onClick={handleClose}
             className="absolute top-4 right-4 text-white hover:bg-white hover:bg-opacity-20 transition-colors duration-200 p-2 rounded-full"
