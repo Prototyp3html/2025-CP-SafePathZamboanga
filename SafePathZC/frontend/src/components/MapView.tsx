@@ -1358,6 +1358,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const [pathFound, setPathFound] = useState<LatLng[]>([]);
   const [isCalculatingRoutes, setIsCalculatingRoutes] = useState(false);
 
+  // 🆕 Route animation completion state
+  const [routesAnimationComplete, setRoutesAnimationComplete] =
+    useState(false);
+  const [showOnlySafeRoute, setShowOnlySafeRoute] = useState(false);
+
   // Transportation mode state
   const [selectedTransportationMode, setSelectedTransportationMode] =
     useState<TransportationMode>("car");
@@ -7065,6 +7070,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
       setShowRoutePlannerModal(false);
       setRouteMode(true);
+      
+      // 🆕 Reset animation state for new route calculation
+      setRoutesAnimationComplete(false);
+      setShowOnlySafeRoute(false);
 
       // Add markers for start and end points
       if (mapRef.current) {
@@ -7418,6 +7427,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         await drawAllRoutes(routes);
 
         setRouteDetails(routes);
+        
+        // 🆕 Mark animation as complete
+        setRoutesAnimationComplete(true);
+        console.log("🎬 Route animation complete - showing safe route highlight button");
 
         // 🆕 AUTO-SAVE: Save route to history automatically
         await autoSaveRouteToHistory(routes);
@@ -7587,6 +7600,64 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       };
     }
   }, [isDragging, dragOffset.x, dragOffset.y]);
+
+  // 🆕 Function to highlight only safe route by hiding manageable and prone routes
+  const highlightOnlySafeRoute = () => {
+    console.log("🎯 Highlighting only safe route...");
+    
+    if (!routeLayersRef.current || routeLayersRef.current.length === 0) {
+      console.warn("No route layers available");
+      return;
+    }
+
+    // Get all polylines and check their color to determine which is which
+    const safeRouteColor = "#27ae60"; // green
+    
+    routeLayersRef.current.forEach((polyline) => {
+      const color = polyline.options.color;
+      
+      if (color === safeRouteColor) {
+        // Safe route - show it with full visibility
+        polyline.setStyle({ 
+          opacity: 1.0,
+          weight: 8,
+        });
+        console.log("✅ Safe route (green) - shown");
+      } else {
+        // Manageable (orange) or Prone (red) routes - hide them
+        polyline.setStyle({ 
+          opacity: 0,
+          weight: 0,
+        });
+        console.log("❌ Other route - hidden");
+      }
+    });
+    
+    setShowOnlySafeRoute(true);
+  };
+
+  // 🆕 Function to restore visibility of all routes
+  const restoreAllRoutes = () => {
+    console.log("🔄 Restoring all routes visibility...");
+    
+    if (!routeLayersRef.current || routeLayersRef.current.length === 0) {
+      console.warn("No route layers available");
+      return;
+    }
+
+    routeLayersRef.current.forEach((polyline) => {
+      // Restore original visibility based on route type
+      if (polyline.options.className?.includes("safe-route")) {
+        polyline.setStyle({ opacity: 1.0, weight: 8 });
+      } else if (polyline.options.className?.includes("manageable-route")) {
+        polyline.setStyle({ opacity: 0.8, weight: 7 });
+      } else if (polyline.options.className?.includes("prone-route")) {
+        polyline.setStyle({ opacity: 0.7, weight: 6 });
+      }
+    });
+    
+    setShowOnlySafeRoute(false);
+  };
 
   // Handle route selection
   const handleRouteSelection = (routeType: "safe" | "manageable" | "prone") => {
@@ -10044,98 +10115,180 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               ? "rgba(31, 41, 55, 0.95)"
               : "rgba(255, 255, 255, 0.95)";
             const textColor = isDarkMode ? "#f3f4f6" : "#2c3e50";
+            const buttonBg = isDarkMode ? "#1e40af" : "#2196f3";
+            const buttonHoverBg = isDarkMode ? "#1e3a8a" : "#1976d2";
 
             return (
               <div
                 style={{
+                  display: "flex",
+                  gap: "10px",
+                  alignItems: "flex-start",
                   position: "fixed",
                   bottom: "30px",
                   left: "20px",
-                  background: legendBg,
-                  padding: "12px",
-                  borderRadius: "8px",
-                  boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
-                  border: `1px solid ${
-                    isDarkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)"
-                  }`,
                   zIndex: 1000,
-                  minWidth: "200px",
-                  fontFamily: "system-ui, -apple-system, sans-serif",
                 }}
               >
-                <h4
-                  style={{
-                    margin: "0 0 10px 0",
-                    color: textColor,
-                    fontSize: "14px",
-                    fontWeight: "600",
-                  }}
-                >
-                  🗺️ Route Options
-                </h4>
+                {/* Route Options Legend */}
                 <div
                   style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "5px",
+                    background: legendBg,
+                    padding: "12px",
+                    borderRadius: "8px",
+                    boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
+                    border: `1px solid ${
+                      isDarkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)"
+                    }`,
+                    minWidth: "200px",
+                    fontFamily: "system-ui, -apple-system, sans-serif",
                   }}
                 >
+                  <h4
+                    style={{
+                      margin: "0 0 10px 0",
+                      color: textColor,
+                      fontSize: "14px",
+                      fontWeight: "600",
+                    }}
+                  >
+                    🗺️ Route Options
+                  </h4>
                   <div
                     style={{
                       display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
+                      flexDirection: "column",
+                      gap: "5px",
                     }}
                   >
                     <div
                       style={{
-                        width: "20px",
-                        height: "3px",
-                        background: "#27ae60",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
                       }}
-                    ></div>
-                    <span style={{ fontSize: "12px", color: textColor }}>
-                      Safe Route
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
+                    >
+                      <div
+                        style={{
+                          width: "20px",
+                          height: "3px",
+                          background: "#27ae60",
+                        }}
+                      ></div>
+                      <span style={{ fontSize: "12px", color: textColor }}>
+                        Safe Route
+                      </span>
+                    </div>
                     <div
                       style={{
-                        width: "20px",
-                        height: "3px",
-                        background: "#f39c12",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
                       }}
-                    ></div>
-                    <span style={{ fontSize: "12px", color: textColor }}>
-                      Manageable Route
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
+                    >
+                      <div
+                        style={{
+                          width: "20px",
+                          height: "3px",
+                          background: "#f39c12",
+                        }}
+                      ></div>
+                      <span style={{ fontSize: "12px", color: textColor }}>
+                        Manageable Route
+                      </span>
+                    </div>
                     <div
                       style={{
-                        width: "20px",
-                        height: "3px",
-                        background: "#e74c3c",
-                        borderStyle: "dashed",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
                       }}
-                    ></div>
-                    <span style={{ fontSize: "12px", color: textColor }}>
-                      Flood-Prone Route
-                    </span>
+                    >
+                      <div
+                        style={{
+                          width: "20px",
+                          height: "3px",
+                          background: "#e74c3c",
+                          borderStyle: "dashed",
+                        }}
+                      ></div>
+                      <span style={{ fontSize: "12px", color: textColor }}>
+                        Flood-Prone Route
+                      </span>
+                    </div>
                   </div>
                 </div>
+
+                {/* Safe Route Highlight Button - Only visible after animation completes */}
+                {routesAnimationComplete && (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                    }}
+                  >
+                    {!showOnlySafeRoute ? (
+                      <button
+                        onClick={highlightOnlySafeRoute}
+                        style={{
+                          background: buttonBg,
+                          color: "white",
+                          border: "none",
+                          padding: "8px 12px",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                          fontWeight: "600",
+                          transition: "all 0.2s ease",
+                          boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
+                          whiteSpace: "nowrap",
+                          height: "fit-content",
+                        }}
+                        onMouseEnter={(e) => {
+                          (e.target as HTMLButtonElement).style.background = buttonHoverBg;
+                          (e.target as HTMLButtonElement).style.boxShadow = "0 4px 12px rgba(0,0,0,0.3)";
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.target as HTMLButtonElement).style.background = buttonBg;
+                          (e.target as HTMLButtonElement).style.boxShadow = "0 2px 6px rgba(0,0,0,0.2)";
+                        }}
+                        title="Show only the safe route"
+                      >
+                        ✅ Show Safe Only
+                      </button>
+                    ) : (
+                      <button
+                        onClick={restoreAllRoutes}
+                        style={{
+                          background: "#27ae60",
+                          color: "white",
+                          border: "none",
+                          padding: "8px 12px",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                          fontWeight: "600",
+                          transition: "all 0.2s ease",
+                          boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
+                          whiteSpace: "nowrap",
+                          height: "fit-content",
+                        }}
+                        onMouseEnter={(e) => {
+                          (e.target as HTMLButtonElement).style.background = "#229954";
+                          (e.target as HTMLButtonElement).style.boxShadow = "0 4px 12px rgba(0,0,0,0.3)";
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.target as HTMLButtonElement).style.background = "#27ae60";
+                          (e.target as HTMLButtonElement).style.boxShadow = "0 2px 6px rgba(0,0,0,0.2)";
+                        }}
+                        title="Show all routes"
+                      >
+                        🔄 Show All Routes
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })()}
