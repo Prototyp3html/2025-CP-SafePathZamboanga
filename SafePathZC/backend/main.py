@@ -365,7 +365,9 @@ async def get_public_reports(
                     }
                 },
                 "created_at": report.created_at.isoformat() if report.created_at else None,
-                "is_visible": report.is_visible
+                "is_visible": report.is_visible,
+                "image_data": report.image_data,
+                "image_filename": report.image_filename
             })
         
         return formatted_reports

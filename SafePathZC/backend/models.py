@@ -91,6 +91,10 @@ class Report(Base):
     reporter_email = Column(String, nullable=False)
     reporter_id = Column(String, default="anonymous")
     
+    # Evidence/Image data
+    image_data = Column(Text, nullable=True)  # Base64 encoded image data
+    image_filename = Column(String, nullable=True)  # Original filename
+    
     # Admin data
     admin_notes = Column(Text, nullable=True)
     verification_score = Column(Float, default=0.0)

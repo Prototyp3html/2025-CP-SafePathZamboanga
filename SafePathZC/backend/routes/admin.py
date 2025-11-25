@@ -47,6 +47,8 @@ class ReportCreate(BaseModel):
     location_address: str
     reporter_name: str
     reporter_email: str
+    image_data: Optional[str] = None
+    image_filename: Optional[str] = None
 
 class ReportUpdate(BaseModel):
     status: Optional[str] = None
@@ -68,6 +70,8 @@ class ReportResponse(BaseModel):
     verification_score: Optional[float]
     created_at: datetime
     updated_at: datetime
+    image_data: Optional[str] = None
+    image_filename: Optional[str] = None
 
 class UserResponse(BaseModel):
     id: int
@@ -205,7 +209,9 @@ async def get_reports(
             "adminNotes": report.admin_notes,
             "verificationScore": report.verification_score,
             "createdAt": report.created_at.isoformat(),
-            "updatedAt": report.updated_at.isoformat()
+            "updatedAt": report.updated_at.isoformat(),
+            "imageData": report.image_data,
+            "imageFilename": report.image_filename
         })
     
     return {"reports": formatted_reports}
@@ -779,7 +785,9 @@ async def create_report(
         reporter_email=reporter_email,
         status=status,
         is_visible=is_visible,
-        admin_notes=admin_notes
+        admin_notes=admin_notes,
+        image_data=report_data.image_data,
+        image_filename=report_data.image_filename
     )
     
     db.add(new_report)

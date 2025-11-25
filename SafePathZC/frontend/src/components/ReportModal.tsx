@@ -26,6 +26,12 @@ export const ReportModal = ({
   const [weatherData, setWeatherData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  // Image upload states
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // WeatherAPI.com configuration
   const WEATHER_API_KEY =
     import.meta.env.VITE_WEATHER_API_KEY || "11b60f9fe8df4418a12152441251310";
@@ -157,6 +163,59 @@ export const ReportModal = ({
     },
   ];
 
+  // Handle image file selection
+  const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    setImageError("");
+
+    if (!file) {
+      setSelectedImage(null);
+      setImagePreview(null);
+      return;
+    }
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      setImageError("Please select a valid image file (PNG, JPG, JPEG, etc.)");
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setImageError("Image must be smaller than 5MB");
+      return;
+    }
+
+    setSelectedImage(file);
+
+    // Create preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setImagePreview(e.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Remove selected image
+  const removeImage = () => {
+    setSelectedImage(null);
+    setImagePreview(null);
+    setImageError("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  // Convert image to base64
+  const convertImageToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   // Handle location selection from autocomplete
   const handleLocationSelect = (selectedLocation: any) => {
     console.log("📍 Selected location for report:", selectedLocation);
@@ -228,6 +287,22 @@ export const ReportModal = ({
         }
       }
 
+      // Process image if selected
+      let imageData = null;
+      let imageFilename = null;
+
+      if (selectedImage) {
+        try {
+          imageData = await convertImageToBase64(selectedImage);
+          imageFilename = selectedImage.name;
+        } catch (error) {
+          console.error("Failed to process image:", error);
+          notification.error(
+            "Failed to process image. Report will be submitted without image."
+          );
+        }
+      }
+
       // First, create a proper Report record for admin dashboard
       const reportData = {
         title: `${
@@ -242,6 +317,8 @@ export const ReportModal = ({
         reporter_name: userName,
         reporter_email: userEmail,
         reporter_id: userId,
+        image_data: imageData,
+        image_filename: imageFilename,
       };
 
       const apiUrl =
@@ -520,6 +597,75 @@ export const ReportModal = ({
               required
             />
           </div>
+
+          {/* Image Upload */}
+          {isLoggedIn && (
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                📸 Evidence Photo (Optional)
+              </label>
+              <div className="space-y-3">
+                {/* Upload Button */}
+                {!imagePreview && (
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-blue-400 transition-colors">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageSelect}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="bg-blue-50 hover:bg-blue-100 text-blue-600 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      📷 Add Photo Evidence
+                    </button>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Upload a photo showing the issue (Max 5MB)
+                    </p>
+                  </div>
+                )}
+
+                {/* Image Preview */}
+                {imagePreview && (
+                  <div className="relative">
+                    <img
+                      src={imagePreview}
+                      alt="Report evidence"
+                      className="w-full h-48 object-cover rounded-lg border"
+                    />
+                    <button
+                      type="button"
+                      onClick={removeImage}
+                      className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold"
+                    >
+                      ×
+                    </button>
+                    <div className="mt-2 text-sm text-gray-600">
+                      📎 {selectedImage?.name}
+                    </div>
+                  </div>
+                )}
+
+                {/* Image Error */}
+                {imageError && (
+                  <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">
+                    ⚠️ {imageError}
+                  </div>
+                )}
+
+                {/* Image Info */}
+                <div className="bg-green-50 border border-green-200 rounded-lg p-2">
+                  <p className="text-xs text-green-700">
+                    💡 <strong>Pro tip:</strong> Photos help verify reports and
+                    make them more credible for the community
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Community Guidelines */}
           {isLoggedIn && (
