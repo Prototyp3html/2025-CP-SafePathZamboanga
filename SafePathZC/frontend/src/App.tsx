@@ -11,6 +11,7 @@ import Community from "./pages/CommunityForum";
 import Settings from "./pages/Settings";
 import Profile from "./pages/Profile";
 import AdminSettings from "./pages/AdminSettings";
+import OAuthCallback from "./components/OAuthCallback";
 
 function App() {
   return (
@@ -26,6 +27,14 @@ function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/admin" element={<AdminSettings />} />
+            <Route
+              path="/auth/google/callback"
+              element={<OAuthCallback provider="google" />}
+            />
+            <Route
+              path="/auth/facebook/callback"
+              element={<OAuthCallback provider="facebook" />}
+            />
           </Routes>
           <Toaster />
         </Router>
