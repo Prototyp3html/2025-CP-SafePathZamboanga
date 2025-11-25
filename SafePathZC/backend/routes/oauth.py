@@ -90,7 +90,10 @@ def find_or_create_user(db: Session, email: str, name: str, provider: str, provi
 async def google_login():
     """Redirect to Google OAuth"""
     if not GOOGLE_CLIENT_ID:
-        raise HTTPException(status_code=500, detail="Google OAuth not configured")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Google OAuth not configured. GOOGLE_CLIENT_ID={GOOGLE_CLIENT_ID}, FRONTEND_URL={FRONTEND_URL}"
+        )
     
     # Google OAuth 2.0 authorization URL
     google_auth_url = (
