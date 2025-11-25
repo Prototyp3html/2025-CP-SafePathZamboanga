@@ -643,21 +643,30 @@ async def get_users(
     user_id: int = Depends(verify_admin_token),
     db: Session = Depends(get_db)
 ):
-    """Get all users"""
+    """Get all users with accurate online status"""
     
     users = db.query(User).order_by(User.joined_at.desc()).all()
     
     formatted_users = []
     for user in users:
+        # Calculate if user is online (active within last 15 minutes)
+        now = datetime.utcnow()
+        last_activity = user.last_activity if user.last_activity else user.joined_at
+        time_since_activity = (now - last_activity).total_seconds() / 60  # Convert to minutes
+        
+        # User is online if they were active within last 15 minutes
+        is_online = time_since_activity < 15 and user.is_active
+        
         formatted_users.append({
             "id": user.id,
             "name": user.name,
             "email": user.email,
             "role": user.role,
             "isActive": user.is_active,
+            "isOnline": is_online,
             "reportCount": user.reports_submitted,
             "joinedAt": user.joined_at.isoformat(),
-            "lastActivity": user.last_activity.isoformat()
+            "lastActivity": user.last_activity.isoformat() if user.last_activity else user.joined_at.isoformat()
         })
     
     return {"users": formatted_users}

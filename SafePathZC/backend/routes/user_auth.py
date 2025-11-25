@@ -703,3 +703,39 @@ async def get_user_profile(
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Profile error: {str(e)}")
+
+@router.post("/update-activity")
+async def update_user_activity(
+    db: Session = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials = Security(security)
+):
+    """Update user's last activity timestamp (call this periodically to mark user as online)"""
+    try:
+        # Verify token
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id_str = payload.get("sub")
+        
+        if not user_id_str:
+            raise HTTPException(status_code=401, detail="Invalid token: no user ID")
+        
+        user_id = int(user_id_str)
+        user = db.query(User).filter(User.id == user_id).first()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Update last activity to current time
+        user.last_activity = datetime.utcnow()
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": "User activity updated",
+            "user_id": user.id,
+            "last_activity": user.last_activity.isoformat()
+        }
+        
+    except jwt.PyJWTError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Activity update error: {str(e)}")

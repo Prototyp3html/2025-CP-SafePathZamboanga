@@ -50,6 +50,7 @@ interface User {
   email: string;
   role: "user" | "admin" | "moderator";
   isActive: boolean;
+  isOnline: boolean;
   reportCount: number;
   joinedAt: string;
   lastActivity: string;
@@ -642,12 +643,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose }) => {
                       <h3 className="font-medium text-gray-900">{user.name}</h3>
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          user.isActive
+                          user.isOnline
                             ? "text-green-600 bg-green-100"
-                            : "text-red-600 bg-red-100"
+                            : "text-gray-600 bg-gray-100"
                         }`}
                       >
-                        {user.isActive ? "Active" : "Inactive"}
+                        {user.isOnline ? "Online" : "Offline"}
                       </span>
                     </div>
                     <p className="text-sm text-gray-600 mb-2">{user.email}</p>

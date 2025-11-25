@@ -66,6 +66,7 @@ interface User {
   email: string;
   role: "user" | "admin" | "moderator";
   isActive: boolean;
+  isOnline: boolean;
   reportCount: number;
   joinedAt: string;
   lastActivity: string;
@@ -1054,17 +1055,17 @@ export const AdminDashboard: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span
                           className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold shadow-sm ${
-                            user.isActive
+                            user.isOnline
                               ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white"
-                              : "bg-gradient-to-r from-red-500 to-pink-500 text-white"
+                              : "bg-gradient-to-r from-gray-400 to-gray-500 text-white"
                           }`}
                         >
                           <div
                             className={`w-2 h-2 rounded-full mr-2 ${
-                              user.isActive ? "bg-white" : "bg-white opacity-70"
+                              user.isOnline ? "bg-white animate-pulse" : "bg-white opacity-70"
                             }`}
                           ></div>
-                          {user.isActive ? "Active" : "Inactive"}
+                          {user.isOnline ? "Online" : "Offline"}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -1160,14 +1161,14 @@ export const AdminDashboard: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-600 text-sm font-medium">
-                    Active Users
+                    Online Users
                   </p>
                   <p className="text-2xl font-bold text-green-600">
                     {Array.isArray(users)
-                      ? users.filter((u) => u.isActive).length
+                      ? users.filter((u) => u.isOnline).length
                       : 0}
                   </p>
-                  <p className="text-gray-500 text-xs mt-1">Online today</p>
+                  <p className="text-gray-500 text-xs mt-1">Currently online</p>
                 </div>
                 <div className="bg-green-50 p-3 rounded-lg">
                   <Users className="h-5 w-5 text-green-600" />
