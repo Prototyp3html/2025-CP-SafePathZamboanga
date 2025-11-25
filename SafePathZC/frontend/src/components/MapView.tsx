@@ -8481,7 +8481,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         icon.style.height = "24px";
 
         const text = L.DomUtil.create("span", "", btn);
-        text.innerText = "Flood Routes";
+        text.innerText = "Plan Route";
         text.style.fontSize = "14px";
         text.style.color = "#ffffffff";
         text.style.fontWeight = "bold";
