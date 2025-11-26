@@ -107,3 +107,15 @@ async def cron_health_check():
         "timestamp": datetime.now().isoformat(),
         "last_cron_secret_set": bool(CRON_SECRET and CRON_SECRET != "your-secret-key-change-this")
     }
+
+@router.get("/flood-data-update")
+async def trigger_flood_data_update_get(secret: str = None):
+    """
+    GET version of the cron route for free cron services like EasyCron
+    Uses ?secret=YOUR_SECRET instead of headers
+    """
+    if not secret or secret != CRON_SECRET:
+        raise HTTPException(status_code=403, detail="Invalid or missing secret")
+
+    # Reuse the same POST logic
+    return await trigger_flood_data_update()

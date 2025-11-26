@@ -1,0 +1,16 @@
+name: Flood Data Auto Update
+
+on:
+  schedule:
+    - cron: "0 */6 * * *" # runs every 6 hours
+  workflow_dispatch: # allows manual run
+
+jobs:
+  run-cron:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Call Flood Update Endpoint
+        run: |
+          curl -X POST "https://safepath-zc-production.up.railway.app/cron/flood-data-update" \
+          -H "X-Cron-Secret: safepath-flood-update-secret-key-2025"
