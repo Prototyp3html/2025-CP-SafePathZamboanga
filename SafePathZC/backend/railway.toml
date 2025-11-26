@@ -6,3 +6,10 @@ startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT"
 
 [env]
 PYTHONPATH = "/app"
+
+# Scheduled Jobs (Cron) Configuration
+# Railway Premium feature: Run jobs on a schedule
+[[jobs]]
+name = "flood-data-update"
+startCommand = "curl -X POST https://$RAILWAY_DOMAIN/cron/flood-data-update -H 'X-Cron-Secret: $CRON_SECRET' || echo 'Flood data update job completed'"
+schedule = "0 */6 * * *"  # Every 6 hours (at 00:00, 06:00, 12:00, 18:00)

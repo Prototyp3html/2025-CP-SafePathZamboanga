@@ -32,6 +32,7 @@ from routes.flood_routing import router as flood_routing_router
 from routes.geocoding import router as geocoding_router
 from routes.terrain_api import router as terrain_router
 from routes.oauth import router as oauth_router
+from routes.cron import router as cron_router
 
 # Load environment variables
 load_dotenv()
@@ -288,6 +289,7 @@ app.include_router(forum_router)
 app.include_router(flood_routing_router)  # Flood-aware routing with 3 distinct routes
 app.include_router(geocoding_router, prefix="/api/geocoding", tags=["geocoding"])
 app.include_router(terrain_router)  # Terrain data and elevation heatmap
+app.include_router(cron_router)  # Scheduled jobs (flood data updates every 6 hours)
 
 # Debug endpoint to check OSRM configuration
 @app.get("/debug/osrm-config")
