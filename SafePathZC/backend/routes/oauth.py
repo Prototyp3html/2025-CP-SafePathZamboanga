@@ -54,36 +54,25 @@ def find_or_create_user(db: Session, email: str, name: str, provider: str, provi
     user = db.query(User).filter(User.email == email).first()
     
     if user:
-        # Update OAuth info if needed
-        if not user.oauth_provider:
-            user.oauth_provider = provider
-            user.oauth_id = provider_id
-            db.commit()
+        # User exists, just return it
+        print(f"👥 Found existing user: {user.email}")
         return user
     
-    # Create new user
-    # Split name into parts for the new name structure
-    name_parts = name.strip().split()
-    first_name = name_parts[0] if name_parts else ""
-    last_name = name_parts[-1] if len(name_parts) > 1 else ""
-    middle_name = " ".join(name_parts[1:-1]) if len(name_parts) > 2 else None
+    # Create new user with OAuth data
+    print(f"👤 Creating new user: {email}")
     
     new_user = User(
         email=email,
         name=name,
-        first_name=first_name,
-        middle_name=middle_name,
-        last_name=last_name,
         password_hash="",  # No password for OAuth users
-        oauth_provider=provider,
-        oauth_id=provider_id,
-        created_at=datetime.utcnow(),
-        role="user"
+        role="user",
+        is_active=True
     )
     
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    print(f"✅ Created new user with ID: {new_user.id}")
     return new_user
 
 @router.get("/google")
@@ -178,9 +167,8 @@ async def google_callback(callback_data: OAuthCallbackData, db: Session = Depend
                     "id": user.id,
                     "email": user.email,
                     "name": user.name,
-                    "first_name": user.first_name,
-                    "middle_name": user.middle_name,
-                    "last_name": user.last_name,
+                    "phone": user.phone,
+                    "location": user.location,
                     "role": user.role,
                     "oauth_provider": "google"
                 }

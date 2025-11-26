@@ -47,6 +47,34 @@ try:
     # Create tables
     Base.metadata.create_all(bind=engine)
     print("Database connected successfully")
+    
+    # Run migration for image columns
+    try:
+        with engine.connect() as connection:
+            # Check if image columns exist and add them if missing
+            result = connection.execute(
+                """SELECT column_name FROM information_schema.columns 
+                   WHERE table_name = 'reports' AND table_schema = 'public' 
+                   AND column_name IN ('image_data', 'image_filename')"""
+            )
+            existing_columns = [row[0] for row in result]
+            
+            if 'image_data' not in existing_columns:
+                connection.execute("ALTER TABLE reports ADD COLUMN image_data TEXT")
+                connection.commit()
+                print("✅ Added image_data column to reports table")
+                
+            if 'image_filename' not in existing_columns:
+                connection.execute("ALTER TABLE reports ADD COLUMN image_filename VARCHAR(255)")
+                connection.commit()
+                print("✅ Added image_filename column to reports table")
+                
+            if 'image_data' in existing_columns and 'image_filename' in existing_columns:
+                print("✅ Image columns already exist in reports table")
+                
+    except Exception as migration_error:
+        print(f"⚠️ Migration warning: {migration_error}")
+        
 except Exception as e:
     print(f"Database connection error: {e}")
     # For development, you might want to continue without DB
