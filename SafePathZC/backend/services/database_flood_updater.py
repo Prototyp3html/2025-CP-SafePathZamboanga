@@ -13,6 +13,11 @@ from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass
 import math
+import hashlib
+from pathlib import Path
+import json
+import logging
+from services.terrain_database import TerrainDatabaseService
 
 from services.terrain_database import TerrainDatabaseService
 
@@ -451,35 +456,50 @@ async def update_flood_data_database() -> Dict[str, Any]:
         result = await updater.update_terrain_database()
         return result
 
-
+logger = logging.getLogger(__name__)
 # Legacy function for backward compatibility
-async def update_flood_data() -> Optional[str]:
+async def update_flood_data() -> str | None:
     """
-    Legacy function that maintains compatibility with existing file-based system
-    Now exports database data to GeoJSON file after database update
+    Legacy function that maintains compatibility with existing file-based system.
+    Now exports database data to GeoJSON file after database update,
+    and logs whether terrain_roads.geojson has changed.
     """
     try:
         # Update database first
+        from database_flood_updater import update_flood_data_database
         await update_flood_data_database()
-        
-        # Export to GeoJSON file for compatibility
+
+        # Export to GeoJSON file
+        output_path = Path(__file__).parent.parent / "data" / "terrain_roads.geojson"
+        output_path.parent.mkdir(exist_ok=True)
+
         async with TerrainDatabaseService() as db:
             geojson_data = await db.export_to_geojson(include_flood_data=True)
-            
-            # Save to file
-            output_path = Path(__file__).parent.parent / "data" / "terrain_roads.geojson"
-            output_path.parent.mkdir(exist_ok=True)
-            
+
+        # Compute new file hash
+        new_json = json.dumps(geojson_data, sort_keys=True)
+        new_hash = hashlib.md5(new_json.encode("utf-8")).hexdigest()
+
+        # Compare with existing file
+        old_hash = None
+        if output_path.exists():
+            with open(output_path, 'r') as f:
+                old_json = f.read()
+                old_hash = hashlib.md5(old_json.encode("utf-8")).hexdigest()
+
+        # Only overwrite if changed
+        if new_hash != old_hash:
             with open(output_path, 'w') as f:
-                json.dump(geojson_data, f, indent=2)
-            
-            logger.info(f"📁 Exported database data to: {output_path}")
-            return str(output_path)
-    
+                f.write(new_json)
+            logger.info("🔥 terrain_roads.geojson has been UPDATED")
+        else:
+            logger.info("✅ terrain_roads.geojson has NO CHANGES")
+
+        return str(output_path)
+
     except Exception as e:
         logger.error(f"❌ Legacy update function failed: {e}")
         return None
-
 
 if __name__ == "__main__":
     # Run the database updater
