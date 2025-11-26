@@ -111,8 +111,17 @@ async def google_login():
 async def google_callback(callback_data: OAuthCallbackData, db: Session = Depends(get_db)):
     """Handle Google OAuth callback"""
     try:
+        print(f"🔵 Google OAuth callback received with code: {callback_data.code[:20]}...")
+        
+        # Check if OAuth is configured
+        if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+            error_msg = f"Google OAuth not configured. CLIENT_ID: {bool(GOOGLE_CLIENT_ID)}, CLIENT_SECRET: {bool(GOOGLE_CLIENT_SECRET)}"
+            print(f"❌ {error_msg}")
+            raise HTTPException(status_code=500, detail=error_msg)
+        
         # Exchange code for access token
         async with httpx.AsyncClient() as client:
+            print(f"📡 Exchanging code for Google access token...")
             token_response = await client.post(
                 "https://oauth2.googleapis.com/token",
                 data={
@@ -125,21 +134,28 @@ async def google_callback(callback_data: OAuthCallbackData, db: Session = Depend
             )
             
             if token_response.status_code != 200:
-                raise HTTPException(status_code=400, detail="Failed to exchange code for token")
+                error_details = token_response.text
+                print(f"❌ Failed to exchange code: {token_response.status_code} - {error_details}")
+                raise HTTPException(status_code=400, detail=f"Failed to exchange code for token: {error_details}")
             
             token_data = token_response.json()
             access_token = token_data.get("access_token")
+            print(f"✅ Got access token: {access_token[:20] if access_token else 'None'}...")
             
             # Get user info from Google
+            print(f"👤 Fetching user info from Google...")
             user_response = await client.get(
                 "https://www.googleapis.com/oauth2/v2/userinfo",
                 headers={"Authorization": f"Bearer {access_token}"}
             )
             
             if user_response.status_code != 200:
-                raise HTTPException(status_code=400, detail="Failed to fetch user info")
+                error_details = user_response.text
+                print(f"❌ Failed to fetch user info: {user_response.status_code} - {error_details}")
+                raise HTTPException(status_code=400, detail=f"Failed to fetch user info: {error_details}")
             
             user_info = user_response.json()
+            print(f"✅ Got user info: {user_info.get('email', 'No email')}")
             
             # Find or create user
             user = find_or_create_user(
@@ -150,10 +166,13 @@ async def google_callback(callback_data: OAuthCallbackData, db: Session = Depend
                 provider_id=user_info["id"]
             )
             
+            print(f"👥 User {user.email} (ID: {user.id}) authenticated")
+            
             # Create JWT token
             token = create_access_token(data={"sub": user.email, "user_id": user.id})
+            print(f"🔐 JWT token created")
             
-            return {
+            response_data = {
                 "token": token,
                 "user": {
                     "id": user.id,
@@ -166,8 +185,13 @@ async def google_callback(callback_data: OAuthCallbackData, db: Session = Depend
                     "oauth_provider": "google"
                 }
             }
+            print(f"✅ Returning successful response: {response_data['user']['email']}")
+            return response_data
             
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"❌ Unexpected OAuth error: {str(e)}")
         raise HTTPException(status_code=400, detail=f"OAuth error: {str(e)}")
 
 @router.get("/facebook")

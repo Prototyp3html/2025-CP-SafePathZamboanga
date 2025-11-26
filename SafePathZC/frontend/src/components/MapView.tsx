@@ -1265,7 +1265,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const [showRouteModal, setShowRouteModal] = useState(false);
   const [mapLayer, setMapLayer] = useState("street");
   // 3-way toggle: "off" | "terrain" | "heatmap"
-  const [terrainMode, setTerrainMode] = useState<"off" | "terrain" | "heatmap">("off");
+  const [terrainMode, setTerrainMode] = useState<"off" | "terrain" | "heatmap">(
+    "off"
+  );
   const [selectedRoute, setSelectedRoute] = useState<
     "safe" | "manageable" | "prone" | null
   >(null);
@@ -1357,11 +1359,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   );
   const [pathFound, setPathFound] = useState<LatLng[]>([]);
   const [isCalculatingRoutes, setIsCalculatingRoutes] = useState(false);
-
-  // 🆕 Route animation completion state
-  const [routesAnimationComplete, setRoutesAnimationComplete] =
-    useState(false);
-  const [showOnlySafeRoute, setShowOnlySafeRoute] = useState(false);
 
   // Transportation mode state
   const [selectedTransportationMode, setSelectedTransportationMode] =
@@ -7070,10 +7067,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
       setShowRoutePlannerModal(false);
       setRouteMode(true);
-      
-      // 🆕 Reset animation state for new route calculation
-      setRoutesAnimationComplete(false);
-      setShowOnlySafeRoute(false);
 
       // Add markers for start and end points
       if (mapRef.current) {
@@ -7427,10 +7420,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         await drawAllRoutes(routes);
 
         setRouteDetails(routes);
-        
-        // 🆕 Mark animation as complete
-        setRoutesAnimationComplete(true);
-        console.log("🎬 Route animation complete - showing safe route highlight button");
 
         // 🆕 AUTO-SAVE: Save route to history automatically
         await autoSaveRouteToHistory(routes);
@@ -7600,64 +7589,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       };
     }
   }, [isDragging, dragOffset.x, dragOffset.y]);
-
-  // 🆕 Function to highlight only safe route by hiding manageable and prone routes
-  const highlightOnlySafeRoute = () => {
-    console.log("🎯 Highlighting only safe route...");
-    
-    if (!routeLayersRef.current || routeLayersRef.current.length === 0) {
-      console.warn("No route layers available");
-      return;
-    }
-
-    // Get all polylines and check their color to determine which is which
-    const safeRouteColor = "#27ae60"; // green
-    
-    routeLayersRef.current.forEach((polyline) => {
-      const color = polyline.options.color;
-      
-      if (color === safeRouteColor) {
-        // Safe route - show it with full visibility
-        polyline.setStyle({ 
-          opacity: 1.0,
-          weight: 8,
-        });
-        console.log("✅ Safe route (green) - shown");
-      } else {
-        // Manageable (orange) or Prone (red) routes - hide them
-        polyline.setStyle({ 
-          opacity: 0,
-          weight: 0,
-        });
-        console.log("❌ Other route - hidden");
-      }
-    });
-    
-    setShowOnlySafeRoute(true);
-  };
-
-  // 🆕 Function to restore visibility of all routes
-  const restoreAllRoutes = () => {
-    console.log("🔄 Restoring all routes visibility...");
-    
-    if (!routeLayersRef.current || routeLayersRef.current.length === 0) {
-      console.warn("No route layers available");
-      return;
-    }
-
-    routeLayersRef.current.forEach((polyline) => {
-      // Restore original visibility based on route type
-      if (polyline.options.className?.includes("safe-route")) {
-        polyline.setStyle({ opacity: 1.0, weight: 8 });
-      } else if (polyline.options.className?.includes("manageable-route")) {
-        polyline.setStyle({ opacity: 0.8, weight: 7 });
-      } else if (polyline.options.className?.includes("prone-route")) {
-        polyline.setStyle({ opacity: 0.7, weight: 6 });
-      }
-    });
-    
-    setShowOnlySafeRoute(false);
-  };
 
   // Handle route selection
   const handleRouteSelection = (routeType: "safe" | "manageable" | "prone") => {
@@ -7856,25 +7787,27 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
     try {
       console.log("📡 Loading elevation heatmap from COP30 DEM...");
-      
+
       // Debug environment variables
       console.log("🔍 Environment Debug:", {
         VITE_API_URL: import.meta.env.VITE_API_URL,
         VITE_BACKEND_URL: import.meta.env.VITE_BACKEND_URL,
         API_URL_from_config: API_URL,
-        final_url: `${API_URL}/api/terrain/elevation_heatmap_grid?sample_rate=15`
+        final_url: `${API_URL}/api/terrain/elevation_heatmap_grid?sample_rate=15`,
       });
-      
+
       // Fetch elevation heatmap from backend using consistent API URL
-      const response = await fetch(`${API_URL}/api/terrain/elevation_heatmap_grid?sample_rate=15`);
-      
+      const response = await fetch(
+        `${API_URL}/api/terrain/elevation_heatmap_grid?sample_rate=15`
+      );
+
       if (!response.ok) {
         throw new Error(`Failed to load elevation heatmap: ${response.status}`);
       }
-      
+
       const data = await response.json();
       const heatPoints: [number, number, number][] = data.heatmap_data;
-      
+
       console.log(
         `✅ Loaded elevation heatmap with ${heatPoints.length} points from DEM`
       );
@@ -7902,7 +7835,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         floodHeatmapRef.current = heatLayer;
         heatLayer.addTo(mapRef.current);
 
-        console.log(`🗺️ Created elevation heatmap overlay from DEM (${heatPoints.length} points)`);
+        console.log(
+          `🗺️ Created elevation heatmap overlay from DEM (${heatPoints.length} points)`
+        );
       } else {
         console.error(
           "❌ Leaflet.heat plugin not loaded - using fallback visualization"
@@ -7910,10 +7845,8 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
         // Fallback: Create grid-based heatmap using rectangles
         const gridSize = 0.002;
-        const gridData: Map<
-          string,
-          { totalIntensity: number; count: number }
-        > = new Map();
+        const gridData: Map<string, { totalIntensity: number; count: number }> =
+          new Map();
 
         heatPoints.forEach(([lat, lng, intensity]) => {
           const gridLat = Math.floor(lat / gridSize) * gridSize;
@@ -7975,9 +7908,12 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         message: error.message,
         stack: error.stack,
         attempted_url: `${API_URL}/api/terrain/elevation_heatmap_grid?sample_rate=15`,
-        API_URL_value: API_URL
+        API_URL_value: API_URL,
       });
-      notification.error("Heatmap Error", `Failed to load elevation heatmap: ${error.message}`);
+      notification.error(
+        "Heatmap Error",
+        `Failed to load elevation heatmap: ${error.message}`
+      );
     }
   };
 
@@ -8481,7 +8417,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         icon.style.height = "24px";
 
         const text = L.DomUtil.create("span", "", btn);
-        text.innerText = "Plan Route";
+        text.innerText = "Flood Routes";
         text.style.fontSize = "14px";
         text.style.color = "#ffffffff";
         text.style.fontWeight = "bold";
@@ -8740,10 +8676,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
         btn.onclick = (e: Event) => {
           e.stopPropagation();
-          console.log(
-            "🎯 Terrain button clicked! Current mode:",
-            terrainMode
-          );
+          console.log("🎯 Terrain button clicked! Current mode:", terrainMode);
           setTerrainMode((prev) => {
             // Cycle through: off → terrain → heatmap → off
             let newMode: "off" | "terrain" | "heatmap";
@@ -8754,9 +8687,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             } else {
               newMode = "off";
             }
-            
+
             console.log("🔄 Setting terrain mode to:", newMode);
-            
+
             // Update button appearance based on mode
             if (newMode === "off") {
               text.innerText = "Normal View";
@@ -8771,7 +8704,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               btn.style.background = "#ffe0b2";
               icon.src = "/icons/mountain.png";
             }
-            
+
             return newMode;
           });
         };
@@ -10031,7 +9964,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     fontWeight: "600",
                   }}
                 >
-                  {terrainMode === "terrain" ? "🗺️ Terrain Elevation" : "📊 Slope Intensity"}
+                  {terrainMode === "terrain"
+                    ? "🗺️ Terrain Elevation"
+                    : "📊 Slope Intensity"}
                 </h4>
 
                 <div
@@ -10043,48 +9978,202 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                 >
                   {terrainMode === "terrain" ? (
                     <>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#e8f4e8", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
-                        <span style={{ color: textColor }}>0-50m (Low/Coastal)</span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#e8f4e8",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
+                        <span style={{ color: textColor }}>
+                          0-50m (Low/Coastal)
+                        </span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#b8d98e", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
-                        <span style={{ color: textColor }}>50-150m (Plains)</span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#b8d98e",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
+                        <span style={{ color: textColor }}>
+                          50-150m (Plains)
+                        </span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#d4c896", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
-                        <span style={{ color: textColor }}>150-300m (Hills)</span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#d4c896",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
+                        <span style={{ color: textColor }}>
+                          150-300m (Hills)
+                        </span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#c4a57b", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
-                        <span style={{ color: textColor }}>300-500m (Highlands)</span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#c4a57b",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
+                        <span style={{ color: textColor }}>
+                          300-500m (Highlands)
+                        </span>
                       </div>
                     </>
                   ) : (
                     <>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#00FF00", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#00FF00",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
                         <span style={{ color: textColor }}>0-2% (Flat)</span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#7FFF00", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#7FFF00",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
                         <span style={{ color: textColor }}>2-5% (Gentle)</span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#FFFF00", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
-                        <span style={{ color: textColor }}>5-10% (Moderate)</span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#FFFF00",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
+                        <span style={{ color: textColor }}>
+                          5-10% (Moderate)
+                        </span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#FFA500", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#FFA500",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
                         <span style={{ color: textColor }}>10-15% (Steep)</span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#FF4500", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
-                        <span style={{ color: textColor }}>15-25% (Very Steep)</span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#FF4500",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
+                        <span style={{ color: textColor }}>
+                          15-25% (Very Steep)
+                        </span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "20px", height: "14px", background: "#FF0000", borderRadius: "2px", border: "1px solid rgba(0,0,0,0.2)" }}></div>
-                        <span style={{ color: textColor }}>&gt;25% (Extreme)</span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "20px",
+                            height: "14px",
+                            background: "#FF0000",
+                            borderRadius: "2px",
+                            border: "1px solid rgba(0,0,0,0.2)",
+                          }}
+                        ></div>
+                        <span style={{ color: textColor }}>
+                          &gt;25% (Extreme)
+                        </span>
                       </div>
                     </>
                   )}
@@ -10101,7 +10190,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     color: isDarkMode ? "#9ca3af" : "#666",
                   }}
                 >
-                  {terrainMode === "terrain" ? "🌍 Topographic overlay" : "📈 Slope gradient heatmap"}
+                  {terrainMode === "terrain"
+                    ? "🌍 Topographic overlay"
+                    : "📈 Slope gradient heatmap"}
                 </div>
               </div>
             );
@@ -10115,180 +10206,98 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               ? "rgba(31, 41, 55, 0.95)"
               : "rgba(255, 255, 255, 0.95)";
             const textColor = isDarkMode ? "#f3f4f6" : "#2c3e50";
-            const buttonBg = isDarkMode ? "#1e40af" : "#2196f3";
-            const buttonHoverBg = isDarkMode ? "#1e3a8a" : "#1976d2";
 
             return (
               <div
                 style={{
-                  display: "flex",
-                  gap: "10px",
-                  alignItems: "flex-start",
                   position: "fixed",
                   bottom: "30px",
                   left: "20px",
+                  background: legendBg,
+                  padding: "12px",
+                  borderRadius: "8px",
+                  boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
+                  border: `1px solid ${
+                    isDarkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)"
+                  }`,
                   zIndex: 1000,
+                  minWidth: "200px",
+                  fontFamily: "system-ui, -apple-system, sans-serif",
                 }}
               >
-                {/* Route Options Legend */}
-                <div
+                <h4
                   style={{
-                    background: legendBg,
-                    padding: "12px",
-                    borderRadius: "8px",
-                    boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
-                    border: `1px solid ${
-                      isDarkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)"
-                    }`,
-                    minWidth: "200px",
-                    fontFamily: "system-ui, -apple-system, sans-serif",
+                    margin: "0 0 10px 0",
+                    color: textColor,
+                    fontSize: "14px",
+                    fontWeight: "600",
                   }}
                 >
-                  <h4
-                    style={{
-                      margin: "0 0 10px 0",
-                      color: textColor,
-                      fontSize: "14px",
-                      fontWeight: "600",
-                    }}
-                  >
-                    🗺️ Route Options
-                  </h4>
+                  🗺️ Route Options
+                </h4>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "5px",
+                  }}
+                >
                   <div
                     style={{
                       display: "flex",
-                      flexDirection: "column",
-                      gap: "5px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: "20px",
-                          height: "3px",
-                          background: "#27ae60",
-                        }}
-                      ></div>
-                      <span style={{ fontSize: "12px", color: textColor }}>
-                        Safe Route
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: "20px",
-                          height: "3px",
-                          background: "#f39c12",
-                        }}
-                      ></div>
-                      <span style={{ fontSize: "12px", color: textColor }}>
-                        Manageable Route
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: "20px",
-                          height: "3px",
-                          background: "#e74c3c",
-                          borderStyle: "dashed",
-                        }}
-                      ></div>
-                      <span style={{ fontSize: "12px", color: textColor }}>
-                        Flood-Prone Route
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Safe Route Highlight Button - Only visible after animation completes */}
-                {routesAnimationComplete && (
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
+                      alignItems: "center",
                       gap: "8px",
                     }}
                   >
-                    {!showOnlySafeRoute ? (
-                      <button
-                        onClick={highlightOnlySafeRoute}
-                        style={{
-                          background: buttonBg,
-                          color: "white",
-                          border: "none",
-                          padding: "8px 12px",
-                          borderRadius: "6px",
-                          cursor: "pointer",
-                          fontSize: "12px",
-                          fontWeight: "600",
-                          transition: "all 0.2s ease",
-                          boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
-                          whiteSpace: "nowrap",
-                          height: "fit-content",
-                        }}
-                        onMouseEnter={(e) => {
-                          (e.target as HTMLButtonElement).style.background = buttonHoverBg;
-                          (e.target as HTMLButtonElement).style.boxShadow = "0 4px 12px rgba(0,0,0,0.3)";
-                        }}
-                        onMouseLeave={(e) => {
-                          (e.target as HTMLButtonElement).style.background = buttonBg;
-                          (e.target as HTMLButtonElement).style.boxShadow = "0 2px 6px rgba(0,0,0,0.2)";
-                        }}
-                        title="Show only the safe route"
-                      >
-                        ✅ Show Safe Only
-                      </button>
-                    ) : (
-                      <button
-                        onClick={restoreAllRoutes}
-                        style={{
-                          background: "#27ae60",
-                          color: "white",
-                          border: "none",
-                          padding: "8px 12px",
-                          borderRadius: "6px",
-                          cursor: "pointer",
-                          fontSize: "12px",
-                          fontWeight: "600",
-                          transition: "all 0.2s ease",
-                          boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
-                          whiteSpace: "nowrap",
-                          height: "fit-content",
-                        }}
-                        onMouseEnter={(e) => {
-                          (e.target as HTMLButtonElement).style.background = "#229954";
-                          (e.target as HTMLButtonElement).style.boxShadow = "0 4px 12px rgba(0,0,0,0.3)";
-                        }}
-                        onMouseLeave={(e) => {
-                          (e.target as HTMLButtonElement).style.background = "#27ae60";
-                          (e.target as HTMLButtonElement).style.boxShadow = "0 2px 6px rgba(0,0,0,0.2)";
-                        }}
-                        title="Show all routes"
-                      >
-                        🔄 Show All Routes
-                      </button>
-                    )}
+                    <div
+                      style={{
+                        width: "20px",
+                        height: "3px",
+                        background: "#27ae60",
+                      }}
+                    ></div>
+                    <span style={{ fontSize: "12px", color: textColor }}>
+                      Safe Route
+                    </span>
                   </div>
-                )}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "20px",
+                        height: "3px",
+                        background: "#f39c12",
+                      }}
+                    ></div>
+                    <span style={{ fontSize: "12px", color: textColor }}>
+                      Manageable Route
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "20px",
+                        height: "3px",
+                        background: "#e74c3c",
+                        borderStyle: "dashed",
+                      }}
+                    ></div>
+                    <span style={{ fontSize: "12px", color: textColor }}>
+                      Flood-Prone Route
+                    </span>
+                  </div>
+                </div>
               </div>
             );
           })()}
