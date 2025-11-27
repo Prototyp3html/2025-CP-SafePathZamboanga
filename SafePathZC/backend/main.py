@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic import BaseModel, Field
 from datetime import datetime, date
@@ -53,27 +53,34 @@ try:
         with engine.connect() as connection:
             # Check if image columns exist and add them if missing
             result = connection.execute(
-                """SELECT column_name FROM information_schema.columns 
-                   WHERE table_name = 'reports' AND table_schema = 'public' 
-                   AND column_name IN ('image_data', 'image_filename')"""
+                text("""SELECT column_name FROM information_schema.columns 
+                        WHERE table_name = 'reports' AND table_schema = 'public' 
+                        AND column_name IN ('image_data', 'image_filename')""")
             )
-            existing_columns = [row[0] for row in result]
+            existing_columns = [row[0] for row in result.fetchall()]
+            print(f"🔍 Found existing columns: {existing_columns}")
             
+            columns_added = []
             if 'image_data' not in existing_columns:
-                connection.execute("ALTER TABLE reports ADD COLUMN image_data TEXT")
-                connection.commit()
+                connection.execute(text("ALTER TABLE reports ADD COLUMN image_data TEXT"))
+                columns_added.append('image_data')
                 print("✅ Added image_data column to reports table")
                 
             if 'image_filename' not in existing_columns:
-                connection.execute("ALTER TABLE reports ADD COLUMN image_filename VARCHAR(255)")
-                connection.commit()
+                connection.execute(text("ALTER TABLE reports ADD COLUMN image_filename VARCHAR(255)"))
+                columns_added.append('image_filename')
                 print("✅ Added image_filename column to reports table")
                 
-            if 'image_data' in existing_columns and 'image_filename' in existing_columns:
+            if columns_added:
+                connection.commit()
+                print(f"🎉 Successfully added columns: {columns_added}")
+            else:
                 print("✅ Image columns already exist in reports table")
                 
     except Exception as migration_error:
-        print(f"⚠️ Migration warning: {migration_error}")
+        print(f"❌ Migration error: {migration_error}")
+        import traceback
+        traceback.print_exc()
         
 except Exception as e:
     print(f"Database connection error: {e}")
