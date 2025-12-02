@@ -10,8 +10,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Call Flood Update Endpoint
+      - name: Call Flood Update Endpoint (POST with Headers)
         run: |
-          curl --fail --http1.1 --max-time 60 \
+          curl -v --fail --http1.1 --max-time 60 \
           -X POST "https://safepath-zc-production.up.railway.app/cron/flood-data-update" \
-          -H "X-Cron-Secret: safepath-flood-update-secret-key-2025"
+          -H "X-Cron-Secret: safepath-flood-update-secret-key-2025" \
+          -H "Content-Type: application/json"
+        continue-on-error: true
+
+      - name: Fallback - Call via GET with secret parameter
+        if: failure()
+        run: |
+          curl -v --fail --http1.1 --max-time 60 \
+          "https://safepath-zc-production.up.railway.app/cron/flood-data-update?secret=safepath-flood-update-secret-key-2025" \
+          -H "Content-Type: application/json"

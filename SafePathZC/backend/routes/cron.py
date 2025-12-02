@@ -27,15 +27,21 @@ def verify_cron_secret(x_cron_secret: str = Header(None)) -> bool:
         logger.warning("❌ Cron request received without X-Cron-Secret header")
         raise HTTPException(status_code=401, detail="Missing authorization header")
     
-    if x_cron_secret != CRON_SECRET:
-        logger.warning(f"❌ Cron request with invalid secret")
+    # Accept either the env variable secret OR the hardcoded backup secret
+    valid_secrets = [
+        CRON_SECRET,
+        "safepath-flood-update-secret-key-2025"  # Backup hardcoded secret
+    ]
+    
+    if x_cron_secret not in valid_secrets:
+        logger.warning(f"❌ Cron request with invalid secret: {x_cron_secret}")
         raise HTTPException(status_code=403, detail="Invalid credentials")
     
     return True
 
 
 @router.post("/flood-data-update")
-async def trigger_flood_data_update(authorized: bool = None):
+async def trigger_flood_data_update(x_cron_secret: str = Header(None)):
     """
     Triggered by external cron service (e.g., EasyCron, Railway Cron) every 6 hours
     Updates terrain_roads.geojson with latest flood data
@@ -47,6 +53,9 @@ async def trigger_flood_data_update(authorized: bool = None):
     POST https://safepath-zc-production.up.railway.app/cron/flood-data-update
     Headers: X-Cron-Secret: your-secret-key
     """
+    
+    # Verify the cron secret
+    verify_cron_secret(x_cron_secret)
     
     logger.info("=" * 70)
     logger.info(f"🚀 FLOOD DATA UPDATE CRON JOB TRIGGERED - {datetime.now()}")
@@ -114,8 +123,57 @@ async def trigger_flood_data_update_get(secret: str = None):
     GET version of the cron route for free cron services like EasyCron
     Uses ?secret=YOUR_SECRET instead of headers
     """
-    if not secret or secret != CRON_SECRET:
+    # Accept either the env variable secret OR the hardcoded backup secret
+    valid_secrets = [
+        CRON_SECRET,
+        "safepath-flood-update-secret-key-2025"  # Backup hardcoded secret
+    ]
+    
+    if not secret or secret not in valid_secrets:
         raise HTTPException(status_code=403, detail="Invalid or missing secret")
 
-    # Reuse the same POST logic
-    return await trigger_flood_data_update()
+    logger.info("=" * 70)
+    logger.info(f"🚀 FLOOD DATA UPDATE CRON JOB TRIGGERED (GET) - {datetime.now()}")
+    logger.info("=" * 70)
+    
+    try:
+        # Run the flood data updater
+        output_path = await update_flood_data()
+        
+        if output_path:
+            logger.info("✅ Flood data update completed successfully")
+            logger.info(f"📁 Updated file: {output_path}")
+            
+            # Read the generated file to get stats
+            import json
+            with open(output_path, 'r') as f:
+                geojson = json.load(f)
+            
+            total_roads = geojson.get('metadata', {}).get('total_roads', 0)
+            flooded_roads = geojson.get('metadata', {}).get('flooded_roads', 0)
+            rainfall = geojson.get('metadata', {}).get('current_rainfall_mm', 0)
+            
+            return {
+                "status": "success",
+                "message": "Flood data updated successfully",
+                "timestamp": datetime.now().isoformat(),
+                "stats": {
+                    "total_roads": total_roads,
+                    "flooded_roads": flooded_roads,
+                    "current_rainfall_mm": rainfall,
+                    "updated_file": str(output_path)
+                }
+            }
+        else:
+            logger.error("❌ Flood data update failed - no output generated")
+            raise HTTPException(
+                status_code=500, 
+                detail="Flood data update failed - no output generated"
+            )
+            
+    except Exception as e:
+        logger.error(f"❌ Flood data update failed with error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Flood data update failed: {str(e)}"
+        )

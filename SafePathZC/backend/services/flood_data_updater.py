@@ -130,7 +130,7 @@ class FloodDataUpdater:
                         for coord in batch:
                             elevation_map[coord] = 0.0
                 
-                # Rate limiting - be nice to free API
+                # Rate limiting 
                 await asyncio.sleep(1)
                 
             except Exception as e:

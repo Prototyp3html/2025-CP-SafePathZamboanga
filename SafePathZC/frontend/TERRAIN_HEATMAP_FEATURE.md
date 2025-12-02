@@ -120,7 +120,7 @@ setTerrainMode((prev) => {
    - Uses OpenTopoMap
    - 60% opacity overlay
 
-2. **`createSlopeHeatmap()`** ⭐ NEW
+2. **`createSlopeHeatmap()`**
 
    - Loads terrain_roads.geojson
    - Calculates slope for each segment
