@@ -1271,6 +1271,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
   const [selectedRoute, setSelectedRoute] = useState<
     "safe" | "manageable" | "prone" | null
   >(null);
+  const [safeRoutesOnly, setSafeRoutesOnly] = useState(false);
   const [showWeatherDashboard, setShowWeatherDashboard] = useState(false);
 
   // Identical terrain notification
@@ -7370,11 +7371,14 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             { route: routes.proneRoute, label: "High Risk Route" },
           ];
 
-          const otherPromises = otherRoutes.map(({ route, label }) =>
-            drawRouteWithAnimation(route, label)
-          );
+          // Only draw other routes if "Safe Routes Only" is not enabled
+          if (!safeRoutesOnly) {
+            const otherPromises = otherRoutes.map(({ route, label }) =>
+              drawRouteWithAnimation(route, label)
+            );
 
-          await Promise.all(otherPromises);
+            await Promise.all(otherPromises);
+          }
 
           // Fit map to show all routes
           if (routeLayersRef.current.length > 0) {
@@ -9253,6 +9257,29 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     };
   }, [isMapReady]);
 
+  // Handle Safe Routes Only toggle - show/hide manageable and prone routes on the map
+  useEffect(() => {
+    if (!mapRef.current || !routeLayersRef.current) return;
+
+    // Toggle visibility of routes based on safeRoutesOnly flag
+    routeLayersRef.current.forEach((layer, index) => {
+      // Skip the first route (safe route - index 0), hide others if safeRoutesOnly is true
+      if (index > 0 && safeRoutesOnly) {
+        if (mapRef.current && mapRef.current.hasLayer(layer)) {
+          mapRef.current.removeLayer(layer);
+        }
+      } else if (index > 0 && !safeRoutesOnly) {
+        if (mapRef.current && !mapRef.current.hasLayer(layer)) {
+          mapRef.current.addLayer(layer);
+        }
+      }
+    });
+
+    console.log(
+      `🔒 Safe routes only: ${safeRoutesOnly} - ${safeRoutesOnly ? "Hiding" : "Showing"} orange and red routes`
+    );
+  }, [safeRoutesOnly]);
+
   const clearDestinations = () => {
     setSelectedStartLocation(null);
     setSelectedEndLocation(null);
@@ -9288,6 +9315,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       }
     });
     circleMarkersRef.current = [];
+    
+    // Reset Safe Routes Only toggle when clearing destinations
+    setSafeRoutesOnly(false);
   };
 
   // Reset route
@@ -9306,6 +9336,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     setEndSuggestions([]);
     setShowStartSuggestions(false);
     setShowEndSuggestions(false);
+
+    // Reset Safe Routes Only toggle when resetting route
+    setSafeRoutesOnly(false);
 
     // Clear markers
     markersRef.current.forEach((marker) => {
@@ -10208,6 +10241,35 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             const textColor = isDarkMode ? "#f3f4f6" : "#2c3e50";
 
             return (
+              <>
+                {/* Safe Routes Only Button - Above the legend */}
+                <button
+                  onClick={() => setSafeRoutesOnly(!safeRoutesOnly)}
+                  style={{
+                    position: "fixed",
+                    bottom: "160px",
+                    left: "20px",
+                    background: safeRoutesOnly ? "#27ae60" : isDarkMode ? "#374151" : "#fff",
+                    border: safeRoutesOnly 
+                      ? "2px solid #27ae60" 
+                      : `2px solid ${isDarkMode ? "#4b5563" : "#ddd"}`,
+                    color: safeRoutesOnly ? "white" : textColor,
+                    padding: "10px 16px",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: "600",
+                    transition: "all 0.3s ease",
+                    zIndex: 1000,
+                    fontFamily: "system-ui, -apple-system, sans-serif",
+                    boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
+                  }}
+                  title={safeRoutesOnly ? "Showing only safe routes" : "Click to show only safe routes"}
+                >
+                  {safeRoutesOnly ? "✓ Safe Routes Only" : "🔒 Safe Routes Only"}
+                </button>
+
+                {/* Route Options Legend */}
               <div
                 style={{
                   position: "fixed",
@@ -10299,6 +10361,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                   </div>
                 </div>
               </div>
+              </>
             );
           })()}
       </div>
