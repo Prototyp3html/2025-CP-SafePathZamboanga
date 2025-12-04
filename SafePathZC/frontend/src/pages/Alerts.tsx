@@ -78,11 +78,11 @@ const Alerts = () => {
   const fetchAlertsData = async () => {
     setLoading(true);
     try {
-      // Fetch weather data from WeatherAPI
+      // Fetch weather data from backend
+      const BACKEND_URL =
+        import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
       const weatherResponse = await fetch(
-        `https://api.weatherapi.com/v1/forecast.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(
-          LOCATION
-        )}&days=1&aqi=no&alerts=yes`
+        `${BACKEND_URL}/weather?lat=6.9214&lng=122.0790`
       );
 
       if (!weatherResponse.ok) {
@@ -93,19 +93,22 @@ const Alerts = () => {
       const generatedAlerts: (CommunityReport | WeatherAlert)[] = [];
       const updates: any[] = [];
 
-      const current = weatherData.current;
-      const forecast = weatherData.forecast?.forecastday?.[0];
+      // Extract backend weather data (Open-Meteo format)
+      const precipitation = weatherData.precipitation || 0;
+      const rain = weatherData.rain || 0;
+      const weather_code = weatherData.weather_code || 1;
+      const totalRain = Math.max(precipitation, rain);
 
       // Generate weather-based alerts
       let hasEmergency = false;
 
       // Check for severe flooding conditions (>20mm rain)
-      if (current.precip_mm > 20) {
+      if (totalRain > 20) {
         hasEmergency = true;
         setEmergencyAlert({
           type: "flood",
           severity: "high",
-          message: `Heavy flooding reported in multiple areas. ${current.precip_mm.toFixed(
+          message: `Heavy flooding reported in multiple areas. ${totalRain.toFixed(
             1
           )}mm rainfall detected. Avoid travel unless absolutely necessary.`,
           action: "View Emergency Contacts",
@@ -115,10 +118,8 @@ const Alerts = () => {
           id: Date.now() + 1,
           type: "flood",
           severity: "high",
-          title: `Severe Flooding Warning - ${current.precip_mm.toFixed(
-            1
-          )}mm Rainfall`,
-          description: `Heavy flooding expected in low-lying areas. Current rainfall: ${current.precip_mm.toFixed(
+          title: `Severe Flooding Warning - ${totalRain.toFixed(1)}mm Rainfall`,
+          description: `Heavy flooding expected in low-lying areas. Current rainfall: ${totalRain.toFixed(
             1
           )}mm/hr. Water levels may rise rapidly.`,
           location: "Zamboanga City - Multiple Areas",
@@ -127,16 +128,14 @@ const Alerts = () => {
           affectedRoutes: ["Canelar Road", "Tetuan Area", "Tumaga Districts"],
           status: "active",
           isBookmarked: false,
-          weather_data: current,
+          weather_data: weatherData,
         } as WeatherAlert);
-      } else if (current.precip_mm > 10) {
+      } else if (totalRain > 10) {
         generatedAlerts.push({
           id: Date.now() + 2,
           type: "flood",
           severity: "moderate",
-          title: `Moderate Flooding Risk - ${current.precip_mm.toFixed(
-            1
-          )}mm Rainfall`,
+          title: `Moderate Flooding Risk - ${totalRain.toFixed(1)}mm Rainfall`,
           description: `Moderate rainfall detected. Exercise caution in flood-prone areas. Monitor weather updates regularly.`,
           location: "Zamboanga City - Low-lying Areas",
           timeIssued: "Just now",
@@ -144,11 +143,13 @@ const Alerts = () => {
           affectedRoutes: ["Canelar Road", "Sta. Maria Area"],
           status: "active",
           isBookmarked: false,
-          weather_data: current,
+          weather_data: weatherData,
         } as WeatherAlert);
       }
 
-      // Check for strong winds
+      // Check for strong winds - backend doesn't provide wind data, so we skip wind alerts
+      // Wind data would need to be added to backend weather endpoint
+      /*
       if (current.wind_kph > 60) {
         hasEmergency = true;
         setEmergencyAlert({
@@ -190,14 +191,16 @@ const Alerts = () => {
           weather_data: current,
         } as WeatherAlert);
       }
+      */
 
-      // Check for storms
-      if (current.condition.code >= 1087 && current.condition.code <= 1282) {
+      // Check for storms (Open-Meteo weather codes)
+      // Storm-related codes: 95 (thunderstorm), 96/99 (heavy thunderstorm)
+      if ([95, 96, 99].includes(weather_code)) {
         hasEmergency = true;
         setEmergencyAlert({
           type: "storm",
           severity: "high",
-          message: `Severe weather alert: ${current.condition.text}. Stay indoors and monitor updates.`,
+          message: `Severe weather alert: Storm conditions detected (Code: ${weather_code}). Stay indoors and monitor updates.`,
           action: "View Emergency Contacts",
         });
 
@@ -205,15 +208,15 @@ const Alerts = () => {
           id: Date.now() + 5,
           type: "storm",
           severity: "high",
-          title: `Storm Alert - ${current.condition.text}`,
-          description: `Severe weather conditions detected. ${current.condition.text}. Avoid all non-essential travel.`,
+          title: `Storm Alert - Weather Code ${weather_code}`,
+          description: `Severe weather conditions detected. Storm conditions (Code: ${weather_code}). Avoid all non-essential travel.`,
           location: "Zamboanga City",
           timeIssued: "Just now",
           estimatedDuration: "4-8 hours",
           affectedRoutes: ["All Routes"],
           status: "active",
           isBookmarked: false,
-          weather_data: current,
+          weather_data: weatherData,
         } as WeatherAlert);
       }
 
@@ -315,76 +318,43 @@ const Alerts = () => {
       }
 
       // Add current weather as a news post
+      const getWeatherDescription = (code: number) => {
+        if (code === 0) return "Clear sky";
+        if (code >= 1 && code <= 3) return "Partly cloudy";
+        if (code >= 51 && code <= 67) return "Rainy";
+        if (code >= 95 && code <= 99) return "Thunderstorm";
+        return "Mixed conditions";
+      };
+
       updates.push({
         id: `weather-${Date.now()}`,
         type: "current",
         title: "🌤️ Current Weather Conditions",
-        description: `${current.condition.text} with temperature at ${
-          current.temp_c
-        }°C. ${
-          current.precip_mm > 0 ? `Rainfall: ${current.precip_mm}mm/hr. ` : ""
-        }Wind speed: ${current.wind_kph}kph. Humidity: ${current.humidity}%.`,
+        description: `${getWeatherDescription(
+          weather_code
+        )} conditions detected. ${
+          totalRain > 0 ? `Rainfall: ${totalRain.toFixed(1)}mm/hr. ` : ""
+        }Weather monitoring active.`,
         timestamp: "Just now",
         postedAt: new Date().toISOString(),
-        source: "WeatherAPI Live Data",
+        source: "Open-Meteo Weather Data",
         impact:
-          current.precip_mm > 10
+          totalRain > 10
             ? "High flood risk in low-lying areas"
-            : current.precip_mm > 5
+            : totalRain > 5
             ? "Moderate flood risk"
             : "Low flood risk",
-        recommendations: generateRecommendations(current),
+        recommendations: generateRecommendations({
+          precip_mm: totalRain,
+          wind_kph: 0, // Backend doesn't provide wind data
+          weather_code: weather_code,
+        }),
         isBookmarked: false,
-        weather_data: current,
+        weather_data: weatherData,
         isPagasa: false,
       });
 
-      // Add forecast as a news post if significant weather expected
-      if (forecast) {
-        const hourlyData = forecast.hour;
-        const nextHours = hourlyData.slice(
-          new Date().getHours(),
-          new Date().getHours() + 6
-        );
-        const maxRain = Math.max(...nextHours.map((h: any) => h.precip_mm));
-        const avgWind =
-          nextHours.reduce((sum: number, h: any) => sum + h.wind_kph, 0) /
-          nextHours.length;
-
-        if (maxRain > 5 || avgWind > 30) {
-          updates.push({
-            id: `forecast-${Date.now()}`,
-            type: "forecast",
-            title: "📊 Weather Forecast - Next 6 Hours",
-            description: `Expected conditions: Maximum rainfall of ${maxRain.toFixed(
-              1
-            )}mm/hr, average wind speed ${avgWind.toFixed(0)}kph. ${
-              maxRain > 15
-                ? "Heavy rain expected."
-                : maxRain > 8
-                ? "Moderate rain expected."
-                : "Light rain possible."
-            }`,
-            timestamp: "Updated now",
-            postedAt: new Date().toISOString(),
-            source: "WeatherAPI Forecast",
-            impact:
-              maxRain > 15
-                ? "Possible flash flooding in vulnerable areas"
-                : "Minor inconveniences expected",
-            recommendations: [
-              maxRain > 10
-                ? "Delay non-essential travel"
-                : "Allow extra travel time",
-              "Monitor weather updates regularly",
-              "Avoid flood-prone areas",
-              "Keep emergency contacts ready",
-            ],
-            isBookmarked: false,
-            isPagasa: false,
-          });
-        }
-      }
+      // Backend doesn't provide forecast data, so we skip forecast-based updates
 
       // Sort updates by timestamp (newest first - like a news feed)
       updates.sort((a, b) => {

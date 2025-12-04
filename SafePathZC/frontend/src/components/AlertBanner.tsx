@@ -260,10 +260,10 @@ export const AlertBanner = () => {
   // Fetch live weather data and generate alerts
   const fetchWeatherAlerts = async () => {
     try {
+      const BACKEND_URL =
+        import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
       const response = await fetch(
-        `https://api.weatherapi.com/v1/forecast.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(
-          LOCATION
-        )}&days=1&aqi=no&alerts=yes`
+        `${BACKEND_URL}/weather?lat=6.9214&lng=122.0790`
       );
 
       if (!response.ok) {
@@ -275,88 +275,58 @@ export const AlertBanner = () => {
       const data = await response.json();
       const generatedAlerts: WeatherAlert[] = [];
 
-      // Extract weather conditions
-      const current = data.current;
-      const forecast = data.forecast?.forecastday?.[0];
+      // Extract weather conditions from backend format (Open-Meteo)
+      const precipitation = data.precipitation || 0;
+      const rain = data.rain || 0;
+      const weather_code = data.weather_code || 1;
 
       // Store current weather for initial popup
-      setCurrentWeather(`${current.condition.text}, ${current.temp_c}°C`);
+      const weatherCondition =
+        weather_code <= 3
+          ? "Clear/Partly Cloudy"
+          : weather_code <= 48
+          ? "Cloudy/Foggy"
+          : weather_code <= 67
+          ? "Rainy"
+          : "Stormy";
+      setCurrentWeather(`${weatherCondition}, Rain: ${rain.toFixed(1)}mm`);
 
-      // Check for heavy rain (>10mm/hr is heavy, >50mm/hr is extreme)
-      if (current.precip_mm > 10) {
+      // Check for heavy rain (>10mm/hr is heavy, >20mm/hr is extreme)
+      const totalRain = Math.max(precipitation, rain);
+      if (totalRain > 5) {
         const severity =
-          current.precip_mm > 50
-            ? "high"
-            : current.precip_mm > 25
-            ? "moderate"
-            : "low";
+          totalRain > 20 ? "high" : totalRain > 10 ? "moderate" : "low";
         generatedAlerts.push({
           id: 1,
           type: "weather",
           severity: severity,
-          message: `Heavy Rain Alert: ${current.precip_mm.toFixed(
+          message: `Heavy Rain Alert: ${totalRain.toFixed(
             1
-          )}mm/hr rainfall detected - Exercise caution in low-lying areas`,
+          )}mm rainfall detected - Exercise caution in low-lying areas`,
           action: "View Safe Routes",
         });
       }
 
-      // Check for strong winds (>40 kph is strong, >60 kph is very strong)
-      if (current.wind_kph > 40) {
-        const severity = current.wind_kph > 60 ? "high" : "moderate";
-        generatedAlerts.push({
-          id: 2,
-          type: "weather",
-          severity: severity,
-          message: `Strong Wind Warning: ${current.wind_kph.toFixed(
-            0
-          )} kph winds - Use caution on exposed roads`,
-          action: "Check Wind Map",
-        });
-      }
-
       // Check weather condition codes for storms/severe weather
-      // WeatherAPI condition codes: 1087=Thunderstorm, 1273-1282=Thunder conditions
-      if (current.condition.code >= 1087 && current.condition.code <= 1282) {
+      // Open-Meteo weather codes: 95-99 = Thunderstorms
+      if (weather_code >= 95) {
         generatedAlerts.push({
           id: 3,
           type: "weather",
           severity: "high",
-          message: `Storm Alert: ${current.condition.text} - Avoid travel if possible`,
+          message: `Storm Alert: Thunderstorm conditions detected (Code: ${weather_code}) - Avoid travel if possible`,
           action: "View Shelters",
         });
       }
 
-      // Check hourly forecast for incoming heavy rain
-      if (forecast?.hour) {
-        const nextHours = forecast.hour.slice(
-          new Date().getHours(),
-          new Date().getHours() + 3
-        );
-        const maxRainChance = Math.max(
-          ...nextHours.map((h) => h.chance_of_rain)
-        );
-        const maxPrecip = Math.max(...nextHours.map((h) => h.precip_mm));
-
-        if (maxRainChance > 70 && maxPrecip > 5) {
-          generatedAlerts.push({
-            id: 4,
-            type: "weather",
-            severity: "moderate",
-            message: `Rain Expected: ${maxRainChance}% chance of ${maxPrecip.toFixed(
-              1
-            )}mm rain in next 3 hours`,
-            action: "Plan Routes",
-          });
-        }
-      }
+      // Backend doesn't provide forecast data, so we skip forecast-based alerts
 
       // Check for flood risk conditions (heavy recent rain)
-      if (current.precip_mm > 5) {
+      if (totalRain > 5) {
         generatedAlerts.push({
           id: 5,
           type: "flood",
-          severity: current.precip_mm > 20 ? "high" : "moderate",
+          severity: totalRain > 20 ? "high" : "moderate",
           message:
             "Flood Risk: Recent heavy rainfall - Avoid Canelar Road and low-elevation areas (below 5m)",
           action: "View Terrain",

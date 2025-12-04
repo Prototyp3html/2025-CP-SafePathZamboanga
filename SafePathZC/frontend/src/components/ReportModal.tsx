@@ -40,10 +40,10 @@ export const ReportModal = ({
   // Fetch weather data and determine active warnings
   const fetchActiveWarnings = async () => {
     try {
+      const BACKEND_URL =
+        import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
       const response = await fetch(
-        `https://api.weatherapi.com/v1/forecast.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(
-          LOCATION
-        )}&days=1&aqi=no&alerts=yes`
+        `${BACKEND_URL}/weather?lat=6.9214&lng=122.0790`
       );
 
       if (!response.ok) {
@@ -56,22 +56,27 @@ export const ReportModal = ({
       setWeatherData(data);
       const warnings: string[] = [];
 
-      const current = data.current;
+      // Extract backend weather data (Open-Meteo format)
+      const precipitation = data.precipitation || 0;
+      const rain = data.rain || 0;
+      const weather_code = data.weather_code || 1;
+      const totalRain = Math.max(precipitation, rain);
 
       // Check for flooding conditions (heavy rain)
-      if (current.precip_mm > 5) {
+      if (totalRain > 5) {
         warnings.push("flood");
       }
 
-      // Check for weather hazards (storms, heavy rain, strong winds)
-      if (current.condition.code >= 1087 && current.condition.code <= 1282) {
+      // Check for weather hazards (storms, heavy rain)
+      if (weather_code >= 95) {
+        // Thunderstorms
         warnings.push("weather");
-      } else if (current.precip_mm > 10 || current.wind_kph > 40) {
+      } else if (totalRain > 10) {
         warnings.push("weather");
       }
 
       // Check for road damage risk (extreme conditions)
-      if (current.precip_mm > 25 || current.wind_kph > 60) {
+      if (totalRain > 20 || weather_code >= 95) {
         warnings.push("damage");
       }
 

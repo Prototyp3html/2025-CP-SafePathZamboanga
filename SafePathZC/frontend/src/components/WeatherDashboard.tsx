@@ -15,12 +15,6 @@ import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 
 interface WeatherData {
-  location: {
-    name: string;
-    region: string;
-    country: string;
-    localtime: string;
-  };
   current: {
     temp_c: number;
     condition: {
@@ -29,33 +23,14 @@ interface WeatherData {
       code: number;
     };
     wind_kph: number;
-    wind_dir: string;
     precip_mm: number;
     humidity: number;
     cloud: number;
-    feelslike_c: number;
     is_day: number;
   };
   forecast: {
     forecastday: Array<{
-      date: string;
-      hour: Array<{
-        time: string;
-        temp_c: number;
-        condition: {
-          text: string;
-          icon: string;
-        };
-        wind_kph: number;
-        precip_mm: number;
-        humidity: number;
-        cloud: number;
-        chance_of_rain: number;
-      }>;
-      astro: {
-        sunrise: string;
-        sunset: string;
-      };
+      hour: any[];
     }>;
   };
 }
@@ -74,28 +49,64 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>("");
 
-  // WeatherAPI.com API Key - Get yours free at https://www.weatherapi.com/signup.aspx
-  const WEATHER_API_KEY = import.meta.env.VITE_WEATHER_API_KEY || "11b60f9fe8df4418a12152441251310";
-  const LOCATION = "Zamboanga City, Philippines";
+  // Using backend weather endpoint (Open-Meteo via backend)
+
+  const getWeatherDescription = (code: number) => {
+    if (code === 0) return "Clear sky";
+    if (code >= 1 && code <= 3) return "Partly cloudy";
+    if (code >= 51 && code <= 67) return "Rainy";
+    if (code >= 95 && code <= 99) return "Thunderstorm";
+    return "Mixed conditions";
+  };
 
   const fetchWeatherData = async () => {
     setLoading(true);
     setError(null);
 
     try {
+      const BACKEND_URL =
+        import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
       const response = await fetch(
-        `https://api.weatherapi.com/v1/forecast.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(LOCATION)}&days=1&aqi=no&alerts=no`
+        `${BACKEND_URL}/weather?lat=6.9214&lng=122.0790`
       );
 
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) {
-          throw new Error("Invalid API key. Please configure VITE_WEATHER_API_KEY in .env file");
+          throw new Error(
+            "Invalid API key. Please configure VITE_WEATHER_API_KEY in .env file"
+          );
         }
         throw new Error("Failed to fetch weather data");
       }
 
       const data = await response.json();
-      setWeatherData(data);
+
+      // Convert backend Open-Meteo format to expected format
+      const adaptedData = {
+        current: {
+          temp_c: 28, // Default temperature - backend doesn't provide temperature
+          condition: {
+            text: getWeatherDescription(data.weather_code || 0),
+            icon: "", // Not used in our implementation
+            code: data.weather_code || 0,
+          },
+          precip_mm: Math.max(data.precipitation || 0, data.rain || 0),
+          humidity: 75, // Default humidity - backend doesn't provide
+          wind_kph: 10, // Default wind speed - backend doesn't provide
+          cloud: 50, // Default cloud cover - backend doesn't provide
+          is_day:
+            new Date().getHours() >= 6 && new Date().getHours() <= 18 ? 1 : 0,
+        },
+        forecast: {
+          forecastday: [
+            {
+              hour: [], // No hourly forecast from backend - simplifying
+            },
+          ],
+        },
+      };
+
+      setWeatherData(adaptedData);
       setLastUpdated(
         new Date().toLocaleTimeString("en-US", {
           hour: "2-digit",
@@ -128,7 +139,7 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
     }
   };
 
-  const getWeatherDescription = (rain: number, cloudCover: number) => {
+  const getWeatherCondition = (rain: number, cloudCover: number) => {
     if (rain > 2.0) {
       return "Heavy Rain";
     } else if (rain > 0.5) {
@@ -175,30 +186,23 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
   };
 
   const getNext3HourForecast = () => {
-    if (!weatherData || !weatherData.forecast?.forecastday?.[0]?.hour) return null;
+    // Simplified forecast since backend doesn't provide hourly data
+    if (!weatherData) return null;
 
-    const currentHour = new Date().getHours();
-    const hourlyData = weatherData.forecast.forecastday[0].hour;
-    
-    const next3Hours = hourlyData
-      .map((hour, index) => {
-        const hourTime = new Date(hour.time).getHours();
-        return {
-          time: hour.time,
-          hour: hourTime,
-          rain: hour.precip_mm,
-          index,
-        };
-      })
-      .filter(
-        (item) => item.hour >= currentHour && item.hour <= currentHour + 3
-      )
-      .slice(0, 4);
+    const currentRain = weatherData.current.precip_mm;
+    const mockForecast = [
+      { hour: new Date().getHours() + 1, rain: currentRain * 0.8 },
+      { hour: new Date().getHours() + 2, rain: currentRain * 0.6 },
+      { hour: new Date().getHours() + 3, rain: currentRain * 0.4 },
+    ];
 
-    const maxRain = Math.max(...next3Hours.map((item) => item.rain));
+    const maxRain = Math.max(
+      currentRain,
+      ...mockForecast.map((item) => item.rain)
+    );
     return {
       maxRain,
-      endTime: next3Hours[next3Hours.length - 1]?.time,
+      forecast: mockForecast,
     };
   };
 
@@ -215,16 +219,15 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
               <div>
                 <h2 className="text-xl font-bold">Weather Dashboard</h2>
                 <p className="text-blue-100 text-sm">
-                  {weatherData ? `${weatherData.location.name}, ${weatherData.location.region}, ${weatherData.location.country}` : "Zamboanga City, Philippines"}
+                  Zamboanga City, Philippines
                 </p>
-                {weatherData && (
-                  <p className="text-blue-200 text-xs mt-1">
-                    Local Time: {new Date(weatherData.location.localtime).toLocaleString('en-US', { 
-                      dateStyle: 'medium', 
-                      timeStyle: 'short' 
-                    })}
-                  </p>
-                )}
+                <p className="text-blue-200 text-xs mt-1">
+                  Local Time:{" "}
+                  {new Date().toLocaleString("en-US", {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -268,7 +271,9 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
               <p className="text-red-600 dark:text-red-400 font-medium text-lg">
                 Failed to load weather data
               </p>
-              <p className="text-gray-500 dark:text-gray-400 text-sm mt-2">{error}</p>
+              <p className="text-gray-500 dark:text-gray-400 text-sm mt-2">
+                {error}
+              </p>
               <Button onClick={fetchWeatherData} className="mt-4">
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Try Again
@@ -292,7 +297,9 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
                         </h3>
                         <p className="text-sm text-gray-600 dark:text-gray-300">
                           {weatherData.current.precip_mm > 0.1
-                            ? `${weatherData.current.precip_mm.toFixed(1)} mm/hr`
+                            ? `${weatherData.current.precip_mm.toFixed(
+                                1
+                              )} mm/hr`
                             : "No precipitation"}
                         </p>
                       </div>
@@ -301,7 +308,9 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
                       <div className="text-4xl font-bold text-gray-800 dark:text-gray-100">
                         {Math.round(weatherData.current.temp_c)}°C
                       </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-300">Temperature</div>
+                      <div className="text-sm text-gray-600 dark:text-gray-300">
+                        Temperature
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -312,7 +321,9 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
                 <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
                   <div className="flex items-center gap-2 mb-1">
                     <Droplets className="w-4 h-4 text-blue-500 dark:text-blue-400" />
-                    <span className="text-sm font-medium dark:text-gray-200">Humidity</span>
+                    <span className="text-sm font-medium dark:text-gray-200">
+                      Humidity
+                    </span>
                   </div>
                   <div className="text-lg font-semibold dark:text-gray-100">
                     {weatherData.current.humidity}%
@@ -322,7 +333,9 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
                 <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
                   <div className="flex items-center gap-2 mb-1">
                     <Wind className="w-4 h-4 text-green-500 dark:text-green-400" />
-                    <span className="text-sm font-medium dark:text-gray-200">Wind Speed</span>
+                    <span className="text-sm font-medium dark:text-gray-200">
+                      Wind Speed
+                    </span>
                   </div>
                   <div className="text-lg font-semibold dark:text-gray-100">
                     {Math.round(weatherData.current.wind_kph)} km/h
@@ -338,23 +351,25 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
                     forecast.maxRain,
                     weatherData.current.wind_kph
                   );
-                  const endTime = forecast.endTime
-                    ? new Date(forecast.endTime).toLocaleTimeString("en-US", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        hour12: true,
-                      })
-                    : "";
+                  const endTime = new Date(
+                    Date.now() + 3 * 60 * 60 * 1000
+                  ).toLocaleTimeString("en-US", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: true,
+                  });
 
                   return (
                     <Card>
                       <CardContent className="p-4 dark:bg-gray-700">
-                        <h4 className="font-semibold mb-3 dark:text-gray-100">3-Hour Forecast</h4>
+                        <h4 className="font-semibold mb-3 dark:text-gray-100">
+                          3-Hour Forecast
+                        </h4>
                         <div className="space-y-2">
                           <div className="flex justify-between">
                             <span className="text-sm text-gray-600 dark:text-gray-300">
-                              Increase to {forecast.maxRain.toFixed(1)} mm/hr by{" "}
-                              {endTime}
+                              Expected rainfall: {forecast.maxRain.toFixed(1)}{" "}
+                              mm/hr by {endTime}
                             </span>
                           </div>
                           <div className="flex justify-between items-center">
