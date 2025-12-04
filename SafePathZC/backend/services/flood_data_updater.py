@@ -50,6 +50,10 @@ class FloodDataUpdater:
         {'name': 'Pasonanca', 'lat': 6.9380, 'lon': 122.0620, 'risk': 'low'},
     ]
     
+    # Cache for water body geometries
+    _water_bodies_cache = None
+    _water_bodies_cache_time = None
+    
     def __init__(self, cache_dir: str = None):
         self.cache_dir = Path(cache_dir) if cache_dir else Path(__file__).parent.parent / "data" / "cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -95,6 +99,191 @@ class FloodDataUpdater:
         except Exception as e:
             logger.error(f"Failed to fetch OSM data: {e}")
             return {'elements': []}
+    
+    async def fetch_water_bodies(self) -> List[Dict[str, Any]]:
+        """
+        Fetch water bodies (coastlines, rivers, lakes) from OpenStreetMap
+        This provides accurate water proximity data for flood risk calculations
+        """
+        # Check cache first (water bodies don't change frequently)
+        if (self._water_bodies_cache and 
+            self._water_bodies_cache_time and 
+            (datetime.now() - self._water_bodies_cache_time).seconds < 86400):  # 24 hours
+            logger.info("Using cached water body data")
+            return self._water_bodies_cache
+        
+        logger.info("Fetching water bodies from OpenStreetMap...")
+        
+        # Comprehensive water body query for Zamboanga
+        overpass_query = f"""
+        [out:json][timeout:180];
+        (
+          // Natural water bodies
+          way["natural"="water"]
+            ({self.ZAMBOANGA_BOUNDS['min_lat']},{self.ZAMBOANGA_BOUNDS['min_lon']},
+             {self.ZAMBOANGA_BOUNDS['max_lat']},{self.ZAMBOANGA_BOUNDS['max_lon']});
+          relation["natural"="water"]
+            ({self.ZAMBOANGA_BOUNDS['min_lat']},{self.ZAMBOANGA_BOUNDS['min_lon']},
+             {self.ZAMBOANGA_BOUNDS['max_lat']},{self.ZAMBOANGA_BOUNDS['max_lon']});
+          
+          // Waterways (rivers, streams, creeks)
+          way["waterway"~"^(river|stream|creek|drain)$"]
+            ({self.ZAMBOANGA_BOUNDS['min_lat']},{self.ZAMBOANGA_BOUNDS['min_lon']},
+             {self.ZAMBOANGA_BOUNDS['max_lat']},{self.ZAMBOANGA_BOUNDS['max_lon']});
+          
+          // Coastline
+          way["natural"="coastline"]
+            ({self.ZAMBOANGA_BOUNDS['min_lat']},{self.ZAMBOANGA_BOUNDS['min_lon']},
+             {self.ZAMBOANGA_BOUNDS['max_lat']},{self.ZAMBOANGA_BOUNDS['max_lon']});
+        );
+        out geom;
+        """
+        
+        overpass_url = "https://overpass-api.de/api/interpreter"
+        
+        try:
+            async with self.session.post(overpass_url, data={'data': overpass_query}) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    water_bodies = data.get('elements', [])
+                    
+                    # Process and categorize water bodies
+                    processed_water_bodies = []
+                    for element in water_bodies:
+                        if 'geometry' in element:
+                            water_type = self._classify_water_body(element)
+                            processed_water_bodies.append({
+                                'id': element.get('id'),
+                                'type': water_type,
+                                'name': element.get('tags', {}).get('name', f'Unknown {water_type}'),
+                                'geometry': element['geometry'],
+                                'coordinates': [(node['lon'], node['lat']) for node in element['geometry']]
+                            })
+                    
+                    # Cache the results
+                    self._water_bodies_cache = processed_water_bodies
+                    self._water_bodies_cache_time = datetime.now()
+                    
+                    logger.info(f"Fetched {len(processed_water_bodies)} water bodies from OSM:")
+                    for wb_type in ['coastline', 'river', 'water', 'stream']:
+                        count = len([wb for wb in processed_water_bodies if wb['type'] == wb_type])
+                        if count > 0:
+                            logger.info(f"  - {count} {wb_type}(s)")
+                    
+                    return processed_water_bodies
+                else:
+                    logger.error(f"OSM water bodies API error: {response.status}")
+                    return []
+        except Exception as e:
+            logger.error(f"Failed to fetch water bodies: {e}")
+            return []
+    
+    def _classify_water_body(self, element: Dict[str, Any]) -> str:
+        """Classify water body type from OSM tags"""
+        tags = element.get('tags', {})
+        
+        if tags.get('natural') == 'coastline':
+            return 'coastline'
+        elif tags.get('waterway') in ['river', 'stream', 'creek', 'drain']:
+            return tags.get('waterway')
+        elif tags.get('natural') == 'water':
+            water_type = tags.get('water', 'water')
+            return water_type if water_type in ['lake', 'pond', 'reservoir'] else 'water'
+        else:
+            return 'water'
+    
+    def calculate_water_proximity(self, lat: float, lon: float, water_bodies: List[Dict[str, Any]]) -> Dict[str, float]:
+        """
+        Calculate distance to nearest water bodies of different types
+        Returns distances in meters to coastline, rivers, and other water bodies
+        """
+        min_distances = {
+            'coastline': float('inf'),
+            'river': float('inf'),
+            'stream': float('inf'),
+            'water': float('inf'),  # Lakes, ponds, etc.
+            'overall': float('inf')
+        }
+        
+        point_coord = (lon, lat)
+        
+        for water_body in water_bodies:
+            wb_type = water_body['type']
+            coordinates = water_body['coordinates']
+            
+            # Calculate minimum distance to this water body
+            min_dist = self._calculate_min_distance_to_geometry(point_coord, coordinates)
+            
+            # Update minimums
+            if wb_type in min_distances:
+                min_distances[wb_type] = min(min_distances[wb_type], min_dist)
+            min_distances['overall'] = min(min_distances['overall'], min_dist)
+        
+        # Convert inf to -1 for missing water body types
+        for key in min_distances:
+            if min_distances[key] == float('inf'):
+                min_distances[key] = -1
+        
+        return min_distances
+    
+    def _calculate_min_distance_to_geometry(self, point: Tuple[float, float], geometry: List[Tuple[float, float]]) -> float:
+        """Calculate minimum distance from point to a line geometry in meters"""
+        if not geometry:
+            return float('inf')
+        
+        min_distance = float('inf')
+        point_lon, point_lat = point
+        
+        # Check distance to each line segment in the geometry
+        for i in range(len(geometry) - 1):
+            seg_start = geometry[i]
+            seg_end = geometry[i + 1]
+            
+            # Distance to line segment
+            distance = self._distance_point_to_segment(
+                point_lat, point_lon,
+                seg_start[1], seg_start[0],  # lat, lon
+                seg_end[1], seg_end[0]       # lat, lon
+            )
+            min_distance = min(min_distance, distance)
+        
+        return min_distance
+    
+    def _distance_point_to_segment(self, px: float, py: float, x1: float, y1: float, x2: float, y2: float) -> float:
+        """Calculate distance from point to line segment using Haversine formula"""
+        # Vector from start to end of segment
+        dx = x2 - x1
+        dy = y2 - y1
+        
+        if dx != 0 or dy != 0:
+            # Parameter t represents position along line segment (0 = start, 1 = end)
+            t = max(0, min(1, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)))
+            
+            # Find closest point on segment
+            closest_x = x1 + t * dx
+            closest_y = y1 + t * dy
+        else:
+            # Segment is a point
+            closest_x, closest_y = x1, y1
+        
+        # Calculate Haversine distance
+        return self._haversine_distance(px, py, closest_x, closest_y)
+    
+    def _haversine_distance(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        """Calculate distance between two points using Haversine formula (returns meters)"""
+        R = 6371000  # Earth radius in meters
+        
+        lat1_rad = math.radians(lat1)
+        lat2_rad = math.radians(lat2)
+        delta_lat = math.radians(lat2 - lat1)
+        delta_lon = math.radians(lon2 - lon1)
+        
+        a = (math.sin(delta_lat / 2) ** 2 + 
+             math.cos(lat1_rad) * math.cos(lat2_rad) * 
+             math.sin(delta_lon / 2) ** 2)
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        
+        return R * c
     
     async def fetch_elevation_data(self, coordinates: List[Tuple[float, float]]) -> Dict[Tuple[float, float], float]:
         """

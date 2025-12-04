@@ -754,6 +754,40 @@ async def get_weather_data(lat: float, lng: float):
             "weather_code": 1  # Clear sky
         }
 
+# Helper function to get water bodies
+async def get_water_bodies():
+    """Get water bodies from global cache or fetch if needed"""
+    global global_water_bodies_cache, global_flood_data_updater
+    
+    if global_water_bodies_cache:
+        return global_water_bodies_cache
+    
+    # Initialize and fetch if not cached
+    if not global_flood_data_updater:
+        global_flood_data_updater = FloodDataUpdater()
+    
+    async with global_flood_data_updater:
+        water_bodies = await global_flood_data_updater.fetch_water_bodies()
+        global_water_bodies_cache = water_bodies
+        return water_bodies
+
+# Helper function to get water bodies
+async def get_water_bodies():
+    """Get water bodies from global cache or fetch if needed"""
+    global global_water_bodies_cache, global_flood_data_updater
+    
+    if global_water_bodies_cache:
+        return global_water_bodies_cache
+    
+    # Initialize and fetch if not cached
+    if not global_flood_data_updater:
+        global_flood_data_updater = FloodDataUpdater()
+    
+    async with global_flood_data_updater:
+        water_bodies = await global_flood_data_updater.fetch_water_bodies()
+        global_water_bodies_cache = water_bodies
+        return water_bodies
+
 # Risk calculation function
 def calculate_risk_score(elevation: float, slope: float, weather: dict, lat: float, lng: float):
     """Calculate comprehensive risk score for a location"""
@@ -784,18 +818,43 @@ def calculate_risk_score(elevation: float, slope: float, weather: dict, lat: flo
     elif precipitation > 2:
         risk_score += 1.0
     
-    # Coastal proximity (closer to water = higher risk)
+    # Water proximity (closer to water = higher flood risk)
+    # Use accurate water body data if available, fallback to approximation
+    if global_water_bodies_cache and global_flood_data_updater:
+        try:
+            proximity_data = global_flood_data_updater.calculate_water_proximity(lat, lng, global_water_bodies_cache)
+            min_distance = proximity_data.get('overall', -1)
+            
+            if min_distance > 0:  # Valid distance measurement
+                if min_distance < 50:  # Within 50 meters of water
+                    risk_score += 3.0
+                elif min_distance < 200:  # Within 200 meters
+                    risk_score += 2.0
+                elif min_distance < 500:  # Within 500 meters
+                    risk_score += 1.0
+            else:
+                # Fallback to approximation if no water body data
+                risk_score += _apply_approximate_water_proximity(lat, lng)
+        except Exception as e:
+            logger.warning(f"Water proximity calculation failed: {e}")
+            risk_score += _apply_approximate_water_proximity(lat, lng)
+    else:
+        risk_score += _apply_approximate_water_proximity(lat, lng)
+    
+    return min(risk_score, 10.0)  # Cap at 10
+
+def _apply_approximate_water_proximity(lat: float, lng: float) -> float:
+    """Fallback approximate water proximity for Zamboanga"""
     coast_distance = min(
         abs(lat - 6.9),  # Distance from southern coast
         abs(lng - 122.08)  # Distance from western coast
     )
     
     if coast_distance < 0.01:  # Very close to coast
-        risk_score += 2.0
+        return 2.0
     elif coast_distance < 0.02:
-        risk_score += 1.0
-    
-    return min(risk_score, 10.0)  # Cap at 10
+        return 1.0
+    return 0.0
 
 def simplify_route(coordinates: List[List[float]], tolerance: float = 0.00003, waypoints: List[List[float]] = None) -> List[List[float]]:
     """
@@ -2956,6 +3015,10 @@ async def get_routes_summary(db: Session = Depends(get_db)):
 
 # Routing services are initialized via get_routing_service() and get_flood_service()
 
+# Global water bodies cache for accurate proximity calculations
+global_water_bodies_cache = None
+global_flood_data_updater = None
+
 # Background task for auto-updating flood data
 background_tasks_running = False
 
@@ -3062,10 +3125,34 @@ async def startup_event():
     finally:
         db.close()
     
+    # Initialize water bodies for accurate proximity calculations
+    global global_water_bodies_cache, global_flood_data_updater
+    try:
+        global_flood_data_updater = FloodDataUpdater()
+        async with global_flood_data_updater:
+            global_water_bodies_cache = await global_flood_data_updater.fetch_water_bodies()
+            print(f"Water Proximity: Loaded {len(global_water_bodies_cache)} water bodies from OpenStreetMap")
+            
+            # Show breakdown by type
+            types_count = {}
+            for wb in global_water_bodies_cache:
+                wb_type = wb.get('type', 'unknown')
+                types_count[wb_type] = types_count.get(wb_type, 0) + 1
+            
+            if types_count:
+                print("Water Body Types:")
+                for wb_type, count in types_count.items():
+                    print(f"  - {count} {wb_type}(s)")
+            
+    except Exception as e:
+        print(f"Warning: Could not load water bodies: {e}")
+        print("Will use approximate coastal proximity calculations as fallback")
+        global_water_bodies_cache = []
+
     # Start background flood data update scheduler
     background_tasks_running = True
     asyncio.create_task(flood_data_update_loop())
-    logger.info("âœ… Background flood data updater started")
+    logger.info("Background flood data updater started")
 
 @app.on_event("shutdown")
 async def shutdown_event():
