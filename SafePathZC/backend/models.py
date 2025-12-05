@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Float, Boolean, Text, create_engine
+from sqlalchemy import Column, Integer, String, DateTime, Float, Boolean, Text, create_engine, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -171,7 +171,7 @@ class ElevationCache(Base):
     cached_at = Column(DateTime, default=datetime.utcnow, index=True)
     
     # Unique constraint on lat/lon pair
-    __table_args__ = ('UNIQUE (latitude, longitude)',)
+    __table_args__ = (UniqueConstraint('latitude', 'longitude', name='unique_lat_lon'),)
 
 class FloodedRoadsHistory(Base):
     """Track flood status history for roads to calculate flood duration"""
