@@ -192,6 +192,42 @@ class RoadSegment:
             else:  # car, truck
                 hierarchy_penalty = 3.0  # Cars/trucks HEAVILY discouraged from small roads
         
+        # TRAFFIC CONGESTION FACTOR - NEW 4th routing factor
+        traffic_factor = 1.0  # Default: no traffic impact
+        
+        # Get traffic data for this segment (if available)
+        try:
+            from services.traffic_detection import get_traffic_service
+            traffic_service = get_traffic_service()
+            
+            # Check for traffic data near this segment
+            if self.coordinates and len(self.coordinates) > 0:
+                # Use middle coordinate of segment
+                mid_idx = len(self.coordinates) // 2
+                coord = self.coordinates[mid_idx]
+                
+                # Find nearest traffic segment
+                nearest_traffic = traffic_service._find_nearest_traffic_segment(coord.lng, coord.lat)
+                
+                if nearest_traffic:
+                    # Apply traffic penalty based on congestion level
+                    traffic_factor = nearest_traffic.speed_penalty
+                    
+                    # Additional penalties for different risk profiles
+                    if risk_profile == "safe":
+                        # Safe routes avoid heavy traffic (prefer time over distance)
+                        if traffic_factor > 2.0:  # Heavy congestion
+                            traffic_factor *= 1.5  # 1.5x additional penalty
+                    elif risk_profile == "manageable":
+                        # Manageable routes tolerate moderate traffic
+                        if traffic_factor > 2.5:  # Very heavy congestion
+                            traffic_factor *= 1.2  # 1.2x additional penalty
+                    # Flood-prone routes ignore traffic (shortest path priority)
+                    
+        except Exception as e:
+            # Traffic service not available - use default factor
+            pass
+        
         # Transportation mode adjustments
         mode_factors = {
             "car": 1.0,
@@ -200,7 +236,8 @@ class RoadSegment:
         }
         mode_factor = mode_factors.get(transportation_mode, 1.0)
         
-        return base_cost * flood_factor * terrain_factor * mode_factor * hierarchy_penalty
+        # FINAL COST CALCULATION - Now includes traffic as 4th factor
+        return base_cost * flood_factor * terrain_factor * mode_factor * hierarchy_penalty * traffic_factor
     
     def get_speed_limit(self) -> int:
         """Get speed limit with terrain adjustments"""

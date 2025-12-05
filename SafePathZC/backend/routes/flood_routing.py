@@ -374,6 +374,21 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                 # Get terrain data for route
                                 terrain_data = await get_route_terrain_data(coordinates)
                                 
+                                # NEW: Analyze traffic congestion for route
+                                traffic_analysis = {}
+                                try:
+                                    from services.traffic_detection import get_traffic_service
+                                    traffic_service = get_traffic_service()
+                                    traffic_analysis = await traffic_service.get_traffic_for_route(coordinates)
+                                except Exception as e:
+                                    logger.warning(f"Traffic analysis failed: {e}")
+                                    traffic_analysis = {
+                                        "congestion_percentage": 0.0,
+                                        "traffic_level": "free_flow",
+                                        "traffic_penalty": 1.0,
+                                        "confidence_score": 0.0
+                                    }
+                                
                                 # Apply transportation mode adjustments
                                 route_info = {
                                     "geometry": geometry,
@@ -383,7 +398,8 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                     "flooded_distance": flood_analysis["flooded_distance_m"],
                                     "risk_level": flood_analysis["risk_level"],
                                     "weather_impact": flood_analysis.get("weather_impact", "none"),
-                                    "terrain_data": terrain_data
+                                    "terrain_data": terrain_data,
+                                    "traffic_analysis": traffic_analysis
                                 }
                                 
                                 # Adjust for transportation mode
