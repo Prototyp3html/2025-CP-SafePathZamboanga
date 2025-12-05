@@ -322,6 +322,14 @@ class EnhancedSafeRouteResponse(BaseModel):
 # FastAPI app
 app = FastAPI(title="SafePathZC Routes API", version="1.0.0")
 
+# Mount static files for terrain_roads.geojson
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+
+data_dir = Path(__file__).parent / "data"
+if data_dir.exists():
+    app.mount("/data", StaticFiles(directory=str(data_dir)), name="data")
+
 # CORS configuration for deployment
 origins = [
     "https://safepath-zamboanga-city.vercel.app",  # Your actual Vercel URL
