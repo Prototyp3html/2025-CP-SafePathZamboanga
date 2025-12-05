@@ -67,10 +67,13 @@ class FloodDataUpdater:
         if self.session:
             await self.session.close()
     
-    async def fetch_osm_roads(self) -> Dict[str, Any]:
+    async def fetch_osm_roads(self, max_retries: int = 3) -> Dict[str, Any]:
         """
         Fetch latest road network from OpenStreetMap Overpass API
-        Always up-to-date with latest OSM edits
+        With automatic retry logic and exponential backoff for resilience
+        
+        Args:
+            max_retries: Maximum number of retry attempts
         """
         logger.info("Fetching latest roads from OpenStreetMap...")
         
@@ -87,17 +90,82 @@ class FloodDataUpdater:
         
         overpass_url = "https://overpass-api.de/api/interpreter"
         
-        try:
-            async with self.session.post(overpass_url, data={'data': overpass_query}) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    logger.info(f"Fetched {len(data.get('elements', []))} road segments from OSM")
-                    return data
+        # Retry logic with exponential backoff
+        for attempt in range(max_retries):
+            try:
+                async with self.session.post(overpass_url, data={'data': overpass_query}, timeout=aiohttp.ClientTimeout(total=200)) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        logger.info(f"✅ Successfully fetched {len(data.get('elements', []))} road segments from OSM (Attempt {attempt + 1})")
+                        return data
+                    elif response.status == 504:
+                        # Service Unavailable - retry with backoff
+                        logger.warning(f"⚠️ OSM API error 504 (Service Unavailable) - Attempt {attempt + 1}/{max_retries}")
+                        if attempt < max_retries - 1:
+                            wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                            logger.info(f"⏳ Waiting {wait_time} seconds before retry...")
+                            await asyncio.sleep(wait_time)
+                            continue
+                        else:
+                            logger.error("❌ OSM API unavailable after all retry attempts")
+                            return await self._load_cached_osm_data()
+                    else:
+                        logger.error(f"❌ OSM API error: {response.status}")
+                        return {'elements': []}
+            except asyncio.TimeoutError:
+                logger.warning(f"⏱️ OSM API timeout - Attempt {attempt + 1}/{max_retries}")
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.info(f"⏳ Waiting {wait_time} seconds before retry...")
+                    await asyncio.sleep(wait_time)
+                    continue
                 else:
-                    logger.error(f"OSM API error: {response.status}")
-                    return {'elements': []}
+                    logger.error("❌ OSM API timeout after all retry attempts")
+                    return await self._load_cached_osm_data()
+            except Exception as e:
+                logger.error(f"❌ Failed to fetch OSM data (Attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    return await self._load_cached_osm_data()
+        
+        return await self._load_cached_osm_data()
+    
+    async def _load_cached_osm_data(self) -> Dict[str, Any]:
+        """
+        Load cached OSM data as fallback when API is unavailable
+        Uses the last successfully generated GeoJSON file
+        """
+        try:
+            cached_file = Path("/app/data/terrain_roads.geojson")
+            if cached_file.exists():
+                logger.info(f"📂 Loading cached OSM data from {cached_file}")
+                with open(cached_file, 'r') as f:
+                    geojson_data = json.load(f)
+                
+                # Convert GeoJSON features back to OSM format for processing
+                osm_elements = []
+                for feature in geojson_data.get('features', []):
+                    props = feature.get('properties', {})
+                    coords = feature.get('geometry', {}).get('coordinates', [])
+                    
+                    # Convert back to OSM format
+                    osm_element = {
+                        'type': 'way',
+                        'id': props.get('osm_id', ''),
+                        'geometry': [{'lat': coord[1], 'lon': coord[0]} for coord in coords]
+                    }
+                    osm_elements.append(osm_element)
+                
+                logger.info(f"✅ Loaded {len(osm_elements)} cached road segments from previous update")
+                return {'elements': osm_elements}
+            else:
+                logger.warning("⚠️ No cached OSM data available")
+                return {'elements': []}
         except Exception as e:
-            logger.error(f"Failed to fetch OSM data: {e}")
+            logger.error(f"❌ Failed to load cached OSM data: {e}")
             return {'elements': []}
     
     async def fetch_water_bodies(self) -> List[Dict[str, Any]]:
