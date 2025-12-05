@@ -38,8 +38,12 @@ export async function searchZamboCityLocations(
   }
 
   try {
-    // Get the backend API URL from environment or use relative path for Vite proxy
-    const apiUrl = `/api/geocoding/search?q=${encodeURIComponent(query.trim())}&limit=${limit}`;
+    // In production, use VITE_API_URL; in dev, use relative path for Vite proxy
+    const apiBase = import.meta.env.VITE_API_URL 
+      ? import.meta.env.VITE_API_URL 
+      : '';
+    
+    const apiUrl = `${apiBase}/api/geocoding/search?q=${encodeURIComponent(query.trim())}&limit=${limit}`;
 
     console.log(`🌐 Calling API: ${apiUrl}`);
 
@@ -176,7 +180,12 @@ export async function getLocationByCoordinates(
   lng: number
 ): Promise<ZamboCityLocation | null> {
   try {
-    const apiUrl = `/api/geocoding/reverse?lat=${lat}&lon=${lng}`;
+    // In production, use VITE_API_URL; in dev, use relative path for Vite proxy
+    const apiBase = import.meta.env.VITE_API_URL 
+      ? import.meta.env.VITE_API_URL 
+      : '';
+    
+    const apiUrl = `${apiBase}/api/geocoding/reverse?lat=${lat}&lon=${lng}`;
 
     const response = await fetch(apiUrl, {
       headers: {
