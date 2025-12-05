@@ -28,7 +28,7 @@ interface NominatimResult {
   icon?: string;
 }
 
-// Search locations using OpenStreetMap Nominatim API
+// Search locations using backend geocoding API
 export async function searchZamboCityLocations(
   query: string,
   limit: number = 10
@@ -38,14 +38,12 @@ export async function searchZamboCityLocations(
   }
 
   try {
-    const searchQuery = encodeURIComponent(
-      `${query.trim()}, Zamboanga City, Philippines`
-    );
-    const nominatimUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${searchQuery}&limit=${limit}&countrycodes=ph&addressdetails=1&extratags=1`;
+    // Get the backend API URL from environment or use relative path for Vite proxy
+    const apiUrl = `/api/geocoding/search?q=${encodeURIComponent(query.trim())}&limit=${limit}`;
 
-    const response = await fetch(nominatimUrl, {
+    const response = await fetch(apiUrl, {
       headers: {
-        "User-Agent": "SafePathZamboanga/1.0 (https://safepath-zamboanga.com)",
+        "Accept": "application/json",
       },
     });
 
@@ -53,18 +51,17 @@ export async function searchZamboCityLocations(
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    const results: NominatimResult[] = await response.json();
+    const data = await response.json();
+    const results: NominatimResult[] = data.results || [];
 
-    // Filter and format results for Zamboanga City
+    console.log(`📊 API Response for "${query}":`, {
+      total: data.total,
+      resultsCount: results.length,
+      results: results.slice(0, 2), // Log first 2 results for debugging
+    });
+
+    // Format results for Zamboanga City
     const zamboCityResults = results
-      .filter((result) => {
-        const displayName = result.display_name.toLowerCase();
-        return (
-          displayName.includes("zamboanga") ||
-          displayName.includes("zamboanga city") ||
-          displayName.includes("zamboanga del sur")
-        );
-      })
       .map((result) => ({
         name: result.display_name.split(",")[0].toUpperCase(),
         displayName: result.display_name.split(",")[0],
@@ -79,7 +76,16 @@ export async function searchZamboCityLocations(
       }))
       .sort((a, b) => (b.importance || 0) - (a.importance || 0));
 
-    return zamboCityResults;
+    console.log(`✅ Formatted ${zamboCityResults.length} results for query: "${query}"`);
+    
+    // If we got results, return them
+    if (zamboCityResults.length > 0) {
+      return zamboCityResults;
+    }
+
+    // If API returned no results, try fallback locations
+    console.log(`⚠️ No API results found, trying fallback locations for: "${query}"`);
+    return getBasicZamboCityLocations(query, limit);
   } catch (error) {
     console.error("Error searching locations:", error);
 
@@ -149,17 +155,17 @@ function getBasicZamboCityLocations(
     .slice(0, limit);
 }
 
-// Get location details by coordinates (reverse geocoding)
+// Get location details by coordinates (reverse geocoding) using backend API
 export async function getLocationByCoordinates(
   lat: number,
   lng: number
 ): Promise<ZamboCityLocation | null> {
   try {
-    const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`;
+    const apiUrl = `/api/geocoding/reverse?lat=${lat}&lon=${lng}`;
 
-    const response = await fetch(nominatimUrl, {
+    const response = await fetch(apiUrl, {
       headers: {
-        "User-Agent": "SafePathZamboanga/1.0 (https://safepath-zamboanga.com)",
+        "Accept": "application/json",
       },
     });
 
@@ -167,7 +173,8 @@ export async function getLocationByCoordinates(
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    const result: NominatimResult = await response.json();
+    const data = await response.json();
+    const result: NominatimResult = data.result;
 
     return {
       name: result.display_name.split(",")[0].toUpperCase(),
