@@ -168,16 +168,17 @@ class FloodDataUpdater:
             logger.error(f"❌ Failed to load cached OSM data: {e}")
             return {'elements': []}
     
-    async def fetch_water_bodies(self) -> List[Dict[str, Any]]:
+    async def fetch_water_bodies(self, max_retries: int = 3) -> List[Dict[str, Any]]:
         """
         Fetch water bodies (coastlines, rivers, lakes) from OpenStreetMap
+        With automatic retry logic for resilience
         This provides accurate water proximity data for flood risk calculations
         """
         # Check cache first (water bodies don't change frequently)
         if (self._water_bodies_cache and 
             self._water_bodies_cache_time and 
             (datetime.now() - self._water_bodies_cache_time).seconds < 86400):  # 24 hours
-            logger.info("Using cached water body data")
+            logger.info("✅ Using cached water body data")
             return self._water_bodies_cache
         
         logger.info("Fetching water bodies from OpenStreetMap...")
@@ -209,42 +210,74 @@ class FloodDataUpdater:
         
         overpass_url = "https://overpass-api.de/api/interpreter"
         
-        try:
-            async with self.session.post(overpass_url, data={'data': overpass_query}) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    water_bodies = data.get('elements', [])
-                    
-                    # Process and categorize water bodies
-                    processed_water_bodies = []
-                    for element in water_bodies:
-                        if 'geometry' in element:
-                            water_type = self._classify_water_body(element)
-                            processed_water_bodies.append({
-                                'id': element.get('id'),
-                                'type': water_type,
-                                'name': element.get('tags', {}).get('name', f'Unknown {water_type}'),
-                                'geometry': element['geometry'],
-                                'coordinates': [(node['lon'], node['lat']) for node in element['geometry']]
-                            })
-                    
-                    # Cache the results
-                    self._water_bodies_cache = processed_water_bodies
-                    self._water_bodies_cache_time = datetime.now()
-                    
-                    logger.info(f"Fetched {len(processed_water_bodies)} water bodies from OSM:")
-                    for wb_type in ['coastline', 'river', 'water', 'stream']:
-                        count = len([wb for wb in processed_water_bodies if wb['type'] == wb_type])
-                        if count > 0:
-                            logger.info(f"  - {count} {wb_type}(s)")
-                    
-                    return processed_water_bodies
+        # Retry logic with exponential backoff
+        for attempt in range(max_retries):
+            try:
+                async with self.session.post(overpass_url, data={'data': overpass_query}, timeout=aiohttp.ClientTimeout(total=200)) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        water_bodies = data.get('elements', [])
+                        
+                        # Process and categorize water bodies
+                        processed_water_bodies = []
+                        for element in water_bodies:
+                            if 'geometry' in element:
+                                water_type = self._classify_water_body(element)
+                                processed_water_bodies.append({
+                                    'id': element.get('id'),
+                                    'type': water_type,
+                                    'name': element.get('tags', {}).get('name', f'Unknown {water_type}'),
+                                    'geometry': element['geometry'],
+                                    'coordinates': [(node['lon'], node['lat']) for node in element['geometry']]
+                                })
+                        
+                        # Cache the results
+                        self._water_bodies_cache = processed_water_bodies
+                        self._water_bodies_cache_time = datetime.now()
+                        
+                        logger.info(f"✅ Successfully fetched {len(processed_water_bodies)} water bodies from OSM (Attempt {attempt + 1}):")
+                        for wb_type in ['coastline', 'river', 'water', 'stream']:
+                            count = len([wb for wb in processed_water_bodies if wb['type'] == wb_type])
+                            if count > 0:
+                                logger.info(f"  - {count} {wb_type}(s)")
+                        
+                        return processed_water_bodies
+                    elif response.status == 504:
+                        # Service Unavailable - retry with backoff
+                        logger.warning(f"⚠️ OSM water bodies API error 504 (Service Unavailable) - Attempt {attempt + 1}/{max_retries}")
+                        if attempt < max_retries - 1:
+                            wait_time = 2 ** attempt
+                            logger.info(f"⏳ Waiting {wait_time} seconds before retry...")
+                            await asyncio.sleep(wait_time)
+                            continue
+                        else:
+                            logger.error("❌ OSM water bodies API unavailable after all retry attempts - using empty list")
+                            return []
+                    else:
+                        logger.error(f"❌ OSM water bodies API error: {response.status}")
+                        return []
+            except asyncio.TimeoutError:
+                logger.warning(f"⏱️ OSM water bodies API timeout - Attempt {attempt + 1}/{max_retries}")
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.info(f"⏳ Waiting {wait_time} seconds before retry...")
+                    await asyncio.sleep(wait_time)
+                    continue
                 else:
-                    logger.error(f"OSM water bodies API error: {response.status}")
+                    logger.error("❌ OSM water bodies API timeout after all retry attempts - using empty list")
                     return []
-        except Exception as e:
-            logger.error(f"Failed to fetch water bodies: {e}")
-            return []
+            except Exception as e:
+                logger.error(f"❌ Failed to fetch water bodies (Attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    logger.warning("⚠️ Could not fetch water bodies - continuing without water body data")
+                    return []
+        
+        logger.warning("⚠️ Exhausted all retries for water bodies - using empty list")
+        return []
     
     def _classify_water_body(self, element: Dict[str, Any]) -> str:
         """Classify water body type from OSM tags"""
