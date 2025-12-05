@@ -389,7 +389,7 @@ class FloodDataUpdater:
     async def fetch_elevation_data(self, coordinates: List[Tuple[float, float]]) -> Dict[Tuple[float, float], float]:
         """
         Fetch elevation data from Open-Elevation API
-        Free and always available
+        Optimized with larger batches and minimal rate limiting
         """
         if not coordinates:
             return {}
@@ -399,35 +399,45 @@ class FloodDataUpdater:
         # Open-Elevation API (free, no key required)
         url = "https://api.open-elevation.com/api/v1/lookup"
         
-        # Batch coordinates (max 100 per request)
+        # Larger batch size for efficiency (API allows up to 100 per request, but we batch multiple requests)
         batch_size = 100
         elevation_map = {}
+        total_batches = (len(coordinates) + batch_size - 1) // batch_size
         
         for i in range(0, len(coordinates), batch_size):
             batch = coordinates[i:i + batch_size]
+            batch_num = i // batch_size + 1
             locations = [{"latitude": lat, "longitude": lon} for lat, lon in batch]
             
             try:
-                async with self.session.post(url, json={"locations": locations}) as response:
+                async with self.session.post(url, json={"locations": locations}, timeout=aiohttp.ClientTimeout(total=30)) as response:
                     if response.status == 200:
                         data = await response.json()
+                        results = data.get('results', [])
                         for j, result in enumerate(data.get('results', [])):
-                            coord = batch[j]
-                            elevation_map[coord] = result.get('elevation', 0.0)
+                            if j < len(batch):
+                                coord = batch[j]
+                                elevation_map[coord] = result.get('elevation', 0.0)
+                        logger.info(f"✅ Elevation batch {batch_num}/{total_batches} processed ({len(results)} points)")
                     else:
-                        logger.warning(f"Elevation API batch {i//batch_size + 1} failed: {response.status}")
+                        logger.warning(f"⚠️ Elevation API batch {batch_num}/{total_batches} failed: {response.status}")
                         # Default to 0 elevation
                         for coord in batch:
                             elevation_map[coord] = 0.0
                 
-                # Rate limiting 
-                await asyncio.sleep(1)
+                # Minimal rate limiting (100ms instead of 1 second)
+                await asyncio.sleep(0.1)
                 
+            except asyncio.TimeoutError:
+                logger.warning(f"⏱️ Elevation API batch {batch_num}/{total_batches} timeout - using default elevation")
+                for coord in batch:
+                    elevation_map[coord] = 0.0
             except Exception as e:
-                logger.error(f"Elevation fetch error: {e}")
+                logger.error(f"❌ Elevation fetch error (batch {batch_num}/{total_batches}): {e}")
                 for coord in batch:
                     elevation_map[coord] = 0.0
         
+        logger.info(f"✅ Elevation data fetched for {len(elevation_map)} coordinates")
         return elevation_map
     
     async def fetch_weather_data(self) -> Dict[str, Any]:
