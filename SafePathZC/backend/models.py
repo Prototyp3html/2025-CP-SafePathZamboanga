@@ -159,6 +159,43 @@ class PostLike(Base):
     user_id = Column(Integer, nullable=False)  # Foreign key to users.id
     created_at = Column(DateTime, default=datetime.utcnow)
 
+# Flood Data Cache Models
+class ElevationCache(Base):
+    """Cache elevation data from Open-Elevation API to avoid repeated requests"""
+    __tablename__ = "elevation_cache"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    latitude = Column(Float, nullable=False, index=True)
+    longitude = Column(Float, nullable=False, index=True)
+    elevation = Column(Float, nullable=False)
+    cached_at = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    # Unique constraint on lat/lon pair
+    __table_args__ = ('UNIQUE (latitude, longitude)',)
+
+class FloodedRoadsHistory(Base):
+    """Track flood status history for roads to calculate flood duration"""
+    __tablename__ = "flooded_roads_history"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    road_id = Column(String, nullable=False, index=True)  # OSM way ID
+    road_name = Column(String, nullable=True)
+    
+    # Current flood status
+    is_flooded = Column(Boolean, default=False, index=True)
+    flood_level = Column(String, nullable=True)  # low, medium, high
+    
+    # Flood history tracking
+    times_flooded = Column(Integer, default=0)  # How many times has this road been flooded
+    first_flood_time = Column(DateTime, nullable=True)  # When was it first flooded
+    last_flood_start = Column(DateTime, nullable=True)  # When did the latest flood start
+    last_flood_end = Column(DateTime, nullable=True)  # When did the latest flood end
+    current_flood_duration_hours = Column(Float, default=0)  # Current continuous flood duration
+    
+    # Metadata
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 # Database dependency
 def get_db():
     db = SessionLocal()

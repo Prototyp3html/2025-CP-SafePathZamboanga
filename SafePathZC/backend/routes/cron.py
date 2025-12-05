@@ -3,14 +3,16 @@ Scheduled Jobs and Cron Routes for SafePath
 Handles automatic updates like flood data every 6 hours
 """
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Depends
 from datetime import datetime
 import asyncio
 import logging
 import os
 from pathlib import Path
+from sqlalchemy.orm import Session
 
 from services.flood_data_updater import update_flood_data
+from models import get_db
 
 router = APIRouter(prefix="/cron", tags=["cron"])
 
@@ -41,7 +43,7 @@ def verify_cron_secret(x_cron_secret: str = Header(None)) -> bool:
 
 
 @router.post("/flood-data-update")
-async def trigger_flood_data_update(x_cron_secret: str = Header(None)):
+async def trigger_flood_data_update(x_cron_secret: str = Header(None), db: Session = Depends(get_db)):
     """
     Triggered by external cron service (e.g., EasyCron, Railway Cron) every 6 hours
     Updates terrain_roads.geojson with latest flood data
@@ -62,8 +64,8 @@ async def trigger_flood_data_update(x_cron_secret: str = Header(None)):
     logger.info("=" * 70)
     
     try:
-        # Run the flood data updater
-        output_path = await update_flood_data()
+        # Run the flood data updater with database session
+        output_path = await update_flood_data(db_session=db)
         
         if output_path:
             logger.info("✅ Flood data update completed successfully")
@@ -118,7 +120,7 @@ async def cron_health_check():
     }
 
 @router.get("/flood-data-update")
-async def trigger_flood_data_update_get(secret: str = None):
+async def trigger_flood_data_update_get(secret: str = None, db: Session = Depends(get_db)):
     """
     GET version of the cron route for free cron services like EasyCron
     Uses ?secret=YOUR_SECRET instead of headers
@@ -137,8 +139,8 @@ async def trigger_flood_data_update_get(secret: str = None):
     logger.info("=" * 70)
     
     try:
-        # Run the flood data updater
-        output_path = await update_flood_data()
+        # Run the flood data updater with database session
+        output_path = await update_flood_data(db_session=db)
         
         if output_path:
             logger.info("✅ Flood data update completed successfully")

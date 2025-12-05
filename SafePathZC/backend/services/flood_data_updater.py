@@ -2,6 +2,7 @@
 """
 Real-time Flood Data Updater for SafePath Zamboanga
 Fetches live elevation, road, and flood data from multiple APIs
+Uses PostgreSQL for persistent caching of elevation and flood history
 """
 
 import asyncio
@@ -13,9 +14,26 @@ from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass
 import math
+import os
+from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, func
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Database configuration
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./safepath.db")
+db_engine = create_engine(DATABASE_URL)
+
+# Import models (deferred import to avoid circular dependencies)
+def get_db_models():
+    """Import models dynamically to avoid import issues"""
+    try:
+        from models import ElevationCache, FloodedRoadsHistory
+        return ElevationCache, FloodedRoadsHistory
+    except ImportError:
+        logger.warning("Could not import database models - falling back to JSON cache")
+        return None, None
 
 
 @dataclass
@@ -58,12 +76,16 @@ class FloodDataUpdater:
     _flooded_history_cache = None
     _flooded_history_path = None
     
-    def __init__(self, cache_dir: str = None):
+    def __init__(self, cache_dir: str = None, db_session: Optional[Session] = None):
         self.cache_dir = Path(cache_dir) if cache_dir else Path(__file__).parent.parent / "data" / "cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.session: Optional[aiohttp.ClientSession] = None
         
-        # Set up flooded history file path
+        # Database session for caching
+        self.db_session = db_session
+        self.ElevationCache, self.FloodedRoadsHistory = get_db_models()
+        
+        # Set up flooded history file path (fallback if DB unavailable)
         self._flooded_history_path = self.cache_dir / "flooded_history.json"
         
     async def __aenter__(self):
@@ -299,32 +321,52 @@ class FloodDataUpdater:
         Fetch elevation data from Open-Elevation API
         Free and always available
         
-        OPTIMIZATION: Uses elevation cache to avoid refetching
+        OPTIMIZATION: Uses PostgreSQL cache to avoid refetching
         """
         if not coordinates:
             return {}
         
         logger.info(f"Fetching elevation for {len(coordinates)} points...")
         
-        # Load elevation cache if it exists
-        elevation_cache_path = self.cache_dir / "elevation_cache.json"
         elevation_map = {}
+        coordinates_to_fetch = []
         
-        if elevation_cache_path.exists():
+        # Try to load from PostgreSQL cache first
+        if self.db_session and self.ElevationCache:
             try:
-                with open(elevation_cache_path, 'r', encoding='utf-8') as f:
-                    cached = json.load(f)
-                    elevation_map = {
-                        (float(k.split('_')[0]), float(k.split('_')[1])): v 
-                        for k, v in cached.items()
-                    }
-                    logger.info(f"Loaded {len(elevation_map)} elevations from cache")
+                for lat, lon in coordinates:
+                    cached = self.db_session.query(self.ElevationCache).filter(
+                        self.ElevationCache.latitude == lat,
+                        self.ElevationCache.longitude == lon
+                    ).first()
+                    
+                    if cached:
+                        elevation_map[(lat, lon)] = cached.elevation
+                    else:
+                        coordinates_to_fetch.append((lat, lon))
+                
+                logger.info(f"Loaded {len(elevation_map)} elevations from PostgreSQL cache")
             except Exception as e:
-                logger.warning(f"Failed to load elevation cache: {e}")
-                elevation_map = {}
-        
-        # Find coordinates we still need to fetch
-        coordinates_to_fetch = [c for c in coordinates if c not in elevation_map]
+                logger.warning(f"Failed to load elevation cache from DB: {e}")
+                coordinates_to_fetch = coordinates
+        else:
+            # Fallback to JSON cache if DB unavailable
+            logger.info("DB not available, using JSON cache fallback")
+            elevation_cache_path = self.cache_dir / "elevation_cache.json"
+            
+            if elevation_cache_path.exists():
+                try:
+                    with open(elevation_cache_path, 'r', encoding='utf-8') as f:
+                        cached = json.load(f)
+                        elevation_map = {
+                            (float(k.split('_')[0]), float(k.split('_')[1])): v 
+                            for k, v in cached.items()
+                        }
+                        logger.info(f"Loaded {len(elevation_map)} elevations from JSON cache")
+                except Exception as e:
+                    logger.warning(f"Failed to load JSON elevation cache: {e}")
+            
+            coordinates_to_fetch = [c for c in coordinates if c not in elevation_map]
         
         if not coordinates_to_fetch:
             logger.info("All elevation data available in cache!")
@@ -348,14 +390,28 @@ class FloodDataUpdater:
                         data = await response.json()
                         for j, result in enumerate(data.get('results', [])):
                             coord = batch[j]
-                            elevation_map[coord] = result.get('elevation', 0.0)
+                            elevation = result.get('elevation', 0.0)
+                            elevation_map[coord] = elevation
+                            
+                            # Save to PostgreSQL cache
+                            if self.db_session and self.ElevationCache:
+                                try:
+                                    cache_entry = self.ElevationCache(
+                                        latitude=coord[0],
+                                        longitude=coord[1],
+                                        elevation=elevation,
+                                        cached_at=datetime.utcnow()
+                                    )
+                                    self.db_session.add(cache_entry)
+                                except Exception as e:
+                                    logger.debug(f"Could not save elevation to DB: {e}")
+                        
                         logger.info(f"Fetched elevation batch {i//batch_size + 1}/{(len(coordinates_to_fetch)-1)//batch_size + 1}")
                     else:
                         logger.warning(f"Elevation API batch {i//batch_size + 1} failed: {response.status}")
                         for coord in batch:
                             elevation_map[coord] = 0.0
                 
-                # Reduced rate limiting - 0.1 second instead of 1 second
                 await asyncio.sleep(0.1)
                 
             except asyncio.TimeoutError:
@@ -367,17 +423,26 @@ class FloodDataUpdater:
                 for coord in batch:
                     elevation_map[coord] = 0.0
         
-        # Save elevation cache for next run
+        # Save elevation cache to JSON as fallback
         try:
             cache_data = {
                 f"{lat}_{lon}": elev 
                 for (lat, lon), elev in elevation_map.items()
             }
+            elevation_cache_path = self.cache_dir / "elevation_cache.json"
             with open(elevation_cache_path, 'w', encoding='utf-8') as f:
                 json.dump(cache_data, f)
             logger.info(f"Saved elevation cache with {len(elevation_map)} entries")
         except Exception as e:
-            logger.warning(f"Failed to save elevation cache: {e}")
+            logger.warning(f"Failed to save elevation JSON cache: {e}")
+        
+        # Commit database changes
+        if self.db_session:
+            try:
+                self.db_session.commit()
+            except Exception as e:
+                logger.warning(f"Failed to commit elevation cache to DB: {e}")
+                self.db_session.rollback()
         
         return elevation_map
     
@@ -534,30 +599,88 @@ class FloodDataUpdater:
         return min_distance, nearest_risk
     
     def load_flooded_history(self) -> Dict[str, Any]:
-        """Load historical flood data from cache"""
-        if self._flooded_history_cache is not None:
-            return self._flooded_history_cache
+        """Load historical flood data from PostgreSQL, with JSON fallback"""
+        # Try PostgreSQL first
+        if self.db_session and self.FloodedRoadsHistory:
+            try:
+                history = {}
+                rows = self.db_session.query(self.FloodedRoadsHistory).all()
+                for row in rows:
+                    history[row.road_id] = {
+                        'flooded_start_time': row.last_flood_start.isoformat() if row.last_flood_start else None,
+                        'flood_duration_hours': row.current_flood_duration_hours,
+                        'times_flooded': row.times_flooded,
+                        'last_update': row.updated_at.isoformat(),
+                        'last_flooded_hours_ago': (
+                            (datetime.utcnow() - row.last_flood_end).total_seconds() / 3600 
+                            if row.last_flood_end else 0
+                        )
+                    }
+                logger.info(f"Loaded flooded history from PostgreSQL: {len(history)} roads")
+                return history
+            except Exception as e:
+                logger.warning(f"Failed to load flooded history from DB: {e}")
         
+        # Fallback to JSON cache
         if self._flooded_history_path.exists():
             try:
                 with open(self._flooded_history_path, 'r', encoding='utf-8') as f:
-                    self._flooded_history_cache = json.load(f)
-                    logger.info(f"Loaded flooded history with {len(self._flooded_history_cache)} roads")
-                    return self._flooded_history_cache
+                    history = json.load(f)
+                    logger.info(f"Loaded flooded history from JSON: {len(history)} roads")
+                    return history
             except Exception as e:
-                logger.warning(f"Failed to load flooded history: {e}")
-                return {}
+                logger.warning(f"Failed to load flooded history from JSON: {e}")
+        
         return {}
     
     def save_flooded_history(self, history: Dict[str, Any]) -> None:
-        """Save historical flood data to cache"""
+        """Save historical flood data to PostgreSQL and JSON"""
+        # Save to PostgreSQL
+        if self.db_session and self.FloodedRoadsHistory:
+            try:
+                for road_id, data in history.items():
+                    # Check if record exists
+                    existing = self.db_session.query(self.FloodedRoadsHistory).filter(
+                        self.FloodedRoadsHistory.road_id == road_id
+                    ).first()
+                    
+                    last_flood_start = None
+                    if data.get('flooded_start_time'):
+                        try:
+                            last_flood_start = datetime.fromisoformat(data['flooded_start_time'])
+                        except:
+                            pass
+                    
+                    if existing:
+                        existing.is_flooded = data.get('flooded_start_time') is not None
+                        existing.current_flood_duration_hours = data.get('flood_duration_hours', 0)
+                        existing.times_flooded = data.get('times_flooded', 0)
+                        existing.last_flood_start = last_flood_start
+                        existing.updated_at = datetime.utcnow()
+                    else:
+                        new_record = self.FloodedRoadsHistory(
+                            road_id=road_id,
+                            is_flooded=data.get('flooded_start_time') is not None,
+                            current_flood_duration_hours=data.get('flood_duration_hours', 0),
+                            times_flooded=data.get('times_flooded', 0),
+                            last_flood_start=last_flood_start,
+                            updated_at=datetime.utcnow()
+                        )
+                        self.db_session.add(new_record)
+                
+                self.db_session.commit()
+                logger.info(f"Saved flooded history to PostgreSQL: {len(history)} roads")
+            except Exception as e:
+                logger.warning(f"Failed to save flooded history to DB: {e}")
+                self.db_session.rollback()
+        
+        # Also save to JSON as fallback
         try:
             with open(self._flooded_history_path, 'w', encoding='utf-8') as f:
                 json.dump(history, f, indent=2)
-            self._flooded_history_cache = history
-            logger.info(f"Saved flooded history for {len(history)} roads")
+            logger.info(f"Saved flooded history to JSON: {len(history)} roads")
         except Exception as e:
-            logger.error(f"Failed to save flooded history: {e}")
+            logger.warning(f"Failed to save flooded history to JSON: {e}")
     
     def calculate_flood_duration_hours(self, road_id: str, currently_flooded: bool, 
                                        flooded_history: Dict[str, Any]) -> Dict[str, Any]:
@@ -840,16 +963,35 @@ class FloodDataUpdater:
         return str(output_path)
 
 
-async def update_flood_data(manual_rainfall_mm: float = None):
+async def update_flood_data(manual_rainfall_mm: float = None, db_session: Optional[Session] = None):
     """
     Main function to update flood analysis data
     
     Args:
         manual_rainfall_mm: Optional manual rainfall value in mm to override API data
+        db_session: Optional SQLAlchemy session for database operations
     """
-    async with FloodDataUpdater() as updater:
-        output_path = await updater.generate_updated_terrain_geojson(manual_rainfall_mm=manual_rainfall_mm)
-        return output_path
+    # Create database session if not provided
+    if not db_session:
+        try:
+            from sqlalchemy.orm import sessionmaker
+            SessionLocal = sessionmaker(bind=db_engine)
+            db_session = SessionLocal()
+            should_close_session = True
+        except Exception as e:
+            logger.warning(f"Could not create database session: {e}")
+            db_session = None
+            should_close_session = False
+    else:
+        should_close_session = False
+    
+    try:
+        async with FloodDataUpdater(db_session=db_session) as updater:
+            output_path = await updater.generate_updated_terrain_geojson(manual_rainfall_mm=manual_rainfall_mm)
+            return output_path
+    finally:
+        if should_close_session and db_session:
+            db_session.close()
 
 
 if __name__ == "__main__":
@@ -860,14 +1002,14 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         try:
             manual_rainfall = float(sys.argv[1])
-            print(f"\n💧 Using manual rainfall override: {manual_rainfall}mm")
+            print(f"\n[RAIN] Using manual rainfall override: {manual_rainfall}mm")
         except ValueError:
-            print(f"❌ Invalid rainfall value: {sys.argv[1]}")
+            print(f"[ERROR] Invalid rainfall value: {sys.argv[1]}")
             print("Usage: python flood_data_updater.py [rainfall_mm]")
             print("Example: python flood_data_updater.py 25")
             sys.exit(1)
     
     # Run the updater
     output = asyncio.run(update_flood_data(manual_rainfall_mm=manual_rainfall))
-    print(f"\n✅ Flood data updated successfully!")
-    print(f"📁 File: {output}")
+    print(f"\n[SUCCESS] Flood data updated successfully!")
+    print(f"[FILE] {output}")
