@@ -41,6 +41,8 @@ export async function searchZamboCityLocations(
     // Get the backend API URL from environment or use relative path for Vite proxy
     const apiUrl = `/api/geocoding/search?q=${encodeURIComponent(query.trim())}&limit=${limit}`;
 
+    console.log(`🌐 Calling API: ${apiUrl}`);
+
     const response = await fetch(apiUrl, {
       headers: {
         "Accept": "application/json",
@@ -48,10 +50,23 @@ export async function searchZamboCityLocations(
     });
 
     if (!response.ok) {
+      console.error(`❌ API returned status ${response.status}`);
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    const data = await response.json();
+    // Get response as text first to debug JSON parse errors
+    const responseText = await response.text();
+    console.log(`📄 Raw response (first 200 chars): ${responseText.substring(0, 200)}`);
+
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error(`❌ JSON parse error: ${parseError}`);
+      console.error(`Response was: ${responseText.substring(0, 500)}`);
+      return getBasicZamboCityLocations(query, limit);
+    }
+
     const results: NominatimResult[] = data.results || [];
 
     console.log(`📊 API Response for "${query}":`, {
