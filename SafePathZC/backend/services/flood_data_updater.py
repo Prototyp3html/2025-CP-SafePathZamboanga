@@ -719,14 +719,14 @@ class FloodDataUpdater:
             road_history['flooded_start_time'] = now.isoformat()
             road_history['times_flooded'] = road_history.get('times_flooded', 0) + 1
             current_duration = 0
-            logger.info(f"🚨 Road {road_id} STARTED FLOODING at {now.strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.debug(f"🚨 Road {road_id} STARTED FLOODING at {now.strftime('%Y-%m-%d %H:%M:%S')}")
         
         # Road stopped flooding
         if not currently_flooded and road_history['flooded_start_time'] is not None:
             total_duration = (now - datetime.fromisoformat(road_history['flooded_start_time'])).total_seconds() / 3600
             road_history['flood_duration_hours'] = round(total_duration, 2)
             road_history['flooded_start_time'] = None
-            logger.info(f"✅ Road {road_id} STOPPED FLOODING after {total_duration:.1f} hours")
+            logger.debug(f"✅ Road {road_id} STOPPED FLOODING after {total_duration:.1f} hours")
             current_duration = 0
         
         # Road still flooded
@@ -904,6 +904,10 @@ class FloodDataUpdater:
         # Step 6: Save flood history for next run
         self.save_flooded_history(flooded_history)
         
+        # Count flood state changes (start/stop events)
+        roads_started_flooding = sum(1 for road in features if road['properties']['flooded'] == "1" and road['properties']['flood_start_time'] is not None)
+        roads_stopped_flooding = sum(1 for road in features if road['properties']['flooded'] == "0" and road['properties'].get('flood_duration_hours', 0) > 0)
+        
         # Step 7: Create GeoJSON with flood statistics
         flooded_roads = [f for f in features if f['properties']['flooded'] == "1"]
         longest_flooded = max(flooded_roads, key=lambda x: x['properties']['flood_duration_hours']) if flooded_roads else None
@@ -954,6 +958,10 @@ class FloodDataUpdater:
         logger.info(f"📍 Location: {output_path}")
         logger.info(f"🛣️  Total roads: {len(features)}")
         logger.info(f"🌊 Flooded roads: {len(flooded_roads)} ({geojson['metadata']['flooded_roads_percentage']}%)")
+        if roads_started_flooding > 0:
+            logger.info(f"🚨 Roads STARTED FLOODING: {roads_started_flooding}")
+        if roads_stopped_flooding > 0:
+            logger.info(f"✅ Roads STOPPED FLOODING: {roads_stopped_flooding}")
         logger.info(f"🌧️  Current rainfall: {current_rainfall}mm")
         logger.info(f"⏰ Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         if longest_flooded:
