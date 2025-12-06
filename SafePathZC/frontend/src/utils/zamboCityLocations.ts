@@ -28,7 +28,29 @@ interface NominatimResult {
   icon?: string;
 }
 
-// Search locations using backend geocoding API
+// Overpass API response interface for places
+interface OverpassElement {
+  type: string;
+  id: number;
+  lat?: number;
+  lon?: number;
+  center?: { lat: number; lon: number };
+  tags?: {
+    name?: string;
+    amenity?: string;
+    shop?: string;
+    tourism?: string;
+    leisure?: string;
+    historic?: string;
+    [key: string]: string | undefined;
+  };
+}
+
+interface OverpassResponse {
+  elements: OverpassElement[];
+}
+
+// Search locations using both Nominatim and Overpass APIs
 export async function searchZamboCityLocations(
   query: string,
   limit: number = 10
@@ -38,46 +60,87 @@ export async function searchZamboCityLocations(
   }
 
   try {
-    // In production, use VITE_API_URL; in dev, use relative path for Vite proxy
-    const apiBase = import.meta.env.VITE_API_URL 
-      ? import.meta.env.VITE_API_URL 
-      : '';
-    
-    const apiUrl = `${apiBase}/api/geocoding/search?q=${encodeURIComponent(query.trim())}&limit=${limit}`;
+    // Run both Nominatim and Overpass searches in parallel
+    const [nominatimResults, overpassResults] = await Promise.all([
+      searchNominatim(query, limit),
+      searchOverpassAPI(query, limit),
+    ]);
 
-    console.log(`🌐 Calling API: ${apiUrl}`);
+    // Combine results: prioritize Nominatim, then add Overpass results
+    const combinedResults = [
+      ...nominatimResults,
+      ...overpassResults.filter(
+        (overpassResult) =>
+          !nominatimResults.some(
+            (nomResult) =>
+              nomResult.lat === overpassResult.lat &&
+              nomResult.lng === overpassResult.lng
+          )
+      ),
+    ].slice(0, limit);
+
+    console.log(
+      `✅ Combined search results: ${nominatimResults.length} from Nominatim + ${overpassResults.length} from Overpass`
+    );
+
+    if (combinedResults.length > 0) {
+      return combinedResults;
+    }
+
+    // Fallback to basic locations if both APIs fail
+    console.log(`⚠️ No results from APIs, trying fallback locations for: "${query}"`);
+    return getBasicZamboCityLocations(query, limit);
+  } catch (error) {
+    console.error("Error searching locations:", error);
+    return getBasicZamboCityLocations(query, limit);
+  }
+}
+
+// Search using Nominatim API
+async function searchNominatim(
+  query: string,
+  limit: number
+): Promise<ZamboCityLocation[]> {
+  try {
+    const apiBase = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL : "";
+    const apiUrl = `${apiBase}/api/geocoding/search?q=${encodeURIComponent(
+      query.trim()
+    )}&limit=${limit}`;
+
+    console.log(`🌐 Nominatim search: ${apiUrl}`);
 
     const response = await fetch(apiUrl, {
       headers: {
-        "Accept": "application/json",
+        Accept: "application/json",
       },
     });
 
     if (!response.ok) {
-      console.error(`❌ API returned status ${response.status}`);
-      throw new Error(`HTTP error! status: ${response.status}`);
+      console.error(`❌ Nominatim API returned status ${response.status}`);
+      return [];
     }
 
-    // Get response as text first to debug JSON parse errors
     const responseText = await response.text();
-    console.log(`📄 Raw response (first 200 chars): ${responseText.substring(0, 200)}`);
+    console.log(
+      `📄 Nominatim response (first 200 chars): ${responseText.substring(
+        0,
+        200
+      )}`
+    );
 
     let data;
     try {
       data = JSON.parse(responseText);
     } catch (parseError) {
-      console.error(`❌ JSON parse error: ${parseError}`);
-      console.error(`Response was: ${responseText.substring(0, 500)}`);
-      return getBasicZamboCityLocations(query, limit);
+      console.error(`❌ Nominatim JSON parse error: ${parseError}`);
+      return [];
     }
 
     const results: NominatimResult[] = data.results || [];
 
-    console.log(`📊 API Response for "${query}":`, {
-      total: data.total,
-      resultsCount: results.length,
-      results: results.slice(0, 2), // Log first 2 results for debugging
-    });
+    console.log(
+      `📊 Nominatim Response for "${query}": ${results.length} results`
+    );
 
     // Format results for Zamboanga City
     const zamboCityResults = results
@@ -95,22 +158,154 @@ export async function searchZamboCityLocations(
       }))
       .sort((a, b) => (b.importance || 0) - (a.importance || 0));
 
-    console.log(`✅ Formatted ${zamboCityResults.length} results for query: "${query}"`);
-    
-    // If we got results, return them
-    if (zamboCityResults.length > 0) {
-      return zamboCityResults;
-    }
-
-    // If API returned no results, try fallback locations
-    console.log(`⚠️ No API results found, trying fallback locations for: "${query}"`);
-    return getBasicZamboCityLocations(query, limit);
+    return zamboCityResults;
   } catch (error) {
-    console.error("Error searching locations:", error);
-
-    // Fallback to basic locations if API fails
-    return getBasicZamboCityLocations(query, limit);
+    console.error("Error searching Nominatim:", error);
+    return [];
   }
+}
+
+// Search using Overpass API for specific place types
+async function searchOverpassAPI(
+  query: string,
+  limit: number
+): Promise<ZamboCityLocation[]> {
+  try {
+    // Zamboanga City bounding box (south, west, north, east)
+    const south = 6.85;
+    const west = 121.95;
+    const north = 7.15;
+    const east = 122.30;
+
+    const searchTerm = query.trim();
+
+    // Build exact tag match query (this works reliably)
+    const exactTagQuery = `[out:json];
+(
+  node["amenity"="${searchTerm}"](${south},${west},${north},${east});
+  node["shop"="${searchTerm}"](${south},${west},${north},${east});
+  node["tourism"="${searchTerm}"](${south},${west},${north},${east});
+  node["leisure"="${searchTerm}"](${south},${west},${north},${east});
+  way["amenity"="${searchTerm}"](${south},${west},${north},${east});
+  way["shop"="${searchTerm}"](${south},${west},${north},${east});
+);
+out body center;`;
+
+    console.log(`🌐 Overpass API search for: "${searchTerm}"`);
+
+    try {
+      // Try exact tag match first
+      const exactResponse = await fetch("https://overpass-api.de/api/interpreter", {
+        method: "POST",
+        body: exactTagQuery,
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+        },
+      });
+
+      let results: ZamboCityLocation[] = [];
+
+      if (exactResponse.ok) {
+        const exactData: OverpassResponse = await exactResponse.json();
+        results = convertOverpassElements(exactData.elements || []);
+        console.log(
+          `📊 Overpass exact tag match for "${searchTerm}": ${results.length} elements`
+        );
+      }
+
+      // If exact match returned few results, try searching by name using wildcard
+      if (results.length < limit) {
+        try {
+          // Use wildcard search instead of regex to avoid 400 errors
+          const nameSearchQuery = `[out:json];
+(
+  node["name"](${south},${west},${north},${east});
+  way["name"](${south},${west},${north},${east});
+);
+out body center;`;
+
+          const nameResponse = await fetch("https://overpass-api.de/api/interpreter", {
+            method: "POST",
+            body: nameSearchQuery,
+            headers: {
+              "Content-Type": "text/plain; charset=utf-8",
+            },
+          });
+
+          if (nameResponse.ok) {
+            const nameData: OverpassResponse = await nameResponse.json();
+            const allNamedElements = nameData.elements || [];
+            
+            // Filter client-side for name matches
+            const nameResults = allNamedElements
+              .filter(el => {
+                const name = el.tags?.name || "";
+                return name.toLowerCase().includes(searchTerm.toLowerCase());
+              })
+              .slice(0, limit - results.length);
+            
+            const convertedResults = convertOverpassElements(nameResults);
+            
+            // Combine results, avoiding duplicates
+            const resultMap = new Map(results.map(r => [`${r.lat},${r.lng}`, r]));
+            convertedResults.forEach(r => {
+              const key = `${r.lat},${r.lng}`;
+              if (!resultMap.has(key)) {
+                resultMap.set(key, r);
+              }
+            });
+            
+            results = Array.from(resultMap.values());
+            console.log(
+              `📊 Overpass name search for "${searchTerm}": ${convertedResults.length} additional elements`
+            );
+          }
+        } catch (nameError) {
+          console.debug("Name-based search failed, continuing with tag match results");
+        }
+      }
+
+      return results.slice(0, limit);
+    } catch (error) {
+      console.error("Error searching Overpass API:", error);
+      return [];
+    }
+  } catch (error) {
+    console.error("Error in searchOverpassAPI:", error);
+    return [];
+  }
+}
+
+// Helper function to convert Overpass elements to ZamboCityLocation
+function convertOverpassElements(elements: OverpassElement[]): ZamboCityLocation[] {
+  return elements
+    .filter((element) => {
+      const tags = element.tags || {};
+      return tags.name; // Only include elements with names
+    })
+    .map((element) => {
+      const tags = element.tags || {};
+      const lat = element.lat || element.center?.lat || 0;
+      const lon = element.lon || element.center?.lon || 0;
+
+      // Determine type from tags
+      let type = element.type;
+      if (tags.amenity) type = tags.amenity;
+      else if (tags.shop) type = tags.shop;
+      else if (tags.tourism) type = tags.tourism;
+      else if (tags.leisure) type = tags.leisure;
+      else if (tags.historic) type = tags.historic;
+
+      return {
+        name: (tags.name || "Unknown Place").toUpperCase(),
+        displayName: tags.name || "Unknown Place",
+        lat,
+        lng: lon,
+        type,
+        osm_type: element.type,
+        osm_id: element.id.toString(),
+      };
+    });
 }
 
 // Basic fallback locations for when OpenStreetMap is unavailable
