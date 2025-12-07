@@ -110,12 +110,11 @@ export const ReportModal = ({
       getStatus: () => {
         if (!weatherData) return { enabled: true, reason: "Checking..." };
         const isActive = activeWarnings.includes("flood");
+        const totalRain = Math.max(weatherData.precipitation || 0, weatherData.rain || 0);
         return {
           enabled: isActive,
           reason: isActive
-            ? `Active: ${weatherData.current.precip_mm.toFixed(
-                1
-              )}mm rainfall detected`
+            ? `Active: ${totalRain.toFixed(1)}mm rainfall detected`
             : "No flooding risk detected currently",
         };
       },
@@ -146,13 +145,16 @@ export const ReportModal = ({
       getStatus: () => {
         if (!weatherData) return { enabled: true, reason: "Checking..." };
         const isActive = activeWarnings.includes("weather");
-        const current = weatherData.current;
+        const totalRain = Math.max(weatherData.precipitation || 0, weatherData.rain || 0);
+        const weather_code = weatherData.weather_code || 0;
         return {
           enabled: isActive,
           reason: isActive
-            ? current.precip_mm > 10
-              ? `Active: Heavy rain ${current.precip_mm.toFixed(1)}mm`
-              : `Active: Strong winds ${current.wind_kph.toFixed(0)}kph`
+            ? totalRain > 10
+              ? `Active: Heavy rain ${totalRain.toFixed(1)}mm`
+              : weather_code >= 95
+              ? `Active: Thunderstorm detected`
+              : `Active: Weather hazard detected`
             : "No weather hazards detected",
         };
       },
