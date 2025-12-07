@@ -167,11 +167,11 @@ export const RouteModal = ({
   };
 
   // Check if dark mode is active
-  const isDarkMode = document.documentElement.classList.contains('dark');
-  const bgColor = isDarkMode ? '#1f2937' : 'white'; // gray-800 or white
-  const textColor = isDarkMode ? '#f3f4f6' : '#333'; // gray-100 or dark gray
-  const borderColor = isDarkMode ? '#374151' : '#e5e7eb'; // gray-700 or gray-200
-  const labelColor = isDarkMode ? '#d1d5db' : '#333'; // gray-300 or dark
+  const isDarkMode = document.documentElement.classList.contains("dark");
+  const bgColor = isDarkMode ? "#1f2937" : "white"; // gray-800 or white
+  const textColor = isDarkMode ? "#f3f4f6" : "#333"; // gray-100 or dark gray
+  const borderColor = isDarkMode ? "#374151" : "#e5e7eb"; // gray-700 or gray-200
+  const labelColor = isDarkMode ? "#d1d5db" : "#333"; // gray-300 or dark
 
   return (
     <div
@@ -204,7 +204,7 @@ export const RouteModal = ({
         {/* Header */}
         <div
           style={{
-            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+            background: "#003087",
             color: "white",
             padding: "20px",
             position: "relative",
@@ -258,7 +258,7 @@ export const RouteModal = ({
         >
           {/* From Input */}
           <div style={{ marginBottom: "20px", position: "relative" }}>
-              <label
+            <label
               style={{
                 display: "block",
                 marginBottom: "8px",
@@ -311,7 +311,7 @@ export const RouteModal = ({
                   right: "8px",
                   top: "50%",
                   transform: "translateY(-50%)",
-                  background: "#667eea",
+                  background: "#003087",
                   border: "none",
                   color: "white",
                   padding: "6px 8px",
@@ -768,7 +768,7 @@ export const RouteModal = ({
               background:
                 !selectedStartLocation || !selectedEndLocation
                   ? "#d1d5db"
-                  : "#667eea",
+                  : "#003087",
               color: "white",
               border: "none",
               borderRadius: "8px",
