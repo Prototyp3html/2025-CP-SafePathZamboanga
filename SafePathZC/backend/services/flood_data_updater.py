@@ -516,15 +516,21 @@ class FloodDataUpdater:
         """
         flood_score = 0
         
+        # FILTER: Reject unrealistic elevation values (<=0 indicates bad API data)
+        # Only use elevation data that is realistic (>1m above sea level)
+        is_valid_elevation = elevation > 1.0
+        
         # Low elevation = VERY high flood risk (critical factor in Zamboanga)
-        if elevation < 3:
-            flood_score += 60  # Increased: sea level areas are extremely dangerous
-        elif elevation < 5:
-            flood_score += 50
-        elif elevation < 10:
-            flood_score += 30
-        elif elevation < 20:
-            flood_score += 10
+        # BUT ONLY if elevation data is valid/realistic
+        if is_valid_elevation:
+            if elevation < 3:
+                flood_score += 60  # Increased: sea level areas are extremely dangerous
+            elif elevation < 5:
+                flood_score += 50
+            elif elevation < 10:
+                flood_score += 30
+            elif elevation < 20:
+                flood_score += 10
         
         # Heavy rainfall = VERY high flood risk (primary flood cause)
         # Zamboanga gets monsoon rains, so more sensitive detection
@@ -548,15 +554,17 @@ class FloodDataUpdater:
             flood_score += 8  # Increased from 5
         
         # Determine flood level with adjusted thresholds
-        if flood_score >= 80:  # Lowered from 100+ range
+        # IMPORTANT: Only mark as flooded if there's actual rainfall or extreme proximity to water
+        if flood_score >= 80:  # High risk requires significant rainfall OR very close to water
             flood_level = "high"
             flooded = True
-        elif flood_score >= 50:  # Lowered from 70
+        elif flood_score >= 50:  # Medium risk
             flood_level = "medium"
-            flooded = True
-        elif flood_score >= 25:  # Lowered from 40
+            # Only flood if there's actual rainfall or EXTREME water proximity
+            flooded = (rainfall_mm > 2) or (distance_to_water < 50)
+        elif flood_score >= 25:  # Low risk
             flood_level = "low"
-            flooded = False
+            flooded = False  # Don't mark as flooded
         else:
             flood_level = "none"
             flooded = False
