@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from collections import defaultdict
 import logging
-from route_logger import get_route_logger, RoutingPhase
+from services.route_logger import get_route_logger, RoutingPhase
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
