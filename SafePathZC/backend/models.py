@@ -196,6 +196,19 @@ class FloodedRoadsHistory(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class TerrainRoadsCache(Base):
+    __tablename__ = "terrain_roads_cache"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    geojson_data = Column(Text, nullable=False)  # Full GeoJSON as JSON string
+    metadata = Column(Text, nullable=True)  # Metadata as JSON (flooded count, etc)
+    generated_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    __table_args__ = (
+        UniqueConstraint('id', name='unique_terrain_cache'),
+    )
+
 # Database dependency
 def get_db():
     db = SessionLocal()

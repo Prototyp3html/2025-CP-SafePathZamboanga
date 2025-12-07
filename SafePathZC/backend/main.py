@@ -1627,6 +1627,39 @@ async def get_weather_bulletin():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Bulletin service error: {str(e)}")
 
+@app.get("/data/terrain_roads.geojson", tags=["data"])
+async def get_terrain_roads_geojson(db: Session = Depends(get_db)):
+    """
+    Serve terrain_roads.geojson from PostgreSQL cache
+    This ensures data persists across Railway deployments
+    Falls back to filesystem if database cache is empty
+    """
+    try:
+        from models import TerrainRoadsCache
+        
+        # Try to get from database first
+        cache_entry = db.query(TerrainRoadsCache).order_by(TerrainRoadsCache.generated_at.desc()).first()
+        
+        if cache_entry:
+            logger.info(f"Serving terrain_roads.geojson from PostgreSQL (generated: {cache_entry.generated_at})")
+            geojson_data = json.loads(cache_entry.geojson_data)
+            return geojson_data
+        else:
+            logger.info("No GeoJSON in PostgreSQL cache, trying filesystem...")
+            # Fallback to filesystem
+            data_dir = Path(__file__).parent / "data"
+            geojson_path = data_dir / "terrain_roads.geojson"
+            
+            if geojson_path.exists():
+                with open(geojson_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            else:
+                raise HTTPException(status_code=404, detail="Terrain roads data not available")
+    
+    except Exception as e:
+        logger.error(f"Error serving terrain roads: {e}")
+        raise HTTPException(status_code=500, detail=f"Error serving terrain roads: {str(e)}")
+
 @app.post("/safe-route-filter")
 async def filter_safe_route(request: dict):
     """Enhanced safe route filtering with comprehensive risk analysis and error handling"""

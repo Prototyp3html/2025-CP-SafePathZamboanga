@@ -983,6 +983,32 @@ class FloodDataUpdater:
             logger.info(f"⚠️  LONGEST FLOODED: {longest_flooded['properties']['name']} for {longest_flooded['properties']['flood_duration_hours']} hours")
         logger.info("=" * 60)
         
+        # Step 9: Save GeoJSON to PostgreSQL as well (for persistence across restarts)
+        if self.db_session:
+            try:
+                TerrainRoadsCache = None
+                try:
+                    from models import TerrainRoadsCache
+                except ImportError:
+                    logger.warning("Could not import TerrainRoadsCache model")
+                
+                if TerrainRoadsCache:
+                    # Delete old cache entries
+                    self.db_session.query(TerrainRoadsCache).delete()
+                    
+                    # Save new GeoJSON
+                    cache_entry = TerrainRoadsCache(
+                        geojson_data=json.dumps(geojson),
+                        metadata=json.dumps(geojson.get('metadata', {})),
+                        generated_at=datetime.utcnow()
+                    )
+                    self.db_session.add(cache_entry)
+                    self.db_session.commit()
+                    logger.info("✅ Saved GeoJSON to PostgreSQL")
+            except Exception as e:
+                logger.warning(f"Failed to save GeoJSON to PostgreSQL: {e}")
+                self.db_session.rollback()
+        
         return str(output_path)
 
 
