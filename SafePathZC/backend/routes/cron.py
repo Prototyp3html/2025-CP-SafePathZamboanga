@@ -10,6 +10,7 @@ import logging
 import os
 from pathlib import Path
 from sqlalchemy.orm import Session
+import pytz
 
 from services.flood_data_updater import update_flood_data
 from models import get_db
@@ -18,6 +19,9 @@ router = APIRouter(prefix="/cron", tags=["cron"])
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Philippine Standard Time (UTC+8)
+PHILIPPINE_TZ = pytz.timezone('Asia/Manila')
 
 # Simple security - Railway should provide X-Cron-Secret header
 CRON_SECRET = os.getenv("CRON_SECRET", "your-secret-key-change-this")

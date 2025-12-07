@@ -17,12 +17,13 @@ import math
 import os
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, func
+import pytz
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Philippine Standard Time (UTC+8)
-PHILIPPINE_TZ = timezone(timedelta(hours=8))
+PHILIPPINE_TZ = pytz.timezone('Asia/Manila')
 
 # Database configuration
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./safepath.db")
