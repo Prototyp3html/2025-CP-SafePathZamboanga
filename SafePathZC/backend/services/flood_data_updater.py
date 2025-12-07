@@ -9,7 +9,7 @@ import asyncio
 import aiohttp
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass
@@ -20,6 +20,9 @@ from sqlalchemy import create_engine, func
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Philippine Standard Time (UTC+8)
+PHILIPPINE_TZ = timezone(timedelta(hours=8))
 
 # Database configuration
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./safepath.db")
@@ -898,7 +901,7 @@ class FloodDataUpdater:
                     'flood_duration_hours': flood_duration_info['flood_duration_hours'],
                     'flood_start_time': flood_duration_info['flooded_start_time'],
                     'times_flooded': flood_duration_info['times_flooded'],
-                    'last_updated': datetime.now().isoformat(),
+                    'last_updated': datetime.now(tz=PHILIPPINE_TZ).isoformat(),
                     'data_source': 'OSM + Open-Elevation + Open-Meteo'
                 },
                 'geometry': {
@@ -929,7 +932,7 @@ class FloodDataUpdater:
                 }
             },
             'metadata': {
-                'generated': datetime.now().isoformat(),
+                'generated': datetime.now(tz=PHILIPPINE_TZ).isoformat(),
                 'total_roads': len(features),
                 'flooded_roads': len(flooded_roads),
                 'flooded_roads_percentage': round((len(flooded_roads) / len(features) * 100), 2) if features else 0,
@@ -978,7 +981,7 @@ class FloodDataUpdater:
         if roads_stopped_flooding > 0:
             logger.info(f"✅ Roads STOPPED FLOODING: {roads_stopped_flooding}")
         logger.info(f"🌧️  Current rainfall: {current_rainfall}mm")
-        logger.info(f"⏰ Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"⏰ Last updated: {datetime.now(tz=PHILIPPINE_TZ).strftime('%Y-%m-%d %H:%M:%S %Z')}")
         if longest_flooded:
             logger.info(f"⚠️  LONGEST FLOODED: {longest_flooded['properties']['name']} for {longest_flooded['properties']['flood_duration_hours']} hours")
         logger.info("=" * 60)

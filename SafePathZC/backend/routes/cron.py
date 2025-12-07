@@ -4,7 +4,7 @@ Handles automatic updates like flood data every 6 hours
 """
 
 from fastapi import APIRouter, HTTPException, Header, Depends
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import asyncio
 import logging
 import os
@@ -60,7 +60,7 @@ async def trigger_flood_data_update(x_cron_secret: str = Header(None), db: Sessi
     verify_cron_secret(x_cron_secret)
     
     logger.info("=" * 70)
-    logger.info(f"🚀 FLOOD DATA UPDATE CRON JOB TRIGGERED - {datetime.now()}")
+    logger.info(f"🚀 FLOOD DATA UPDATE CRON JOB TRIGGERED - {datetime.now(tz=PHILIPPINE_TZ)}")
     logger.info("=" * 70)
     
     try:
@@ -83,7 +83,7 @@ async def trigger_flood_data_update(x_cron_secret: str = Header(None), db: Sessi
             return {
                 "status": "success",
                 "message": "Flood data updated successfully",
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(tz=PHILIPPINE_TZ).isoformat(),
                 "stats": {
                     "total_roads": total_roads,
                     "flooded_roads": flooded_roads,
@@ -115,7 +115,7 @@ async def cron_health_check():
     return {
         "status": "ok",
         "service": "SafePath Cron Jobs",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(tz=PHILIPPINE_TZ).isoformat(),
         "last_cron_secret_set": bool(CRON_SECRET and CRON_SECRET != "your-secret-key-change-this")
     }
 
@@ -135,7 +135,7 @@ async def trigger_flood_data_update_get(secret: str = None, db: Session = Depend
         raise HTTPException(status_code=403, detail="Invalid or missing secret")
 
     logger.info("=" * 70)
-    logger.info(f"🚀 FLOOD DATA UPDATE CRON JOB TRIGGERED (GET) - {datetime.now()}")
+    logger.info(f"🚀 FLOOD DATA UPDATE CRON JOB TRIGGERED (GET) - {datetime.now(tz=PHILIPPINE_TZ)}")
     logger.info("=" * 70)
     
     try:
@@ -158,7 +158,7 @@ async def trigger_flood_data_update_get(secret: str = None, db: Session = Depend
             return {
                 "status": "success",
                 "message": "Flood data updated successfully",
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(tz=PHILIPPINE_TZ).isoformat(),
                 "stats": {
                     "total_roads": total_roads,
                     "flooded_roads": flooded_roads,
