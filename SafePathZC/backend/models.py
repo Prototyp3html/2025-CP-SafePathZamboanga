@@ -201,7 +201,7 @@ class TerrainRoadsCache(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     geojson_data = Column(Text, nullable=False)  # Full GeoJSON as JSON string
-    metadata = Column(Text, nullable=True)  # Metadata as JSON (flooded count, etc)
+    geojson_metadata = Column(Text, nullable=True)  # Metadata as JSON (flooded count, etc)
     generated_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

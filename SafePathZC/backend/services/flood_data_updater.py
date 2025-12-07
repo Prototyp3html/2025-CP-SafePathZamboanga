@@ -999,7 +999,7 @@ class FloodDataUpdater:
                     # Save new GeoJSON
                     cache_entry = TerrainRoadsCache(
                         geojson_data=json.dumps(geojson),
-                        metadata=json.dumps(geojson.get('metadata', {})),
+                        geojson_metadata=json.dumps(geojson.get('metadata', {})),
                         generated_at=datetime.utcnow()
                     )
                     self.db_session.add(cache_entry)
