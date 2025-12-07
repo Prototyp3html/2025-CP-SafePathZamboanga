@@ -26,9 +26,9 @@ export const ReportModal = ({
   const [weatherData, setWeatherData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // Image upload states
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  // Image upload states - Support multiple images
+  const [selectedImages, setSelectedImages] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [imageError, setImageError] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -110,7 +110,10 @@ export const ReportModal = ({
       getStatus: () => {
         if (!weatherData) return { enabled: true, reason: "Checking..." };
         const isActive = activeWarnings.includes("flood");
-        const totalRain = Math.max(weatherData.precipitation || 0, weatherData.rain || 0);
+        const totalRain = Math.max(
+          weatherData.precipitation || 0,
+          weatherData.rain || 0
+        );
         return {
           enabled: isActive,
           reason: isActive
@@ -145,7 +148,10 @@ export const ReportModal = ({
       getStatus: () => {
         if (!weatherData) return { enabled: true, reason: "Checking..." };
         const isActive = activeWarnings.includes("weather");
-        const totalRain = Math.max(weatherData.precipitation || 0, weatherData.rain || 0);
+        const totalRain = Math.max(
+          weatherData.precipitation || 0,
+          weatherData.rain || 0
+        );
         const weather_code = weatherData.weather_code || 0;
         return {
           enabled: isActive,
@@ -170,43 +176,60 @@ export const ReportModal = ({
     },
   ];
 
-  // Handle image file selection
+  // Handle image file selection - Support multiple files
   const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+    const files = event.target.files;
     setImageError("");
 
-    if (!file) {
-      setSelectedImage(null);
-      setImagePreview(null);
+    if (!files || files.length === 0) {
       return;
     }
 
-    // Validate file type
-    if (!file.type.startsWith("image/")) {
-      setImageError("Please select a valid image file (PNG, JPG, JPEG, etc.)");
+    // Check total images count (max 5)
+    if (selectedImages.length + files.length > 5) {
+      setImageError("Maximum 5 images allowed per report");
       return;
     }
 
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      setImageError("Image must be smaller than 5MB");
-      return;
-    }
+    const newFiles: File[] = [];
+    const newPreviews: string[] = [];
 
-    setSelectedImage(file);
+    Array.from(files).forEach((file) => {
+      // Validate file type
+      if (!file.type.startsWith("image/")) {
+        setImageError(
+          "Please select valid image files (PNG, JPG, JPEG, GIF, WebP)"
+        );
+        return;
+      }
 
-    // Create preview
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setImagePreview(e.target?.result as string);
-    };
-    reader.readAsDataURL(file);
+      // Validate file size (max 5MB per image)
+      if (file.size > 5 * 1024 * 1024) {
+        setImageError("Each image must be smaller than 5MB");
+        return;
+      }
+
+      newFiles.push(file);
+
+      // Create preview
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        newPreviews.push(e.target?.result as string);
+        if (newPreviews.length === newFiles.length) {
+          setSelectedImages([...selectedImages, ...newFiles]);
+          setImagePreviews([...imagePreviews, ...newPreviews]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
   };
 
-  // Remove selected image
-  const removeImage = () => {
-    setSelectedImage(null);
-    setImagePreview(null);
+  // Remove selected image by index
+  const removeImage = (index: number) => {
+    const newImages = selectedImages.filter((_, i) => i !== index);
+    const newPreviews = imagePreviews.filter((_, i) => i !== index);
+    setSelectedImages(newImages);
+    setImagePreviews(newPreviews);
     setImageError("");
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -294,18 +317,22 @@ export const ReportModal = ({
         }
       }
 
-      // Process image if selected
-      let imageData = null;
-      let imageFilename = null;
+      // Process multiple images if selected
+      let imagesData: Array<{ data: string; filename: string }> = [];
 
-      if (selectedImage) {
+      if (selectedImages.length > 0) {
         try {
-          imageData = await convertImageToBase64(selectedImage);
-          imageFilename = selectedImage.name;
+          for (let i = 0; i < selectedImages.length; i++) {
+            const imageData = await convertImageToBase64(selectedImages[i]);
+            imagesData.push({
+              data: imageData,
+              filename: selectedImages[i].name,
+            });
+          }
         } catch (error) {
-          console.error("Failed to process image:", error);
+          console.error("Failed to process images:", error);
           notification.error(
-            "Failed to process image. Report will be submitted without image."
+            "Failed to process some images. Report will be submitted with available images."
           );
         }
       }
@@ -324,8 +351,7 @@ export const ReportModal = ({
         reporter_name: userName,
         reporter_email: userEmail,
         reporter_id: userId,
-        image_data: imageData,
-        image_filename: imageFilename,
+        images: imagesData, // Send array of images instead of single image
       };
 
       const apiUrl =
@@ -609,16 +635,17 @@ export const ReportModal = ({
           {isLoggedIn && (
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                📸 Evidence Photo (Optional)
+                📸 Evidence Photos (Optional) - Up to 5 images
               </label>
               <div className="space-y-3">
-                {/* Upload Button */}
-                {!imagePreview && (
+                {/* Upload Button - Always visible for adding more images */}
+                {selectedImages.length < 5 && (
                   <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-blue-400 transition-colors">
                     <input
                       ref={fileInputRef}
                       type="file"
                       accept="image/*"
+                      multiple
                       onChange={handleImageSelect}
                       className="hidden"
                     />
@@ -627,32 +654,37 @@ export const ReportModal = ({
                       onClick={() => fileInputRef.current?.click()}
                       className="bg-blue-50 hover:bg-blue-100 text-blue-600 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
                     >
-                      📷 Add Photo Evidence
+                      📷 Add Photo Evidence ({selectedImages.length}/5)
                     </button>
                     <p className="text-xs text-gray-500 mt-1">
-                      Upload a photo showing the issue (Max 5MB)
+                      Upload photos showing the issue (Max 5MB each, up to 5
+                      images)
                     </p>
                   </div>
                 )}
 
-                {/* Image Preview */}
-                {imagePreview && (
-                  <div className="relative">
-                    <img
-                      src={imagePreview}
-                      alt="Report evidence"
-                      className="w-full h-48 object-cover rounded-lg border"
-                    />
-                    <button
-                      type="button"
-                      onClick={removeImage}
-                      className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold"
-                    >
-                      ×
-                    </button>
-                    <div className="mt-2 text-sm text-gray-600">
-                      📎 {selectedImage?.name}
-                    </div>
+                {/* Image Previews Grid */}
+                {imagePreviews.length > 0 && (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    {imagePreviews.map((preview, index) => (
+                      <div key={index} className="relative group">
+                        <img
+                          src={preview}
+                          alt={`Report evidence ${index + 1}`}
+                          className="w-full h-32 object-cover rounded-lg border border-gray-200 group-hover:opacity-75 transition-opacity"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeImage(index)}
+                          className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          ×
+                        </button>
+                        <div className="mt-1 text-xs text-gray-600 truncate">
+                          {selectedImages[index]?.name}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
 
@@ -666,10 +698,21 @@ export const ReportModal = ({
                 {/* Image Info */}
                 <div className="bg-green-50 border border-green-200 rounded-lg p-2">
                   <p className="text-xs text-green-700">
-                    💡 <strong>Pro tip:</strong> Photos help verify reports and
-                    make them more credible for the community
+                    💡 <strong>Pro tip:</strong> Multiple photos help verify
+                    reports and make them more credible for the community. Show
+                    different angles or details!
                   </p>
                 </div>
+
+                {/* Image Count Info */}
+                {selectedImages.length > 0 && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
+                    <p className="text-xs text-blue-700">
+                      ✅ {selectedImages.length} image
+                      {selectedImages.length !== 1 ? "s" : ""} selected
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}

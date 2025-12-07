@@ -37,6 +37,10 @@ class AdminLoginResponse(BaseModel):
     token: str
     user: dict
 
+class ImageData(BaseModel):
+    data: str
+    filename: str
+
 class ReportCreate(BaseModel):
     title: str
     description: str
@@ -49,6 +53,7 @@ class ReportCreate(BaseModel):
     reporter_email: str
     image_data: Optional[str] = None
     image_filename: Optional[str] = None
+    images: Optional[List[ImageData]] = None  # New: Support multiple images
 
 class ReportUpdate(BaseModel):
     status: Optional[str] = None
@@ -215,6 +220,38 @@ async def get_reports(
         })
     
     return {"reports": formatted_reports}
+
+@router.get("/reports/{report_id}/images")
+async def get_report_images(
+    report_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get all images for a specific report"""
+    try:
+        from models import ReportImage
+        
+        # Verify report exists
+        report = db.query(Report).filter(Report.id == report_id).first()
+        if not report:
+            raise HTTPException(status_code=404, detail="Report not found")
+        
+        # Get all images for this report
+        images = db.query(ReportImage).filter(ReportImage.report_id == report_id).all()
+        
+        formatted_images = [
+            {
+                "id": img.id,
+                "filename": img.image_filename,
+                "data": img.image_data,
+                "createdAt": img.created_at.isoformat()
+            }
+            for img in images
+        ]
+        
+        return {"images": formatted_images, "count": len(formatted_images)}
+    except Exception as e:
+        print(f"Error fetching report images: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch images: {str(e)}")
 
 @router.patch("/reports/{report_id}/status")
 async def update_report_status(
@@ -802,6 +839,25 @@ async def create_report(
     db.add(new_report)
     db.commit()
     db.refresh(new_report)
+    
+    # Save multiple images if provided
+    if report_data.images and len(report_data.images) > 0:
+        try:
+            from models import ReportImage
+            
+            for image in report_data.images[:5]:  # Limit to 5 images
+                report_image = ReportImage(
+                    report_id=new_report.id,
+                    image_data=image.data,
+                    image_filename=image.filename
+                )
+                db.add(report_image)
+            
+            db.commit()
+            print(f"✅ Saved {len(report_data.images)} images for report {new_report.id}")
+        except Exception as e:
+            print(f"⚠️ Failed to save report images: {e}")
+            # Continue without failing - images are optional
     
     # If report is auto-approved, create forum post immediately
     if status == "approved":

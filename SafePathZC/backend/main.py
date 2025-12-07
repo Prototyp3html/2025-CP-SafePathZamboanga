@@ -106,6 +106,25 @@ try:
                 print(f"Successfully added columns: {columns_added}")
             else:
                 print("Image columns already exist in reports table")
+            
+            # Create report_images table if it doesn't exist
+            connection.execute(text("""
+                CREATE TABLE IF NOT EXISTS report_images (
+                    id SERIAL PRIMARY KEY,
+                    report_id INTEGER NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+                    image_data TEXT NOT NULL,
+                    image_filename VARCHAR NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            
+            # Create index on report_id for faster queries
+            connection.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_report_images_report_id ON report_images(report_id)
+            """))
+            
+            connection.commit()
+            print("✅ report_images table and index created/verified")
                 
     except Exception as migration_error:
         print(f"Migration error: {migration_error}")

@@ -103,6 +103,16 @@ class Report(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+class ReportImage(Base):
+    """Store multiple images for reports - one-to-many relationship"""
+    __tablename__ = "report_images"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    report_id = Column(Integer, ForeignKey("reports.id", ondelete="CASCADE"), nullable=False, index=True)
+    image_data = Column(Text, nullable=False)  # Base64 encoded image data
+    image_filename = Column(String, nullable=False)  # Original filename
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class User(Base):
     __tablename__ = "users"
     
