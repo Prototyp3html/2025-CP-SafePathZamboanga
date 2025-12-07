@@ -10,10 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from collections import defaultdict
 import logging
+from route_logger import get_route_logger, RoutingPhase
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+route_logger = get_route_logger()
 
 # Helper utilities
 def _parse_flood_flag(value: Any) -> bool:
@@ -782,12 +784,15 @@ class LocalRoutingService:
                             heapq.heappush(open_set, (f_score[neighbor], neighbor))
                             neighbors_added_to_open_set += 1
                 
-                # Debug less frequently - every 500 iterations
-                if iterations % 500 == 0:
-                    logger.info(f"A* Progress: Iter {iterations}/{max_iterations}, Distance to goal: {distance_to_end:.1f}m, visited {len(visited)} nodes, open_set size={len(open_set)}")
+                # Log progress less frequently using route logger (every 1000 iterations)
+                if iterations % 1000 == 0:
+                    route_logger.progress(iterations, max_iterations, f"Distance to goal: {distance_to_end:.1f}m")
             else:
                 logger.warning(f"Iter {iterations}: Current node NOT in routing graph!")
         
+        # Use route logger for failure messages
+        route_logger.warning(f"Terminating search: No progress for 3000 iterations", indent=1)
+        route_logger.warning(f"Best distance achieved: {best_distance_to_goal:.1f}m, Currently at: {distance_to_end:.1f}m", indent=1)
         logger.warning(f"No route found after {iterations} iterations, visited {len(visited)} nodes")
         logger.warning(f"Start: ({start.lat}, {start.lng}), End: ({end.lat}, {end.lng})")
         logger.warning(f"Start in graph: {start in self.routing_graph}, End in graph: {end in self.routing_graph}")

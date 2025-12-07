@@ -25,8 +25,10 @@ from services.transportation_modes import (
     adjust_route_for_transportation_mode,
     get_flood_safety_for_mode
 )
+from services.route_logger import get_route_logger, RoutingPhase
 
 logger = logging.getLogger(__name__)
+route_logger = get_route_logger()
 
 
 async def get_route_terrain_data(coordinates: List[List[float]]) -> dict:
@@ -967,17 +969,19 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
             selected_routes[2],  # Flood-prone (red)
         ]
         
-        # Enhanced final route analysis with terrain data
-        print("\n" + "="*80)
-        print("FINAL ROUTE ANALYSIS RESULTS")
-        print("="*80)
-        logger.info(f"Final routes selected from {len(all_routes)} candidates:")
+        # Use organized route logger for final output
+        route_logger.phase_start(RoutingPhase.FINAL_RESULT, f"Selected from {len(all_routes)} candidates")
         
-        # Display detailed analysis for each route
+        # Display each route with formatted output
         route_labels = ['Safe', 'Manageable', 'Flood-prone']
         for i, (route, label) in enumerate(zip(final_routes, route_labels)):
-            print(f"{label:15} {route['flood_percentage']:5.1f}% flooded, {route['distance']:7.0f}m, {route['duration']:5.0f}s")
-            logger.info(f"  {label}: {route['flood_percentage']:5.1f}% flooded, {route['distance']:7.0f}m, {route['duration']:5.0f}s")
+            route_logger.route_selection(
+                label,
+                i,
+                route['flood_percentage'],
+                route['distance'],
+                route['duration']
+            )
         
         # Calculate actual correlations from final routes
         distances = [r['distance'] for r in final_routes]
@@ -1000,13 +1004,19 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
         else:
             correlation = -0.65
         
-        print(f"\nUPDATED CORRELATIONAL ANALYSIS:")
-        print(f"   • Actual Risk-Distance Correlation: {correlation:.3f}")
-        print(f"   • Route Diversity Score: {(max(flood_pcts) - min(flood_pcts)):.1f}% flood range")
-        print(f"   • Optimization Success: {'EXCELLENT' if (max(flood_pcts) - min(flood_pcts)) > 10 else 'GOOD' if (max(flood_pcts) - min(flood_pcts)) > 5 else 'LIMITED'} route differentiation")
-        print(f"   • Terrain-Flood Correlation: -0.89 (Lower elevation = Higher flood risk)")
-        print(f"   • Weather-Route Impact: {'SIGNIFICANT' if rainfall > 10 else 'MODERATE' if rainfall > 3 else 'MINIMAL'} route modifications due to precipitation")
-        print("="*80 + "\n")
+        # Log correlation analysis
+        route_logger.phase_start(RoutingPhase.FINAL_RESULT, "Analysis Summary")
+        route_logger.info(f"Risk-Distance Correlation: {correlation:.3f}", indent=0)
+        route_logger.info(f"Route Diversity: {(max(flood_pcts) - min(flood_pcts)):.1f}% flood range", indent=0)
+        
+        diversity_score = max(flood_pcts) - min(flood_pcts)
+        quality = "EXCELLENT" if diversity_score > 10 else "GOOD" if diversity_score > 5 else "LIMITED"
+        route_logger.info(f"Optimization Quality: {quality} route differentiation", indent=0)
+        route_logger.info(f"Terrain-Flood Correlation: -0.89 (Lower elevation = Higher flood risk)", indent=0)
+        
+        impact = "SIGNIFICANT" if rainfall > 10 else "MODERATE" if rainfall > 3 else "MINIMAL"
+        route_logger.info(f"Weather Impact: {impact} route modifications ({rainfall:.1f}mm rainfall)", indent=0)
+        route_logger.phase_end()
         
         return FloodRouteResponse(
             routes=selected_routes,
