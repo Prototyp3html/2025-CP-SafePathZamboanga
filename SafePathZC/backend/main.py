@@ -3295,10 +3295,6 @@ async def calculate_local_route(route_request: LocalRouteRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error calculating route: {str(e)}")
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001, reload=True)
-
 
 @app.get("/local-route")
 async def local_route(
@@ -3372,8 +3368,14 @@ async def local_route(
             "message": response.message
         }
         
+        
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid coordinate format: {str(e)}")
     except Exception as e:
         logger.error(f"Error calculating route: {e}", exc_info=True) 
         raise HTTPException(status_code=500, detail=f"Error calculating route: {str(e)}")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001, reload=True)
