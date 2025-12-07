@@ -961,6 +961,13 @@ class FloodDataUpdater:
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(geojson, f, indent=2)
         
+        # Verify file was written
+        if output_path.exists():
+            file_size = output_path.stat().st_size
+            logger.info(f"✅ File successfully written: {file_size} bytes")
+        else:
+            logger.error(f"❌ ERROR: File was not written to {output_path}")
+        
         logger.info("=" * 60)
         logger.info(f"✅ Generated updated terrain_roads.geojson")
         logger.info(f"📍 Location: {output_path}")
