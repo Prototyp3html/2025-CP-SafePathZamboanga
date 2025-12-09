@@ -17,6 +17,18 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 route_logger = get_route_logger()
 
+# Import system config for dynamic multipliers
+def get_system_config():
+    """Get current system configuration for route calculation
+    This allows admin to adjust penalties without restarting the server"""
+    try:
+        # Import here to avoid circular imports
+        from routes.admin import system_config
+        return system_config
+    except ImportError:
+        # Fallback to default if admin.py not available
+        return None
+
 # Helper utilities
 def _parse_flood_flag(value: Any) -> bool:
     """Convert various truthy/falsey representations into a boolean.
@@ -115,15 +127,30 @@ class RoadSegment:
     def get_routing_cost(self, transportation_mode: str = "car", risk_profile: str = "safe", flood_lookup_cache: Optional[Dict[str, bool]] = None) -> float:
         """Calculate routing cost based on transportation mode AND flood risk profile
         
+        IMPORTANT: This method uses dynamic multipliers from system configuration!
+        When you adjust Route Penalty Multipliers in the admin dashboard,
+        this function automatically uses the new values.
+        
         Args:
             transportation_mode: Type of transport (car/motorcycle/walking) - affects speed/roads
             risk_profile: Flood risk tolerance (safe/manageable/prone) - PRIMARY route differentiator
-                - "safe": Heavily avoids flooded roads (60x penalty) - forces significant detours
-                - "manageable": Moderate avoidance (5x penalty) - balanced approach
-                - "prone": Minimal avoidance (1.1x penalty) - shortest path, ignores floods
             flood_lookup_cache: Optional pre-built dict mapping osm_id -> is_flooded (fast O(1) lookup)
         """
         base_cost = self.length_m
+        
+        # Get current system configuration (includes saved multipliers)
+        config = get_system_config()
+        
+        # Use saved multipliers from admin dashboard, or fallback to defaults
+        if config:
+            safe_penalty = config.safe_route_penalty  # Default: 1.0
+            manageable_penalty = config.manageable_route_penalty  # Default: 1.5
+            flood_prone_penalty = config.flood_prone_route_penalty  # Default: 2.5
+        else:
+            # Fallback to hardcoded defaults
+            safe_penalty = 1.0
+            manageable_penalty = 1.5
+            flood_prone_penalty = 2.5
         
         # FLOOD RISK FACTOR - Primary differentiator based on risk profile
         # Check flood status from this segment OR from flood lookup cache
@@ -145,14 +172,17 @@ class RoadSegment:
                         break
         
         if risk_profile == "safe":
-            # SAFE ROUTE: VERY aggressive penalty for flooded roads - forces alternate paths
-            flood_factor = 60.0 if is_flooded else 1.0 
+            # SAFE ROUTE: Uses configured penalty multiplier for flooded roads
+            # safe_penalty from config (default 1.0 = no penalty, up to 100x)
+            flood_factor = safe_penalty if is_flooded else 1.0 
         elif risk_profile == "manageable":
-            # MANAGEABLE ROUTE: Moderate penalty for flooded roads
-            flood_factor = 5.0 if is_flooded else 1.0  
+            # MANAGEABLE ROUTE: Uses configured penalty multiplier
+            # manageable_penalty from config (default 1.5)
+            flood_factor = manageable_penalty if is_flooded else 1.0  
         else:  
-            # FLOOD-PRONE ROUTE: Minimal penalty - takes shortest path
-            flood_factor = 1.1 if is_flooded else 1.0 
+            # FLOOD-PRONE ROUTE: Uses configured penalty multiplier
+            # flood_prone_penalty from config (default 2.5)
+            flood_factor = flood_prone_penalty if is_flooded else 1.0 
         
         # Apply terrain difficulty (elevation, surface)
         terrain_factor = self.get_terrain_difficulty()

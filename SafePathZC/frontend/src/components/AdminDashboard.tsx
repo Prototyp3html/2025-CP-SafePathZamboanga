@@ -25,9 +25,12 @@ import {
   Globe,
   Zap,
   Target,
+  Droplets,
 } from "lucide-react";
 import { notification } from "@/utils/notifications";
 import { useConfirmation } from "@/components/ui/confirmation-dialog";
+import { FloodDataManagement } from "@/components/FloodDataManagement";
+import { SystemConfiguration } from "@/components/SystemConfiguration";
 
 interface Report {
   id: string;
@@ -75,7 +78,7 @@ interface User {
 export const AdminDashboard: React.FC = () => {
   const { confirm } = useConfirmation();
 
-  const [activeTab, setActiveTab] = useState<"reports" | "users" | "analytics">(
+  const [activeTab, setActiveTab] = useState<"reports" | "users" | "analytics" | "flood" | "config">(
     "reports"
   );
   const [reports, setReports] = useState<Report[]>([]);
@@ -653,6 +656,28 @@ export const AdminDashboard: React.FC = () => {
           >
             <BarChart3 className="w-4 h-4 mr-2" />
             Analytics
+          </button>
+          <button
+            onClick={() => setActiveTab("flood")}
+            className={`flex items-center px-4 py-2 rounded-md font-medium transition-all duration-200 ${
+              activeTab === "flood"
+                ? "bg-blue-600 text-white"
+                : "text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            <Droplets className="w-4 h-4 mr-2" />
+            Flood Data
+          </button>
+          <button
+            onClick={() => setActiveTab("config")}
+            className={`flex items-center px-4 py-2 rounded-md font-medium transition-all duration-200 ${
+              activeTab === "config"
+                ? "bg-blue-600 text-white"
+                : "text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            <Settings className="w-4 h-4 mr-2" />
+            System Config
           </button>
         </div>
       </div>
@@ -1298,6 +1323,20 @@ export const AdminDashboard: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Flood Data Tab */}
+      {activeTab === "flood" && (
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <FloodDataManagement />
+        </div>
+      )}
+
+      {/* System Configuration Tab */}
+      {activeTab === "config" && (
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <SystemConfiguration />
         </div>
       )}
 
