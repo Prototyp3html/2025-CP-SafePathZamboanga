@@ -220,6 +220,25 @@ class TerrainRoadsCache(Base):
         UniqueConstraint('id', name='unique_terrain_cache'),
     )
 
+class SystemConfig(Base):
+    __tablename__ = "system_config"
+    
+    id = Column(Integer, primary_key=True, index=True, default=1)  # Single row
+    elevation_weight = Column(Float, default=0.35)
+    rainfall_weight = Column(Float, default=0.35)
+    proximity_weight = Column(Float, default=0.30)
+    safe_route_penalty = Column(Float, default=1.0)
+    manageable_route_penalty = Column(Float, default=1.5)
+    flood_prone_route_penalty = Column(Float, default=2.5)
+    api_update_frequency = Column(Integer, default=60)  # minutes
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by_admin_id = Column(Integer, nullable=True)
+    
+    __table_args__ = (
+        UniqueConstraint('id', name='unique_system_config'),
+    )
+
+
 # Database dependency
 def get_db():
     db = SessionLocal()
