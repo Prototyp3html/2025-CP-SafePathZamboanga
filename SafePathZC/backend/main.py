@@ -383,9 +383,9 @@ app.include_router(geocoding_router, prefix="/api/geocoding", tags=["geocoding"]
 app.include_router(terrain_router)  # Terrain data and elevation heatmap
 app.include_router(cron_router)  # Scheduled jobs (flood data updates every 6 hours)
 
-# Import and include traffic demo router for panel defense
-from routes.traffic_demo import router as traffic_demo_router
-app.include_router(traffic_demo_router)  # Traffic congestion analysis and demo
+# Real traffic detection based on user reports and road intersections
+from routes.traffic_incidents import router as traffic_incidents_router
+app.include_router(traffic_incidents_router)  # Real traffic incident reporting
 
 # Debug endpoint to check OSRM configuration
 @app.get("/debug/osrm-config")
@@ -3082,6 +3082,10 @@ async def get_routes_summary(db: Session = Depends(get_db)):
 # Global water bodies cache for accurate proximity calculations
 global_water_bodies_cache = None
 global_flood_data_updater = None
+
+# Global traffic incidents cache for real traffic detection
+global_traffic_incidents_cache = None
+global_last_traffic_cache_time = None
 
 # Background task for auto-updating flood data
 background_tasks_running = False

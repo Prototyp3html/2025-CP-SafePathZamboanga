@@ -376,19 +376,28 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                 # Get terrain data for route
                                 terrain_data = await get_route_terrain_data(coordinates)
                                 
-                                # NEW: Analyze traffic congestion for route
+                                # Analyze REAL traffic congestion based on user reports and intersections
                                 traffic_analysis = {}
                                 try:
-                                    from services.traffic_detection import get_traffic_service
+                                    from services.real_traffic_detection import get_traffic_service
                                     traffic_service = get_traffic_service()
-                                    traffic_analysis = await traffic_service.get_traffic_for_route(coordinates)
+                                    
+                                    # Load real incidents from database
+                                    await traffic_service.load_incidents_from_db(db)
+                                    
+                                    # Get traffic analysis for this specific route
+                                    traffic_analysis = traffic_service.calculate_traffic_for_route(coordinates)
+                                    
                                 except Exception as e:
                                     logger.warning(f"Traffic analysis failed: {e}")
                                     traffic_analysis = {
                                         "congestion_percentage": 0.0,
                                         "traffic_level": "free_flow",
-                                        "traffic_penalty": 1.0,
-                                        "confidence_score": 0.0
+                                        "affected_segments": 0,
+                                        "incidents_on_route": [],
+                                        "intersection_count": 0,
+                                        "total_delay_minutes": 0,
+                                        "traffic_penalty": 1.0
                                     }
                                 
                                 # Apply transportation mode adjustments
