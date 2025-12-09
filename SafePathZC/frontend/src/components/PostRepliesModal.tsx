@@ -171,7 +171,7 @@ export const PostRepliesModal = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <span>Discussion</span>
@@ -183,9 +183,9 @@ export const PostRepliesModal = ({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col h-full max-h-[70vh]">
-          {/* Original Post */}
-          <div className="border-b pb-4 mb-4">
+        <div className="flex flex-col flex-1 min-h-0">
+          {/* Original Post - Scrollable */}
+          <div className="border-b pb-4 mb-4 overflow-y-auto max-h-[40vh]">
             <h3 className="font-bold text-lg mb-2">{post.title}</h3>
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-3">
               <User className="w-4 h-4" />
@@ -290,8 +290,8 @@ export const PostRepliesModal = ({
             )}
           </div>
 
-          {/* Comments Section */}
-          <div className="flex-1 overflow-y-auto mb-4">
+          {/* Comments Section - Scrollable */}
+          <div className="flex-1 overflow-y-auto mb-4 min-h-[100px]">
             <h4 className="font-semibold mb-3">
               {comments.length} {comments.length === 1 ? "Reply" : "Replies"}
             </h4>
@@ -342,39 +342,41 @@ export const PostRepliesModal = ({
             )}
           </div>
 
-          {/* Reply Form */}
-          <form onSubmit={handleSubmitReply} className="border-t pt-4">
-            <Textarea
-              placeholder="Write your reply..."
-              value={newReply}
-              onChange={(e) => setNewReply(e.target.value)}
-              className="min-h-[100px] mb-3"
-              disabled={submitting}
-            />
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-500">
-                {newReply.length}/500 characters
-              </span>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={onClose}
-                  disabled={submitting}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={
-                    !newReply.trim() || newReply.length > 500 || submitting
-                  }
-                >
-                  {submitting ? "Posting..." : "Post Reply"}
-                </Button>
+          {/* Reply Form - Always visible at bottom */}
+          <div className="border-t pt-4 bg-white">
+            <form onSubmit={handleSubmitReply}>
+              <Textarea
+                placeholder="Write your reply..."
+                value={newReply}
+                onChange={(e) => setNewReply(e.target.value)}
+                className="min-h-[100px] mb-3"
+                disabled={submitting}
+              />
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-500">
+                  {newReply.length}/500 characters
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={onClose}
+                    disabled={submitting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={
+                      !newReply.trim() || newReply.length > 500 || submitting
+                    }
+                  >
+                    {submitting ? "Posting..." : "Post Reply"}
+                  </Button>
+                </div>
               </div>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
