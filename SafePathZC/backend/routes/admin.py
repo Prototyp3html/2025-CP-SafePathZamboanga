@@ -1329,27 +1329,36 @@ async def get_system_config(
     """Get current system configuration"""
     from models import SystemConfig
     
-    # Get config from database
-    config = db.query(SystemConfig).filter(SystemConfig.id == 1).first()
-    
-    if not config:
-        # Create default config if it doesn't exist
-        config = SystemConfig()
-        db.add(config)
-        db.commit()
-    
-    return {
-        "values": {
-            "elevation_weight": config.elevation_weight,
-            "rainfall_weight": config.rainfall_weight,
-            "proximity_weight": config.proximity_weight,
-            "safe_route_penalty": config.safe_route_penalty,
-            "manageable_route_penalty": config.manageable_route_penalty,
-            "flood_prone_route_penalty": config.flood_prone_route_penalty,
-            "api_update_frequency": config.api_update_frequency,
-        },
-        "last_updated": config.updated_at.isoformat() if config.updated_at else None
-    }
+    try:
+        # Get config from database
+        config = db.query(SystemConfig).filter(SystemConfig.id == 1).first()
+        
+        if not config:
+            # Create default config if it doesn't exist
+            logger.warning("No system config found in database, creating defaults")
+            config = SystemConfig()
+            db.add(config)
+            db.commit()
+        
+        response_data = {
+            "values": {
+                "elevation_weight": config.elevation_weight,
+                "rainfall_weight": config.rainfall_weight,
+                "proximity_weight": config.proximity_weight,
+                "safe_route_penalty": config.safe_route_penalty,
+                "manageable_route_penalty": config.manageable_route_penalty,
+                "flood_prone_route_penalty": config.flood_prone_route_penalty,
+                "api_update_frequency": config.api_update_frequency,
+            },
+            "last_updated": config.updated_at.isoformat() if config.updated_at else None
+        }
+        
+        logger.info(f"System config retrieved for admin {admin_id}: {response_data['values']}")
+        return response_data
+        
+    except Exception as e:
+        logger.error(f"Error loading system config: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to load configuration: {str(e)}")
 
 @router.put("/system-config")
 async def update_system_config(
