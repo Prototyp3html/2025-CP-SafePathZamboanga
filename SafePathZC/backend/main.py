@@ -361,7 +361,6 @@ origins = [
     "http://localhost:3000",                      # Alternative local
     "http://127.0.0.1:5173",                     # Local IP
     "http://127.0.0.1:5174",                     # Local IP (alternate port)
-    "*"  # Allow all origins temporarily for admin access
 ]
 
 # CORS middleware
