@@ -990,14 +990,14 @@ const CommunityForum = () => {
                                 {post.images.map((image, idx) => (
                                   <div
                                     key={idx}
-                                    className="relative rounded-lg overflow-hidden bg-gray-200 group"
-                                    style={{ maxHeight: "250px" }}
+                                    className="relative rounded-lg overflow-hidden bg-gray-100 group border border-gray-300"
+                                    style={{ minHeight: "200px" }}
                                   >
                                     <img
                                       src={image.image_data}
                                       alt={image.filename}
-                                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
-                                      style={{ maxHeight: "250px" }}
+                                      className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105"
+                                      style={{ maxHeight: "400px" }}
                                     />
                                     <div className="absolute inset-0 bg-black opacity-0 group-hover:opacity-30 transition-opacity duration-300" />
                                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">

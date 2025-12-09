@@ -196,7 +196,49 @@ export const PostRepliesModal = ({
                 {post.category}
               </Badge>
             </div>
-            <p className="text-gray-700 mb-3">{post.content}</p>
+            <div className="text-gray-700 mb-3 space-y-2">
+              {post.content
+                .split(/\n|(?:Location:|Description:|Severity:|Status:)/g)
+                .map((section, idx) => {
+                  if (!section.trim()) return null;
+
+                  // Check if this is a labeled section
+                  const isLocation = post.content.includes(
+                    `Location:${section}`
+                  );
+                  const isDescription = post.content.includes(
+                    `Description:${section}`
+                  );
+                  const isSeverity = post.content.includes(
+                    `Severity:${section}`
+                  );
+                  const isStatus = post.content.includes(`Status:${section}`);
+
+                  if (isLocation || isDescription || isSeverity || isStatus) {
+                    const label = isLocation
+                      ? "Location"
+                      : isDescription
+                      ? "Description"
+                      : isSeverity
+                      ? "Severity"
+                      : "Status";
+                    return (
+                      <div key={idx} className="flex gap-2">
+                        <span className="font-semibold text-gray-800 min-w-[100px]">
+                          {label}:
+                        </span>
+                        <span className="flex-1">{section.trim()}</span>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <p key={idx} className="leading-relaxed">
+                      {section.trim()}
+                    </p>
+                  );
+                })}
+            </div>
 
             {/* Display Images from Report */}
             {post.images && post.images.length > 0 && (
@@ -216,14 +258,14 @@ export const PostRepliesModal = ({
                   {post.images.map((image, idx) => (
                     <div
                       key={idx}
-                      className="relative rounded-lg overflow-hidden bg-gray-200 group"
-                      style={{ maxHeight: "300px" }}
+                      className="relative rounded-lg overflow-hidden bg-gray-100 group border border-gray-300"
+                      style={{ minHeight: "250px" }}
                     >
                       <img
                         src={image.image_data}
                         alt={image.filename}
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
-                        style={{ maxHeight: "300px" }}
+                        className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105"
+                        style={{ maxHeight: "500px" }}
                       />
                       <div className="absolute inset-0 bg-black opacity-0 group-hover:opacity-30 transition-opacity duration-300" />
                       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
