@@ -190,10 +190,27 @@ This figure presents the administrative interface for system management.
    - Admin notes field
 
 4. **System Configuration** – Options for:
-   - Risk calculation weights adjustment
-   - Route penalty multipliers
-   - API integration settings
-   - Data update frequency
+
+   - **Risk Calculation Weights** – Adjustable sliders for:
+     - Elevation Factor (how low elevation increases flood risk)
+     - Rainfall Factor (how recent rainfall affects flood risk)
+     - Proximity to Water Sources (how proximity to rivers/lakes affects risk)
+     - Real-time validation ensuring weights sum to 1.0 (100%)
+   
+   - **Route Penalty Multipliers** – Adjustable multipliers for:
+     - Safe Route Penalty (1.0x - routes through safest areas)
+     - Manageable Route Penalty (1.5x - routes with moderate flood risk)
+     - Flood-Prone Route Penalty (2.5x - routes through high-risk flood areas)
+   
+   - **API Update Frequency** – Configure automatic update interval:
+     - Slider control from 15 to 180 minutes
+     - Currently set to 60-minute automatic updates
+     - Configures background scheduler for flood data refresh
+   
+   - **Save/Discard Controls** – Options to:
+     - Save all configuration changes with validation
+     - Discard changes and revert to previous settings
+     - View last updated timestamp
 
 ---
 
