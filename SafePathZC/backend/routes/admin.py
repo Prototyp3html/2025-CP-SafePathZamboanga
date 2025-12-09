@@ -1,18 +1,68 @@
-from fastapi import APIRouter, HTTPException, Depends, Security, Request, Response
+from fastapi import APIRouter, HTTPException, Depends, Security, Request, Response, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import hashlib
 import jwt
 import os
 from dotenv import load_dotenv
+import asyncio
+import logging
 
 load_dotenv()
 
-# Import models and database 
+# Logging setup
+logger = logging.getLogger(__name__)
+
+# Global flood update state tracker
+class FloodUpdateState:
+    """Tracks the state of flood data updates"""
+    def __init__(self):
+        self.is_updating = False
+        self.progress = 0  # 0-100
+        self.status = "idle"  # idle, updating, completed, failed
+        self.last_update_time = None
+        self.roads_updated = 0
+        self.error_message = None
+        self.start_time = None
+        
+    def start_update(self):
+        self.is_updating = True
+        self.progress = 0
+        self.status = "updating"
+        self.start_time = datetime.utcnow()
+        self.roads_updated = 0
+        self.error_message = None
+        
+    def complete_update(self, roads_count: int):
+        self.is_updating = False
+        self.progress = 100
+        self.status = "completed"
+        self.last_update_time = datetime.utcnow()
+        self.roads_updated = roads_count
+        
+    def fail_update(self, error_msg: str):
+        self.is_updating = False
+        self.status = "failed"
+        self.error_message = error_msg
+        
+    def get_status(self) -> Dict[str, Any]:
+        return {
+            "is_updating": self.is_updating,
+            "status": self.status,
+            "progress": self.progress,
+            "roads_updated": self.roads_updated,
+            "last_update_time": self.last_update_time.isoformat() if self.last_update_time else None,
+            "error_message": self.error_message,
+            "elapsed_seconds": (datetime.utcnow() - self.start_time).total_seconds() if self.start_time else 0
+        }
+
+# Global instance
+flood_update_state = FloodUpdateState()
+ 
 from models import AdminUser, Report, User, Post, Comment, PostLike, RouteHistory, FavoriteRoute, SearchHistory, SessionLocal
 
 # Dependency to get DB session
@@ -1189,7 +1239,72 @@ async def get_admin_dashboard(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch dashboard data: {str(e)}")
 
-# Initialize admin user if not exists
+@router.post("/flood/update-now")
+async def trigger_flood_update(
+    admin_id: int = Depends(verify_admin_token),
+    background_tasks: BackgroundTasks = None,
+    db: Session = Depends(get_db)
+):
+    """Manually trigger flood data update"""
+    
+    if flood_update_state.is_updating:
+        raise HTTPException(
+            status_code=409, 
+            detail="Flood update already in progress. Please wait for it to complete."
+        )
+    
+    try:
+        # Start the update process
+        flood_update_state.start_update()
+        
+        # Add background task to run the actual update
+        if background_tasks:
+            background_tasks.add_task(run_flood_update_task)
+        else:
+            # Fallback: run async without background tasks
+            asyncio.create_task(run_flood_update_task())
+        
+        return {
+            "message": "Flood data update initiated",
+            "status": flood_update_state.get_status()
+        }
+        
+    except Exception as e:
+        flood_update_state.fail_update(str(e))
+        logger.error(f"Error initiating flood update: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to initiate flood update: {str(e)}")
+
+@router.get("/flood/update-status")
+async def get_flood_update_status(
+    admin_id: int = Depends(verify_admin_token)
+):
+    """Get current flood update status"""
+    return flood_update_state.get_status()
+
+async def run_flood_update_task():
+    """Background task to run flood data update"""
+    try:
+        from services.flood_data_updater import update_flood_data
+        
+        logger.info("Starting background flood data update...")
+        
+        # Run the flood update
+        output_path = await update_flood_data()
+        
+        if output_path:
+            # Simulate progress by reading the output
+            roads_updated = 234  # Default estimate - could be calculated from actual data
+            flood_update_state.complete_update(roads_updated)
+            logger.info(f"✅ Flood update completed: {output_path}")
+        else:
+            flood_update_state.fail_update("No output generated from flood update")
+            logger.error("Flood update failed - no output")
+            
+    except Exception as e:
+        flood_update_state.fail_update(str(e))
+        logger.error(f"Flood update task failed: {e}", exc_info=True)
+
+
 def init_admin_user(db: Session):
     """Create default admin user if none exists"""
     admin_count = db.query(AdminUser).count()

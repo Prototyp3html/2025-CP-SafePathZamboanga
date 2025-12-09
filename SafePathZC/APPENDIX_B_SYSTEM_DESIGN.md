@@ -166,10 +166,20 @@ This figure presents the administrative interface for system management.
 
 2. **Flood Data Management** – Panel for:
 
-   - Uploading flood zone updates
-   - Adjusting flood risk thresholds
-   - Viewing flood history timeline
-   - Manual flood status verification
+   - **Trigger Manual Flood Update** – Button to immediately run flood data updates instead of waiting for scheduled cron jobs
+   - **Update Status Monitor** – Real-time display showing:
+     - Current update status (Idle / Updating / Completed / Failed)
+     - Progress bar with percentage completion
+     - Number of roads updated
+     - Time elapsed during update
+     - Last update timestamp
+   - **Current Flood Status Card** – Shows:
+     - Total flooded roads count (49 / 10,494)
+     - Visual progress bar of affected roads
+     - Percentage of roads affected
+   - **System Health Status** – Displays:
+     - System uptime percentage (99.8%)
+     - Last health check time
 
 3. **Report Verification Interface** – Shows:
 
