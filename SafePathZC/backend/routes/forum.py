@@ -14,7 +14,7 @@ import json
 import jwt
 import os
 
-from models import SessionLocal, Post, Comment, PostLike, User, AdminUser
+from models import SessionLocal, Post, Comment, PostLike, User, AdminUser, Report, ReportImage
 
 router = APIRouter(prefix="/api/forum", tags=["forum"])
 
@@ -142,6 +142,11 @@ class PostUpdate(BaseModel):
     tags: Optional[List[str]] = None
     is_urgent: Optional[bool] = None
 
+class PostImageData(BaseModel):
+    """Image data for forum post"""
+    image_data: str  # Base64 encoded image
+    filename: str
+
 class PostResponse(BaseModel):
     id: int
     title: str
@@ -159,6 +164,7 @@ class PostResponse(BaseModel):
     updated_at: datetime
     is_liked: bool = False
     timestamp: str
+    images: List[PostImageData] = []  # Images from linked report
 
 class CommentCreate(BaseModel):
     content: str
@@ -216,6 +222,15 @@ def format_post_response(post: Post, user_id: int, db: Session) -> PostResponse:
     # Parse tags
     tags = json.loads(post.tags) if post.tags else []
     
+    # Fetch images from linked report
+    images = []
+    if post.report_id:
+        report_images = db.query(ReportImage).filter(ReportImage.report_id == post.report_id).all()
+        images = [
+            PostImageData(image_data=img.image_data, filename=img.image_filename)
+            for img in report_images
+        ]
+    
     return PostResponse(
         id=post.id,
         title=post.title,
@@ -232,7 +247,8 @@ def format_post_response(post: Post, user_id: int, db: Session) -> PostResponse:
         created_at=post.created_at,
         updated_at=post.updated_at,
         is_liked=is_liked,
-        timestamp=format_timestamp(post.created_at)
+        timestamp=format_timestamp(post.created_at),
+        images=images
     )
 
 def format_comment_response(comment: Comment, db: Session) -> CommentResponse:

@@ -297,17 +297,15 @@ async def update_report_status(
                     
                     post_content = f"""{report.category.upper()} ALERT
 
-📍 Location: {report.location_address}
+Location: {report.location_address}
 
-📋 Report ID: #{report.id}
+Description: {report.description}
 
-📝 Description: {report.description}
-
-⚠️ Severity: {severity_text}
+Severity: {severity_text}
 
 Please exercise caution when traveling through this area and consider alternative routes if possible.
 
-Status: ✅ Verified by Admin"""
+Status: Verified by Admin"""
                     
                     # Try to find the original reporter in the User table
                     reporter_user = None
@@ -336,7 +334,8 @@ Status: ✅ Verified by Admin"""
                         is_urgent=report.urgency == "severe",
                         is_approved=True,  # Auto-approve since report is approved
                         author_id=author_id,
-                        author_name=author_name
+                        author_name=author_name,
+                        report_id=report.id  # Link to source report for images
                     )
                     
                     db.add(new_forum_post)

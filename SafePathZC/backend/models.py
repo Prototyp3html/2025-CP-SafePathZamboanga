@@ -147,6 +147,7 @@ class Post(Base):
     replies_count = Column(Integer, default=0)
     is_urgent = Column(Boolean, default=False)
     is_approved = Column(Boolean, default=False)  # Admin approval required
+    report_id = Column(Integer, ForeignKey("reports.id", ondelete="SET NULL"), nullable=True, index=True)  # Link to source report for images
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
