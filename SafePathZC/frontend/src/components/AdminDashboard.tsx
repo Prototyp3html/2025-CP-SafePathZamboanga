@@ -603,21 +603,21 @@ export const AdminDashboard: React.FC = () => {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        {/* Tab Navigation */}
-        <div className="flex space-x-1 mb-8 bg-white p-1 rounded-lg shadow-sm border border-gray-200">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+        {/* Tab Navigation - Mobile Responsive */}
+        <div className="flex flex-wrap gap-2 mb-8 bg-white p-2 sm:p-1 rounded-lg shadow-sm border border-gray-200 overflow-x-auto">
           <button
             onClick={() => setActiveTab("reports")}
-            className={`flex items-center px-4 py-2 rounded-md font-medium transition-all duration-200 ${
+            className={`flex items-center px-3 sm:px-4 py-2 rounded-md font-medium transition-all duration-200 whitespace-nowrap text-sm sm:text-base ${
               activeTab === "reports"
                 ? "bg-blue-600 text-white"
                 : "text-gray-700 hover:bg-gray-100"
             }`}
           >
-            <Flag className="w-4 h-4 mr-2" />
+            <Flag className="w-4 h-4 mr-1 sm:mr-2" />
             Reports
             <span
-              className={`ml-2 px-2 py-0.5 rounded-full text-xs font-medium ${
+              className={`ml-1 sm:ml-2 px-2 py-0.5 rounded-full text-xs font-medium ${
                 activeTab === "reports"
                   ? "bg-white/20 text-white"
                   : "bg-gray-200 text-gray-600"
@@ -628,16 +628,16 @@ export const AdminDashboard: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveTab("users")}
-            className={`flex items-center px-4 py-2 rounded-md font-medium transition-all duration-200 ${
+            className={`flex items-center px-3 sm:px-4 py-2 rounded-md font-medium transition-all duration-200 whitespace-nowrap text-sm sm:text-base ${
               activeTab === "users"
                 ? "bg-blue-600 text-white"
                 : "text-gray-700 hover:bg-gray-100"
             }`}
           >
-            <Users className="w-4 h-4 mr-2" />
+            <Users className="w-4 h-4 mr-1 sm:mr-2" />
             Users
             <span
-              className={`ml-2 px-2 py-0.5 rounded-full text-xs font-medium ${
+              className={`ml-1 sm:ml-2 px-2 py-0.5 rounded-full text-xs font-medium ${
                 activeTab === "users"
                   ? "bg-white/20 text-white"
                   : "bg-gray-200 text-gray-600"
@@ -648,35 +648,35 @@ export const AdminDashboard: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveTab("analytics")}
-            className={`flex items-center px-4 py-2 rounded-md font-medium transition-all duration-200 ${
+            className={`flex items-center px-3 sm:px-4 py-2 rounded-md font-medium transition-all duration-200 whitespace-nowrap text-sm sm:text-base ${
               activeTab === "analytics"
                 ? "bg-blue-600 text-white"
                 : "text-gray-700 hover:bg-gray-100"
             }`}
           >
-            <BarChart3 className="w-4 h-4 mr-2" />
+            <BarChart3 className="w-4 h-4 mr-1 sm:mr-2" />
             Analytics
           </button>
           <button
             onClick={() => setActiveTab("flood")}
-            className={`flex items-center px-4 py-2 rounded-md font-medium transition-all duration-200 ${
+            className={`flex items-center px-3 sm:px-4 py-2 rounded-md font-medium transition-all duration-200 whitespace-nowrap text-sm sm:text-base ${
               activeTab === "flood"
                 ? "bg-blue-600 text-white"
                 : "text-gray-700 hover:bg-gray-100"
             }`}
           >
-            <Droplets className="w-4 h-4 mr-2" />
+            <Droplets className="w-4 h-4 mr-1 sm:mr-2" />
             Flood Data
           </button>
           <button
             onClick={() => setActiveTab("config")}
-            className={`flex items-center px-4 py-2 rounded-md font-medium transition-all duration-200 ${
+            className={`flex items-center px-3 sm:px-4 py-2 rounded-md font-medium transition-all duration-200 whitespace-nowrap text-sm sm:text-base ${
               activeTab === "config"
                 ? "bg-blue-600 text-white"
                 : "text-gray-700 hover:bg-gray-100"
             }`}
           >
-            <Settings className="w-4 h-4 mr-2" />
+            <Settings className="w-4 h-4 mr-1 sm:mr-2" />
             System Config
           </button>
         </div>
