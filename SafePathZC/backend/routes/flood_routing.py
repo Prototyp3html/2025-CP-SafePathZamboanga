@@ -863,10 +863,25 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
         if len(all_routes) == 0:
             raise HTTPException(status_code=500, detail="Could not generate any routes - all routing services unavailable")
         
-        logger.info(f"Generated {len(all_routes)} candidate routes. Selecting 3 distinct routes based on flood risk...")
+        logger.info(f"Generated {len(all_routes)} candidate routes. Selecting 3 distinct routes based on flood risk AND traffic...")
         
-        # Sort all routes by flood percentage (ascending - safest first)
-        all_routes.sort(key=lambda r: r["flood_percentage"])
+        # Calculate combined routing score for each route
+        # Lower score = better route
+        for route in all_routes:
+            flood_score = route["flood_percentage"]  # 0-100
+            traffic_penalty = route.get("traffic_analysis", {}).get("traffic_penalty", 1.0)  # 1.0-2.5
+            
+            # Combined score: flood risk + traffic impact
+            # Traffic penalty is weighted heavily to avoid congested routes
+            traffic_score = (traffic_penalty - 1.0) * 50  # Convert penalty to 0-75 score
+            
+            route["routing_score"] = flood_score + traffic_score
+            route["traffic_impact"] = traffic_score
+            
+            logger.info(f"  Route score: flood={flood_score:.1f}, traffic={traffic_score:.1f}, TOTAL={route['routing_score']:.1f}")
+        
+        # Sort all routes by combined score (ascending - best first)
+        all_routes.sort(key=lambda r: r["routing_score"])
         
         # Log all candidate routes for debugging
         for i, route in enumerate(all_routes):
@@ -878,17 +893,29 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
         selected_routes = []
         used_indices = set()
         
-        # SAFE ROUTE (Green): Find the route with LOWEST flood percentage
+        # BEST ROUTE (Green): Route with LOWEST combined score (best flood + traffic)
         safe_idx = 0
         safe_route = all_routes[safe_idx]
+        
+        # Build description mentioning both flood and traffic
+        traffic_info = safe_route.get("traffic_analysis", {})
+        traffic_level = traffic_info.get("traffic_level", "free_flow")
+        incident_count = len(traffic_info.get("incidents_on_route", []))
+        
+        description_parts = [f"{safe_route['flood_percentage']:.1f}% flood risk"]
+        if incident_count > 0:
+            description_parts.append(f"{incident_count} traffic incident(s)")
+        else:
+            description_parts.append(f"{traffic_level} traffic")
+        
         selected_routes.append({
             **safe_route,
             "label": "safe",
             "color": "#22c55e",  # Green
-            "description": f"Safe route: {safe_route['flood_percentage']:.1f}% flood risk"
+            "description": f"Best route: " + ", ".join(description_parts)
         })
         used_indices.add(safe_idx)
-        logger.info(f"Selected SAFE route (index {safe_idx}): {safe_route['flood_percentage']:.1f}% flooded, {safe_route['distance']:.0f}m")
+        logger.info(f"Selected BEST route (index {safe_idx}): {safe_route['flood_percentage']:.1f}% flooded, traffic={traffic_level}, score={safe_route['routing_score']:.1f}")
         
         # FLOOD-PRONE ROUTE (Red): Find the route with HIGHEST flood percentage OR shortest distance
         # Priority 1: Route with highest flood % that's significantly different from safe route
