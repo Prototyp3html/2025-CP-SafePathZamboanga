@@ -18,6 +18,11 @@ interface Comment {
   timestamp: string;
 }
 
+interface PostImage {
+  image_data: string;
+  filename: string;
+}
+
 interface PostRepliesModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -32,6 +37,7 @@ interface PostRepliesModalProps {
     urgent: boolean;
     category: string;
     tags: string[];
+    images?: PostImage[];
   };
   onReplyAdded: () => void;
 }
@@ -191,6 +197,46 @@ export const PostRepliesModal = ({
               </Badge>
             </div>
             <p className="text-gray-700 mb-3">{post.content}</p>
+
+            {/* Display Images from Report */}
+            {post.images && post.images.length > 0 && (
+              <div className="mb-4">
+                <h4 className="text-sm font-medium text-gray-700 mb-3">
+                  Evidence & Attachments
+                </h4>
+                <div
+                  className={`grid gap-3 ${
+                    post.images.length === 1
+                      ? "grid-cols-1"
+                      : post.images.length === 2
+                      ? "grid-cols-2"
+                      : "grid-cols-2 sm:grid-cols-3"
+                  }`}
+                >
+                  {post.images.map((image, idx) => (
+                    <div
+                      key={idx}
+                      className="relative rounded-lg overflow-hidden bg-gray-200 group"
+                      style={{ maxHeight: "300px" }}
+                    >
+                      <img
+                        src={image.image_data}
+                        alt={image.filename}
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+                        style={{ maxHeight: "300px" }}
+                      />
+                      <div className="absolute inset-0 bg-black opacity-0 group-hover:opacity-30 transition-opacity duration-300" />
+                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        <p className="text-xs text-white truncate">
+                          {image.filename}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {post.tags && post.tags.length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {post.tags.map((tag, index) => (
