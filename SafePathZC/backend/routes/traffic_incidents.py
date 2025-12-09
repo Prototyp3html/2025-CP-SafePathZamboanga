@@ -9,11 +9,10 @@ No demo data - only real user submissions.
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 
-from models import Report
-from database_utils import get_db
+from models import Report, get_db
 from services.real_traffic_detection import get_traffic_service, RealTrafficDetectionService
 
 logger = logging.getLogger(__name__)
@@ -283,6 +282,3 @@ async def get_traffic_statistics(db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Failed to get statistics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get statistics: {str(e)}")
-
-
-from datetime import timedelta
