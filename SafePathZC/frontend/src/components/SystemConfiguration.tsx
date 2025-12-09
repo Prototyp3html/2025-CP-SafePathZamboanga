@@ -71,23 +71,29 @@ export const SystemConfiguration: React.FC = () => {
       }
 
       const response = await fetch(
-        `${BACKEND_URL}/admin/system-config`,
+        `${BACKEND_URL}/admin/system-config?t=${Date.now()}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
+          cache: "no-store",
         }
       );
 
       if (response.ok) {
         const data = await response.json();
+        console.log("Config loaded from API:", data.values);
         setConfig(data.values);
         setOriginalConfig(data.values);
         setLastUpdated(data.last_updated);
       } else if (response.status === 404) {
         // Default values if endpoint doesn't exist yet
+        console.warn("Config endpoint returned 404, using defaults");
         notification.info("Using default configuration values");
+      } else {
+        console.error("Failed to load config:", response.status, response.statusText);
+        notification.warning("Using default configuration values");
       }
     } catch (error) {
       console.error("Error loading configuration:", error);
@@ -133,6 +139,9 @@ export const SystemConfiguration: React.FC = () => {
         setOriginalConfig(config);
         setLastUpdated(data.last_updated);
         notification.success("Configuration saved successfully");
+        
+        // Reload fresh data to confirm save
+        setTimeout(() => loadConfiguration(), 500);
       } else {
         const error = await response.json();
         notification.error(error.detail || "Failed to save configuration");

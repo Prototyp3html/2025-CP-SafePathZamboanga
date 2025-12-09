@@ -3154,6 +3154,11 @@ async def startup_event():
     global background_tasks_running
     
     try:
+        # Create all database tables on startup
+        from models import create_tables
+        create_tables()
+        print("Database tables initialized")
+        
         # Initialize routing service (zcroadmap.geojson - has highway classification)
         routing_service = get_routing_service()
         print(f"âœ“ Routing service loaded with {len(routing_service.road_segments)} road segments from zcroadmap.geojson")
