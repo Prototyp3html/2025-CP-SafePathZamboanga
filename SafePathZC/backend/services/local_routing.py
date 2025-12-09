@@ -118,7 +118,7 @@ class RoadSegment:
         Args:
             transportation_mode: Type of transport (car/motorcycle/walking) - affects speed/roads
             risk_profile: Flood risk tolerance (safe/manageable/prone) - PRIMARY route differentiator
-                - "safe": Heavily avoids flooded roads (50x penalty) - forces significant detours
+                - "safe": Heavily avoids flooded roads (60x penalty) - forces significant detours
                 - "manageable": Moderate avoidance (5x penalty) - balanced approach
                 - "prone": Minimal avoidance (1.1x penalty) - shortest path, ignores floods
             flood_lookup_cache: Optional pre-built dict mapping osm_id -> is_flooded (fast O(1) lookup)
@@ -146,7 +146,7 @@ class RoadSegment:
         
         if risk_profile == "safe":
             # SAFE ROUTE: VERY aggressive penalty for flooded roads - forces alternate paths
-            flood_factor = 50.0 if is_flooded else 1.0 
+            flood_factor = 60.0 if is_flooded else 1.0 
         elif risk_profile == "manageable":
             # MANAGEABLE ROUTE: Moderate penalty for flooded roads
             flood_factor = 5.0 if is_flooded else 1.0  
