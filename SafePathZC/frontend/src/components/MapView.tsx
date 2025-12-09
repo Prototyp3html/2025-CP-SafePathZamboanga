@@ -7826,13 +7826,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           max: 1.0,
           minOpacity: 0.3,
           gradient: {
-            // Color gradient: low (blue) to high elevation (red)
-            0.0: "#0033FF",
-            0.2: "#00CCFF",
-            0.4: "#00FF00",
-            0.6: "#FFFF00",
-            0.8: "#FF6600",
-            1.0: "#FF0000",
+            // Color gradient in order: Blue → Purple → Green → Orange → Red → Violet (BRIGHT COLORS)
+            0.0: "#0066FF",     // Bright Blue (Flat)
+            0.17: "#9933FF",    // Bright Purple (Gentle)
+            0.33: "#00FF00",    // Bright Green (Moderate)
+            0.50: "#FF9900",    // Bright Orange (Steep)
+            0.67: "#FF0000",    // Bright Red (Very Steep)
+            1.0: "#FF00FF",     // Bright Violet (Extreme)
           },
         });
 
@@ -7876,11 +7876,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           const avgIntensity = data.totalIntensity / data.count;
 
           let color: string;
-          if (avgIntensity < 0.2) color = "#0033FF";
-          else if (avgIntensity < 0.4) color = "#00FF00";
-          else if (avgIntensity < 0.6) color = "#FFFF00";
-          else if (avgIntensity < 0.8) color = "#FF6600";
-          else color = "#FF0000";
+          // Color order: Blue → Purple → Green → Orange → Red → Violet (BRIGHT)
+          if (avgIntensity < 0.17) color = "#0066FF";      // Bright Blue
+          else if (avgIntensity < 0.33) color = "#9933FF"; // Bright Purple
+          else if (avgIntensity < 0.50) color = "#00FF00"; // Bright Green
+          else if (avgIntensity < 0.67) color = "#FF9900"; // Bright Orange
+          else if (avgIntensity < 1.0) color = "#FF0000";  // Bright Red
+          else color = "#FF00FF";                          // Bright Violet
 
           const rect = L.rectangle(
             [
@@ -10105,7 +10107,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                           style={{
                             width: "20px",
                             height: "14px",
-                            background: "#00FF00",
+                            background: "#0066FF",
                             borderRadius: "2px",
                             border: "1px solid rgba(0,0,0,0.2)",
                           }}
@@ -10123,7 +10125,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                           style={{
                             width: "20px",
                             height: "14px",
-                            background: "#7FFF00",
+                            background: "#9933FF",
                             borderRadius: "2px",
                             border: "1px solid rgba(0,0,0,0.2)",
                           }}
@@ -10141,7 +10143,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                           style={{
                             width: "20px",
                             height: "14px",
-                            background: "#FFFF00",
+                            background: "#00FF00",
                             borderRadius: "2px",
                             border: "1px solid rgba(0,0,0,0.2)",
                           }}
@@ -10161,7 +10163,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                           style={{
                             width: "20px",
                             height: "14px",
-                            background: "#FFA500",
+                            background: "#FF9900",
                             borderRadius: "2px",
                             border: "1px solid rgba(0,0,0,0.2)",
                           }}
@@ -10179,7 +10181,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                           style={{
                             width: "20px",
                             height: "14px",
-                            background: "#FF4500",
+                            background: "#FF0000",
                             borderRadius: "2px",
                             border: "1px solid rgba(0,0,0,0.2)",
                           }}
@@ -10199,7 +10201,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                           style={{
                             width: "20px",
                             height: "14px",
-                            background: "#FF0000",
+                            background: "#FF00FF",
                             borderRadius: "2px",
                             border: "1px solid rgba(0,0,0,0.2)",
                           }}
