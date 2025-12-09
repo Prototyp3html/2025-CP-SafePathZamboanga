@@ -22,12 +22,26 @@ def get_system_config():
     """Get current system configuration for route calculation
     This allows admin to adjust penalties without restarting the server"""
     try:
-        # Import here to avoid circular imports
-        from routes.admin import system_config
-        return system_config
-    except ImportError:
-        # Fallback to default if admin.py not available
-        return None
+        from models import SessionLocal, SystemConfig
+        
+        db = SessionLocal()
+        config = db.query(SystemConfig).filter(SystemConfig.id == 1).first()
+        db.close()
+        
+        if config:
+            return config
+        else:
+            # Return default from in-memory fallback
+            from routes.admin import system_config
+            return system_config
+    except Exception as e:
+        # Fallback to in-memory config if database unavailable
+        print(f"Warning: Could not load config from database: {e}")
+        try:
+            from routes.admin import system_config
+            return system_config
+        except ImportError:
+            return None
 
 # Helper utilities
 def _parse_flood_flag(value: Any) -> bool:

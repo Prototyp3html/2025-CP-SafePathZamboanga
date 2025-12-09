@@ -1323,10 +1323,33 @@ async def get_flood_update_status(
 
 @router.get("/system-config")
 async def get_system_config(
-    admin_id: int = Depends(verify_admin_token)
+    admin_id: int = Depends(verify_admin_token),
+    db: Session = Depends(get_db)
 ):
     """Get current system configuration"""
-    return system_config.to_dict()
+    from models import SystemConfig
+    
+    # Get config from database
+    config = db.query(SystemConfig).filter(SystemConfig.id == 1).first()
+    
+    if not config:
+        # Create default config if it doesn't exist
+        config = SystemConfig()
+        db.add(config)
+        db.commit()
+    
+    return {
+        "values": {
+            "elevation_weight": config.elevation_weight,
+            "rainfall_weight": config.rainfall_weight,
+            "proximity_weight": config.proximity_weight,
+            "safe_route_penalty": config.safe_route_penalty,
+            "manageable_route_penalty": config.manageable_route_penalty,
+            "flood_prone_route_penalty": config.flood_prone_route_penalty,
+            "api_update_frequency": config.api_update_frequency,
+        },
+        "last_updated": config.updated_at.isoformat() if config.updated_at else None
+    }
 
 @router.put("/system-config")
 async def update_system_config(
@@ -1375,9 +1398,40 @@ async def update_system_config(
         system_config.api_update_frequency = config_update.api_update_frequency
         system_config.last_updated = datetime.utcnow()
         
+        # Also save to database
+        from models import SystemConfig
+        
+        config = db.query(SystemConfig).filter(SystemConfig.id == 1).first()
+        if not config:
+            config = SystemConfig()
+            db.add(config)
+        
+        config.elevation_weight = config_update.elevation_weight
+        config.rainfall_weight = config_update.rainfall_weight
+        config.proximity_weight = config_update.proximity_weight
+        config.safe_route_penalty = config_update.safe_route_penalty
+        config.manageable_route_penalty = config_update.manageable_route_penalty
+        config.flood_prone_route_penalty = config_update.flood_prone_route_penalty
+        config.api_update_frequency = config_update.api_update_frequency
+        config.updated_at = datetime.utcnow()
+        config.updated_by_admin_id = admin_id
+        
+        db.commit()
+        
         logger.info(f"System configuration updated by admin {admin_id}")
         
-        return system_config.to_dict()
+        return {
+            "values": {
+                "elevation_weight": config.elevation_weight,
+                "rainfall_weight": config.rainfall_weight,
+                "proximity_weight": config.proximity_weight,
+                "safe_route_penalty": config.safe_route_penalty,
+                "manageable_route_penalty": config.manageable_route_penalty,
+                "flood_prone_route_penalty": config.flood_prone_route_penalty,
+                "api_update_frequency": config.api_update_frequency,
+            },
+            "last_updated": config.updated_at.isoformat() if config.updated_at else None
+        }
         
     except HTTPException:
         raise
