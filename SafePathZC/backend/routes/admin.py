@@ -996,7 +996,8 @@ Status: ✅ Verified by Admin"""
                 is_urgent=report_data.urgency == "severe",
                 is_approved=True,  # Auto-approve since report is approved
                 author_id=author_id,
-                author_name=author_name
+                author_name=author_name,
+                report_id=new_report.id  # Link to source report for images
             )
             
             db.add(new_forum_post)
@@ -1072,7 +1073,8 @@ Status: ✅ Verified by Admin"""
             is_urgent=report_data.urgency == "severe",
             is_approved=True,  # Auto-approve admin reports
             author_id=admin_user.id,
-            author_name=admin_user.name
+            author_name=admin_user.name,
+            report_id=new_report.id  # Link to source report for images
         )
         
         db.add(new_forum_post)

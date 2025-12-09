@@ -3187,6 +3187,17 @@ async def startup_event():
         from models import Base
         Base.metadata.create_all(bind=engine)
         
+        # Run database migrations
+        print("Running database migrations...")
+        try:
+            from migrations.add_post_images import migrate
+            if migrate():
+                print("✓ Database migrations completed")
+            else:
+                print("⚠ Some migrations failed, but continuing...")
+        except Exception as e:
+            print(f"⚠ Migration warning: {e}")
+        
         init_admin_user(db)
         init_demo_user(db)
     finally:
