@@ -385,11 +385,12 @@ async def get_flood_aware_routes(request: FloodRouteRequest, db: Session = Depen
                                     traffic_service = get_traffic_service()
                                     
                                     # Load incidents from database
+                                    logger.info(f"Loading traffic incidents from db (type: {type(db).__name__})")
                                     await traffic_service.load_incidents_from_db(db)
                                     traffic_analysis = traffic_service.calculate_traffic_for_route(coordinates)
                                     
                                 except Exception as e:
-                                    logger.warning(f"Traffic analysis skipped: {e}")
+                                    logger.error(f"Traffic analysis error: {e}", exc_info=True)
                                     traffic_analysis = {
                                         "congestion_percentage": 0.0,
                                         "traffic_level": "free_flow",
