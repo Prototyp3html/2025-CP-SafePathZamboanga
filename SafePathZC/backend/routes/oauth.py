@@ -50,6 +50,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
 def find_or_create_user(db: Session, email: str, name: str, provider: str, provider_id: str):
     """Find existing user or create new one from OAuth data"""
+    from datetime import datetime
+    
     # Try to find existing user by email
     user = db.query(User).filter(User.email == email).first()
     
@@ -66,7 +68,9 @@ def find_or_create_user(db: Session, email: str, name: str, provider: str, provi
         name=name,
         password_hash="",  # No password for OAuth users
         role="user",
-        is_active=True
+        is_active=True,
+        joined_at=datetime.utcnow(),
+        last_activity=datetime.utcnow()
     )
     
     db.add(new_user)

@@ -233,7 +233,8 @@ export const UserAuth: React.FC<UserAuthProps> = ({
       }
     } catch (error) {
       console.error("Registration error:", error);
-      setError("Failed to connect to server");
+      const errorMessage = error instanceof Error ? error.message : "Failed to connect to server";
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
