@@ -313,12 +313,12 @@ const Profile = () => {
                 {/* Member Since Badge */}
                 <div className="bg-gray-900 dark:bg-blue-600 text-white px-4 py-2 rounded-full text-sm mb-6 inline-block">
                   Member since{" "}
-                  {user?.created_at
-                    ? new Date(user.created_at).toLocaleDateString("en-US", {
+                  {user?.memberSince
+                    ? new Date(user.memberSince).toLocaleDateString("en-US", {
                         month: "long",
                         year: "numeric",
                       })
-                    : "October 2025"}
+                    : "Date unknown"}
                 </div>
 
                 {/* Community Points */}
