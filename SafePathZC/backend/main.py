@@ -3155,10 +3155,37 @@ async def startup_event():
     global background_tasks_running
     
     try:
-        # Create all database tables on startup
-        from models import create_tables
-        create_tables()
-        print("Database tables initialized")
+        # Create all database tables on startup using main engine
+        print("🔧 Creating database tables...")
+        try:
+            Base.metadata.create_all(bind=engine)
+            print("✅ Database tables initialized successfully")
+            
+            # Add missing columns to users table if they don't exist
+            with engine.begin() as connection:
+                is_postgres = "postgresql" in DATABASE_URL.lower()
+                
+                if is_postgres:
+                    # Check which columns exist
+                    result = connection.execute(text("""
+                        SELECT column_name FROM information_schema.columns 
+                        WHERE table_name = 'users' AND table_schema = 'public'
+                    """))
+                    existing_cols = {row[0] for row in result.fetchall()}
+                    
+                    columns_to_add = ['first_name', 'middle_name', 'last_name']
+                    for col in columns_to_add:
+                        if col not in existing_cols:
+                            try:
+                                connection.execute(text(f"ALTER TABLE users ADD COLUMN {col} VARCHAR"))
+                                print(f"✅ Added column {col} to users table")
+                            except Exception as col_err:
+                                print(f"⚠️ Could not add {col}: {col_err}")
+                
+        except Exception as table_err:
+            print(f"⚠️ Error creating tables: {table_err}")
+            import traceback
+            traceback.print_exc()
         
         # Initialize routing service (zcroadmap.geojson - has highway classification)
         routing_service = get_routing_service()
