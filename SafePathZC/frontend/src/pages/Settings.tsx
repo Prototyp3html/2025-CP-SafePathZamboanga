@@ -667,7 +667,7 @@ Type "DELETE" to confirm:`;
       {isAdmin ? (
         <AdminSettings />
       ) : user ? (
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="bg-gray-50 dark:bg-gray-900 pb-8">
           <NavigationBar />
 
           <main className="pt-20 container mx-auto px-4 py-8 max-w-4xl">
@@ -1449,7 +1449,7 @@ Type "DELETE" to confirm:`;
         </div>
       ) : (
         // Show login prompt when no user is logged in
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="bg-gray-50 dark:bg-gray-900 pb-8">
           <NavigationBar />
           <main className="pt-20 container mx-auto px-4 py-8 max-w-4xl">
             <div className="text-center">

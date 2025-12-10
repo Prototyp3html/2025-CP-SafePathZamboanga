@@ -63,10 +63,10 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans">
+    <div className="h-screen bg-gray-50 font-sans overflow-hidden">
       <NavigationBar />
 
-      <main className="pt-12 md:pt-14 lg:pt-16">
+      <main className="pt-12 md:pt-14 lg:pt-16 h-[calc(100vh-48px)] md:h-[calc(100vh-56px)] lg:h-[calc(100vh-64px)]">
         {/* Main Content Grid */}
         <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-4">
           <div className="grid grid-cols-1 gap-2 sm:gap-4 h-[calc(100vh-80px)] sm:h-[calc(100vh-100px)] lg:h-[calc(100vh-120px)]">

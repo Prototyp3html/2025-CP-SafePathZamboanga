@@ -591,7 +591,7 @@ const Alerts = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="bg-gray-50 pb-8">
       <NavigationBar />
 
       <main className="pt-20 container mx-auto px-4 py-8">

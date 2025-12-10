@@ -144,7 +144,7 @@ const Profile = () => {
     return (
       <>
         <NavigationBar />
-        <div className="min-h-screen bg-gray-50 pt-20">
+        <div className="bg-gray-50 pt-20 pb-8">
           <div className="max-w-6xl mx-auto px-4 py-8">
             {/* Admin Header */}
             <div className="text-center mb-8">
@@ -177,7 +177,7 @@ const Profile = () => {
     return (
       <>
         <NavigationBar />
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-20">
+        <div className="bg-gray-50 dark:bg-gray-900 pt-20 pb-8">
           <div className="max-w-4xl mx-auto px-4 py-8">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 text-center">
               <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">

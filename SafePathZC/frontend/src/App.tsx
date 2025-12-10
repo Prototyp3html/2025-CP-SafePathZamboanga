@@ -13,11 +13,46 @@ import Profile from "./pages/Profile";
 import AdminSettings from "./pages/AdminSettings";
 import OAuthCallback from "./components/OAuthCallback";
 
+// Activity heartbeat component
+function ActivityTracker() {
+  useEffect(() => {
+    const updateActivity = async () => {
+      const token = localStorage.getItem("user_token") || localStorage.getItem("admin_token");
+      if (!token) return;
+
+      try {
+        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
+        await fetch(`${BACKEND_URL}/auth/update-activity`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json"
+          }
+        });
+      } catch (error) {
+        // Silently fail - this is just for activity tracking
+        console.debug("Activity update failed:", error);
+      }
+    };
+
+    // Update activity immediately on mount
+    updateActivity();
+
+    // Update activity every 5 minutes (300000 ms)
+    const interval = setInterval(updateActivity, 300000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return null;
+}
+
 function App() {
   return (
     <PreferencesProvider>
       <ConfirmationProvider>
         <Router>
+          <ActivityTracker />
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/map" element={<Index />} />
