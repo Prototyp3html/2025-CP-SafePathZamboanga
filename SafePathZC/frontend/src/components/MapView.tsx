@@ -7827,12 +7827,12 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           minOpacity: 0.3,
           gradient: {
             // Color gradient in order: Blue → Purple → Green → Orange → Red → Violet (BRIGHT COLORS)
-            0.0: "#0066FF",     // Bright Blue (Flat)
-            0.17: "#9933FF",    // Bright Purple (Gentle)
-            0.33: "#00FF00",    // Bright Green (Moderate)
-            0.50: "#FF9900",    // Bright Orange (Steep)
-            0.67: "#FF0000",    // Bright Red (Very Steep)
-            1.0: "#FF00FF",     // Bright Violet (Extreme)
+            0.0: "#0066FF", // Bright Blue (Flat)
+            0.17: "#9933FF", // Bright Purple (Gentle)
+            0.33: "#00FF00", // Bright Green (Moderate)
+            0.5: "#FF9900", // Bright Orange (Steep)
+            0.67: "#FF0000", // Bright Red (Very Steep)
+            1.0: "#FF00FF", // Bright Violet (Extreme)
           },
         });
 
@@ -7877,12 +7877,12 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
           let color: string;
           // Color order: Blue → Purple → Green → Orange → Red → Violet (BRIGHT)
-          if (avgIntensity < 0.17) color = "#0066FF";      // Bright Blue
+          if (avgIntensity < 0.17) color = "#0066FF"; // Bright Blue
           else if (avgIntensity < 0.33) color = "#9933FF"; // Bright Purple
-          else if (avgIntensity < 0.50) color = "#00FF00"; // Bright Green
+          else if (avgIntensity < 0.5) color = "#00FF00"; // Bright Green
           else if (avgIntensity < 0.67) color = "#FF9900"; // Bright Orange
-          else if (avgIntensity < 1.0) color = "#FF0000";  // Bright Red
-          else color = "#FF00FF";                          // Bright Violet
+          else if (avgIntensity < 1.0) color = "#FF0000"; // Bright Red
+          else color = "#FF00FF"; // Bright Violet
 
           const rect = L.rectangle(
             [
@@ -9278,7 +9278,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     });
 
     console.log(
-      `🔒 Safe routes only: ${safeRoutesOnly} - ${safeRoutesOnly ? "Hiding" : "Showing"} orange and red routes`
+      `🔒 Safe routes only: ${safeRoutesOnly} - ${
+        safeRoutesOnly ? "Hiding" : "Showing"
+      } orange and red routes`
     );
   }, [safeRoutesOnly]);
 
@@ -9317,7 +9319,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       }
     });
     circleMarkersRef.current = [];
-    
+
     // Reset Safe Routes Only toggle when clearing destinations
     setSafeRoutesOnly(false);
   };
@@ -10227,9 +10229,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     position: "fixed",
                     bottom: "160px",
                     left: "20px",
-                    background: safeRoutesOnly ? "#27ae60" : isDarkMode ? "#374151" : "#fff",
-                    border: safeRoutesOnly 
-                      ? "2px solid #27ae60" 
+                    background: safeRoutesOnly
+                      ? "#27ae60"
+                      : isDarkMode
+                      ? "#374151"
+                      : "#fff",
+                    border: safeRoutesOnly
+                      ? "2px solid #27ae60"
                       : `2px solid ${isDarkMode ? "#4b5563" : "#ddd"}`,
                     color: safeRoutesOnly ? "white" : textColor,
                     padding: "10px 16px",
@@ -10242,103 +10248,109 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                     fontFamily: "system-ui, -apple-system, sans-serif",
                     boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
                   }}
-                  title={safeRoutesOnly ? "Showing only safe routes" : "Click to show only safe routes"}
+                  title={
+                    safeRoutesOnly
+                      ? "Showing only safe routes"
+                      : "Click to show only safe routes"
+                  }
                 >
-                  {safeRoutesOnly ? "✓ Safe Routes Only" : "🔒 Safe Routes Only"}
+                  {safeRoutesOnly
+                    ? "✓ Safe Routes Only"
+                    : "🔒 Safe Routes Only"}
                 </button>
 
                 {/* Route Options Legend */}
-              <div
-                style={{
-                  position: "fixed",
-                  bottom: "30px",
-                  left: "20px",
-                  background: legendBg,
-                  padding: "12px",
-                  borderRadius: "8px",
-                  boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
-                  border: `1px solid ${
-                    isDarkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)"
-                  }`,
-                  zIndex: 1000,
-                  minWidth: "200px",
-                  fontFamily: "system-ui, -apple-system, sans-serif",
-                }}
-              >
-                <h4
-                  style={{
-                    margin: "0 0 10px 0",
-                    color: textColor,
-                    fontSize: "14px",
-                    fontWeight: "600",
-                  }}
-                >
-                  🗺️ Route Options
-                </h4>
                 <div
                   style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "5px",
+                    position: "fixed",
+                    bottom: "30px",
+                    left: "20px",
+                    background: legendBg,
+                    padding: "12px",
+                    borderRadius: "8px",
+                    boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
+                    border: `1px solid ${
+                      isDarkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)"
+                    }`,
+                    zIndex: 1000,
+                    minWidth: "200px",
+                    fontFamily: "system-ui, -apple-system, sans-serif",
                   }}
                 >
+                  <h4
+                    style={{
+                      margin: "0 0 10px 0",
+                      color: textColor,
+                      fontSize: "14px",
+                      fontWeight: "600",
+                    }}
+                  >
+                    🗺️ Route Options
+                  </h4>
                   <div
                     style={{
                       display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
+                      flexDirection: "column",
+                      gap: "5px",
                     }}
                   >
                     <div
                       style={{
-                        width: "20px",
-                        height: "3px",
-                        background: "#27ae60",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
                       }}
-                    ></div>
-                    <span style={{ fontSize: "12px", color: textColor }}>
-                      Safe Route
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
+                    >
+                      <div
+                        style={{
+                          width: "20px",
+                          height: "3px",
+                          background: "#27ae60",
+                        }}
+                      ></div>
+                      <span style={{ fontSize: "12px", color: textColor }}>
+                        Safe Route
+                      </span>
+                    </div>
                     <div
                       style={{
-                        width: "20px",
-                        height: "3px",
-                        background: "#f39c12",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
                       }}
-                    ></div>
-                    <span style={{ fontSize: "12px", color: textColor }}>
-                      Manageable Route
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
+                    >
+                      <div
+                        style={{
+                          width: "20px",
+                          height: "3px",
+                          background: "#f39c12",
+                        }}
+                      ></div>
+                      <span style={{ fontSize: "12px", color: textColor }}>
+                        Manageable Route
+                      </span>
+                    </div>
                     <div
                       style={{
-                        width: "20px",
-                        height: "3px",
-                        background: "#e74c3c",
-                        borderStyle: "dashed",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
                       }}
-                    ></div>
-                    <span style={{ fontSize: "12px", color: textColor }}>
-                      Flood-Prone Route
-                    </span>
+                    >
+                      <div
+                        style={{
+                          width: "20px",
+                          height: "3px",
+                          background: "#e74c3c",
+                          borderStyle: "dashed",
+                        }}
+                      ></div>
+                      <span style={{ fontSize: "12px", color: textColor }}>
+                        Flood-Prone Route
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
               </>
             );
           })()}
