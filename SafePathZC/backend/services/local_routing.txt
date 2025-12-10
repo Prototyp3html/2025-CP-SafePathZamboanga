@@ -17,32 +17,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 route_logger = get_route_logger()
 
-# Import system config for dynamic multipliers
-def get_system_config():
-    """Get current system configuration for route calculation
-    This allows admin to adjust penalties without restarting the server"""
-    try:
-        from models import SessionLocal, SystemConfig
-        
-        db = SessionLocal()
-        config = db.query(SystemConfig).filter(SystemConfig.id == 1).first()
-        db.close()
-        
-        if config:
-            return config
-        else:
-            # Return default from in-memory fallback
-            from routes.admin import system_config
-            return system_config
-    except Exception as e:
-        # Fallback to in-memory config if database unavailable
-        print(f"Warning: Could not load config from database: {e}")
-        try:
-            from routes.admin import system_config
-            return system_config
-        except ImportError:
-            return None
-
 # Helper utilities
 def _parse_flood_flag(value: Any) -> bool:
     """Convert various truthy/falsey representations into a boolean.
@@ -225,38 +199,35 @@ class RoadSegment:
         
         # Get traffic data for this segment (if available)
         try:
-            try:
-                from services.traffic_detection import get_traffic_service
-                traffic_service = get_traffic_service()
+            from services.traffic_detection import get_traffic_service
+            traffic_service = get_traffic_service()
+            
+            # Check for traffic data near this segment
+            if self.coordinates and len(self.coordinates) > 0:
+                # Use middle coordinate of segment
+                mid_idx = len(self.coordinates) // 2
+                coord = self.coordinates[mid_idx]
                 
-                # Check for traffic data near this segment
-                if self.coordinates and len(self.coordinates) > 0:
-                    # Use middle coordinate of segment
-                    mid_idx = len(self.coordinates) // 2
-                    coord = self.coordinates[mid_idx]
+                # Find nearest traffic segment
+                nearest_traffic = traffic_service._find_nearest_traffic_segment(coord.lng, coord.lat)
+                
+                if nearest_traffic:
+                    # Apply traffic penalty based on congestion level
+                    traffic_factor = nearest_traffic.speed_penalty
                     
-                    # Find nearest traffic segment
-                    nearest_traffic = traffic_service._find_nearest_traffic_segment(coord.lng, coord.lat)
+                    # Additional penalties for different risk profiles
+                    if risk_profile == "safe":
+                        # Safe routes avoid heavy traffic (prefer time over distance)
+                        if traffic_factor > 2.0:  # Heavy congestion
+                            traffic_factor *= 1.5  # 1.5x additional penalty
+                    elif risk_profile == "manageable":
+                        # Manageable routes tolerate moderate traffic
+                        if traffic_factor > 2.5:  # Very heavy congestion
+                            traffic_factor *= 1.2  # 1.2x additional penalty
+                    # Flood-prone routes ignore traffic (shortest path priority)
                     
-                    if nearest_traffic:
-                        # Apply traffic penalty based on congestion level
-                        traffic_factor = nearest_traffic.speed_penalty
-                        
-                        # Additional penalties for different risk profiles
-                        if risk_profile == "safe":
-                            # Safe routes avoid heavy traffic (prefer time over distance)
-                            if traffic_factor > 2.0:  # Heavy congestion
-                                traffic_factor *= 1.5  # 1.5x additional penalty
-                        elif risk_profile == "manageable":
-                            # Manageable routes tolerate moderate traffic
-                            if traffic_factor > 2.5:  # Very heavy congestion
-                                traffic_factor *= 1.2  # 1.2x additional penalty
-                        # Flood-prone routes ignore traffic (shortest path priority)
-            except ImportError:
-                # Traffic detection module not available - use default factor
-                pass
         except Exception as e:
-            # Any other error - use default factor
+            # Traffic service not available - use default factor
             pass
         
         # Transportation mode adjustments
@@ -752,7 +723,6 @@ class LocalRoutingService:
                 # Reverse to get start->end order
                 path = list(reversed(path))
                 
-                logger.info(f"A* Progress: Found goal! Completed in {iterations} iterations, visited {len(visited)} nodes")
                 logger.info(f"Successfully calculated route with {len(path)} waypoint nodes")
                 
                 # Simplify the path - keep most detail for accurate flood analysis
@@ -800,10 +770,11 @@ class LocalRoutingService:
                             came_from[neighbor] = current
                             g_score[neighbor] = tentative_g
                             
-                            # Balanced heuristic weight - encourage exploration toward goal
-                            # but don't skip important areas
-                            HEURISTIC_WEIGHT = 2.0  # Balanced - allows proper exploration
-                            AVERAGE_HEURISTIC_SPEED_KPH = 35  # Realistic average speed
+                            # CRITICAL FIX: Weight the heuristic heavily to guide toward goal
+                            # Use CONSERVATIVE speed (30 kph) matching typical road speeds
+                            # This creates stronger directional pull than using 50 kph
+                            HEURISTIC_WEIGHT = 8.0  # ULTRA aggressive - explore toward goal first! (increased from 5.0)
+                            AVERAGE_HEURISTIC_SPEED_KPH = 30  # Conservative speed matching road network
                             
                             heuristic_distance = neighbor.distance_to(end)
                             heuristic_time = (heuristic_distance / 1000) / AVERAGE_HEURISTIC_SPEED_KPH * 3600  # seconds
