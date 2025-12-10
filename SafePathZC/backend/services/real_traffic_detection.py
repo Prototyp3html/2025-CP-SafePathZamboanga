@@ -299,21 +299,18 @@ class RealTrafficDetectionService:
         congestion_percentage = 0.0
         logger.debug("  Computing congestion impact:")
         
-        # Impact from real incidents
+        # Impact from real incidents - these should cause significant avoidance
         incident_impact = 0
         for incident in incidents:
-            if incident.severity == 'critical':
-                congestion_percentage += 40  # Critical incidents cause major congestion
-                logger.debug(f"    + Critical {incident.incident_type}: +40%")
-            elif incident.severity == 'high':
-                congestion_percentage += 25
-                logger.debug(f"    + High {incident.incident_type}: +25%")
-            elif incident.severity == 'medium':
-                congestion_percentage += 15
-                logger.debug(f"    + Medium {incident.incident_type}: +15%")
+            if incident.severity == 'high':
+                congestion_percentage += 80  # High severity - major blockage
+                logger.debug(f"    + High {incident.incident_type}: +80%")
+            elif incident.severity == 'moderate':
+                congestion_percentage += 40  # Moderate - substantial impact
+                logger.debug(f"    + Moderate {incident.incident_type}: +40%")
             else:
-                congestion_percentage += 5
-                logger.debug(f"    + Low {incident.incident_type}: +5%")
+                congestion_percentage += 20  # Low severity causes delays
+                logger.debug(f"    + Low {incident.incident_type}: +20%")
         
         # Impact from intersections (baseline congestion)
         if intersections:
@@ -355,14 +352,14 @@ class RealTrafficDetectionService:
     def _calculate_penalty(self, congestion_percentage: float) -> float:
         """
         Calculate route penalty for routing algorithm
-        1.0 = normal, 2.0+ = heavily penalized routes
+        1.0 = normal, 2.0+ = heavily penalized routes to force avoidance
         """
-        if congestion_percentage < 30:
-            return 1.0
-        elif congestion_percentage < 50:
-            return 1.3
-        elif congestion_percentage < 70:
-            return 1.6
+        if congestion_percentage < 20:
+            return 1.2  # Even minor congestion gets penalty
+        elif congestion_percentage < 40:
+            return 1.8  # Moderate - strong penalty
+        elif congestion_percentage < 60:
+            return 2.5  # Significant - heavy penalty
         elif congestion_percentage < 90:
             return 2.0
         else:
