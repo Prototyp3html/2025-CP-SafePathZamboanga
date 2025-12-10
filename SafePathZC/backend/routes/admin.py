@@ -319,8 +319,9 @@ async def update_report_status(
     if update_data.status:
         report.status = update_data.status
         
-        # If report is approved, create or approve the corresponding forum post
+        # If report is approved, make it visible and create/approve forum post
         if update_data.status == "approved":
+            report.is_visible = True  # Make report visible when approved
             try:
                 from models import Post
                 # Find existing forum post that contains this report ID
