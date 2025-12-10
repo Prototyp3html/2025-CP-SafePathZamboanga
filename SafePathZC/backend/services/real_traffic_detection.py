@@ -165,6 +165,7 @@ class RealTrafficDetectionService:
             }
         """
         if not self.active_incidents and not self._has_intersections_on_route(coordinates):
+            logger.info("🟢 No traffic incidents on route - free flow conditions")
             return {
                 'congestion_percentage': 0,
                 'traffic_level': 'free_flow',
@@ -175,18 +176,44 @@ class RealTrafficDetectionService:
                 'traffic_penalty': 1.0
             }
         
+        logger.info("=" * 80)
+        logger.info("🚦 TRAFFIC ANALYSIS: REAL USER-REPORTED INCIDENTS")
+        logger.info("=" * 80)
+        logger.info(f"Route: {len(coordinates)} waypoints")
+        logger.info(f"Active incidents in system: {len(self.active_incidents)}")
+        
         # Analyze incidents on this route
         incidents_on_route = self._find_incidents_on_route(coordinates)
+        logger.info(f"  ✓ Found {len(incidents_on_route)} incidents on/near route:")
+        for inc in incidents_on_route:
+            logger.info(f"    - {inc.incident_type.upper()} (severity: {inc.severity}) at ({inc.location_lat:.4f}, {inc.location_lng:.4f})")
+            logger.info(f"      Impact radius: {inc.impact_radius_m}m | {inc.description[:60]}")
         
         # Count high-traffic intersections on route
         intersections_on_route = self._find_intersections_on_route(coordinates)
+        logger.info(f"  ✓ Found {len(intersections_on_route)} high-traffic intersections on route:")
+        for inter in intersections_on_route:
+            logger.info(f"    - {' / '.join(inter.road_names)} | Baseline congestion: {inter.congestion_baseline*100:.0f}% | Historical incidents: {inter.incident_frequency}")
         
         # Calculate total congestion impact
+        logger.info("\n📊 CONGESTION CALCULATION:")
         congestion = self._calculate_congestion_impact(
             incidents_on_route, 
             intersections_on_route,
             coordinates
         )
+        logger.info(f"  Congestion Level: {congestion['level'].upper()}")
+        logger.info(f"  Congestion Percentage: {congestion['percentage']:.1f}%")
+        
+        # Calculate delay estimate
+        delay_minutes = self._estimate_delay(congestion['percentage'], len(coordinates))
+        logger.info(f"  Estimated Additional Delay: {delay_minutes:.1f} minutes")
+        
+        # Calculate traffic penalty
+        penalty = self._calculate_penalty(congestion['percentage'])
+        logger.info(f"  Traffic Penalty Multiplier: {penalty:.2f}x (time cost multiplier)")
+        
+        logger.info("=" * 80)
         
         return {
             'congestion_percentage': congestion['percentage'],
@@ -206,11 +233,8 @@ class RealTrafficDetectionService:
             'intersection_names': [
                 ' / '.join(inter.road_names) for inter in intersections_on_route
             ],
-            'total_delay_minutes': self._estimate_delay(
-                congestion['percentage'], 
-                len(coordinates)
-            ),
-            'traffic_penalty': self._calculate_penalty(congestion['percentage'])
+            'total_delay_minutes': delay_minutes,
+            'traffic_penalty': penalty
         }
     
     def _find_incidents_on_route(self, coordinates: List[List[float]]) -> List[TrafficIncident]:
@@ -227,6 +251,7 @@ class RealTrafficDetectionService:
                 
                 if distance <= incident.impact_radius_m:
                     incidents_on_route.append(incident)
+                    logger.debug(f"    → Incident {incident.id} within impact radius: {distance:.0f}m <= {incident.impact_radius_m}m")
                     break  # Already added this incident
         
         return incidents_on_route
@@ -245,6 +270,7 @@ class RealTrafficDetectionService:
                 
                 if distance <= intersection_threshold:
                     intersections_on_route.append(intersection)
+                    logger.debug(f"    → Intersection within threshold: {distance:.0f}m <= {intersection_threshold}m")
                     break
         
         return intersections_on_route
@@ -263,24 +289,34 @@ class RealTrafficDetectionService:
         Calculate total congestion percentage from real incidents and intersections
         """
         congestion_percentage = 0.0
+        logger.debug("  Computing congestion impact:")
         
         # Impact from real incidents
+        incident_impact = 0
         for incident in incidents:
             if incident.severity == 'critical':
                 congestion_percentage += 40  # Critical incidents cause major congestion
+                logger.debug(f"    + Critical {incident.incident_type}: +40%")
             elif incident.severity == 'high':
                 congestion_percentage += 25
+                logger.debug(f"    + High {incident.incident_type}: +25%")
             elif incident.severity == 'medium':
                 congestion_percentage += 15
+                logger.debug(f"    + Medium {incident.incident_type}: +15%")
             else:
                 congestion_percentage += 5
+                logger.debug(f"    + Low {incident.incident_type}: +5%")
         
         # Impact from intersections (baseline congestion)
-        intersection_baseline = sum(inter.congestion_baseline for inter in intersections)
-        congestion_percentage += (intersection_baseline * 100 / max(len(intersections), 1))
+        if intersections:
+            intersection_impact = sum(inter.congestion_baseline for inter in intersections)
+            intersection_avg = (intersection_impact * 100 / len(intersections))
+            congestion_percentage += intersection_avg
+            logger.debug(f"    + Intersections baseline: +{intersection_avg:.1f}%")
         
         # Cap at 100%
         congestion_percentage = min(congestion_percentage, 100)
+        logger.debug(f"  Total congestion: {congestion_percentage:.1f}%")
         
         # Determine traffic level
         if congestion_percentage < 30:
@@ -304,7 +340,9 @@ class RealTrafficDetectionService:
         # Rough calculation: ~2 minutes per segment, scaled by congestion
         base_time = num_segments * 2  # Minutes for normal route
         delay_multiplier = 1 + (congestion_percentage / 100)
-        return (base_time * delay_multiplier) - base_time
+        delay = (base_time * delay_multiplier) - base_time
+        logger.debug(f"  Delay calculation: base {base_time}min * {delay_multiplier:.2f}x = +{delay:.1f}min")
+        return delay
     
     def _calculate_penalty(self, congestion_percentage: float) -> float:
         """
