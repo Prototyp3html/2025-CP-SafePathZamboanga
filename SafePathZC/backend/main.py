@@ -3161,8 +3161,15 @@ async def startup_event():
             Base.metadata.create_all(bind=engine)
             print("✅ Database tables initialized successfully")
             
-            # Add missing columns to users table if they don't exist
-            with engine.begin() as connection:
+        except Exception as table_err:
+            print(f"⚠️ Error creating tables: {table_err}")
+            import traceback
+            traceback.print_exc()
+        
+        # Add missing columns to users table if they don't exist
+        try:
+            print("🔧 Checking for missing columns in users table...")
+            with engine.connect() as connection:
                 is_postgres = "postgresql" in DATABASE_URL.lower()
                 
                 if is_postgres:
@@ -3172,18 +3179,22 @@ async def startup_event():
                         WHERE table_name = 'users' AND table_schema = 'public'
                     """))
                     existing_cols = {row[0] for row in result.fetchall()}
+                    print(f"Found columns: {existing_cols}")
                     
                     columns_to_add = ['first_name', 'middle_name', 'last_name']
                     for col in columns_to_add:
                         if col not in existing_cols:
                             try:
                                 connection.execute(text(f"ALTER TABLE users ADD COLUMN {col} VARCHAR"))
+                                connection.commit()
                                 print(f"✅ Added column {col} to users table")
                             except Exception as col_err:
                                 print(f"⚠️ Could not add {col}: {col_err}")
-                
-        except Exception as table_err:
-            print(f"⚠️ Error creating tables: {table_err}")
+                                connection.rollback()
+                        else:
+                            print(f"✅ Column {col} already exists")
+        except Exception as col_creation_err:
+            print(f"⚠️ Error checking/adding columns: {col_creation_err}")
             import traceback
             traceback.print_exc()
         
@@ -3237,8 +3248,15 @@ async def startup_event():
             traceback.print_exc()
         print("=" * 60)
         
-        init_admin_user(db)
-        init_demo_user(db)
+        try:
+            init_admin_user(db)
+        except Exception as admin_err:
+            print(f"⚠️ Error initializing admin user: {admin_err}")
+        
+        try:
+            init_demo_user(db)
+        except Exception as demo_err:
+            print(f"⚠️ Error initializing demo user: {demo_err}")
     finally:
         db.close()
     
