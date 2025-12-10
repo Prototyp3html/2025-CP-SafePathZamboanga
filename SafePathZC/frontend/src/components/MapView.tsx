@@ -9690,40 +9690,16 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           border-left: 3px solid rgba(255, 255, 255, 0.2);
         }
         
-        .action-button:hover {
-          transform: translateX(-10px) scale(1.05);
-          box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
-          background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-        }
-        
         .weather-button {
           background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-        }
-        
-        .weather-button:hover {
-          background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-          transform: translateX(-10px) scale(1.05);
-          box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
         }
         
         .report-button {
           background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
         }
         
-        .report-button:hover {
-          background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-          transform: translateX(-10px) scale(1.05);
-          box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
-        }
-        
         .emergency-button {
           background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-        }
-        
-        .emergency-button:hover {
-          background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
-          transform: translateX(-10px) scale(1.05);
-          box-shadow: 0 8px 25px rgba(239, 68, 68, 0.4);
         }
       `}</style>
 
