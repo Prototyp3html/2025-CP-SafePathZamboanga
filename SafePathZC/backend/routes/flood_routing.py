@@ -236,7 +236,7 @@ class FloodRouteResponse(BaseModel):
     message: str
 
 @router.post("/flood-routes", response_model=FloodRouteResponse)
-async def get_flood_aware_routes(request: FloodRouteRequest, db: Session = Depends(get_db)):
+async def get_flood_aware_routes(request: FloodRouteRequest):
     """
     Generate 3 distinct routes with different flood risk profiles:
     - Safest: Lowest flood exposure (avoids flooded roads heavily)
@@ -245,6 +245,10 @@ async def get_flood_aware_routes(request: FloodRouteRequest, db: Session = Depen
     
     Uses OSRM for base routing + terrain_roads.geojson for flood analysis.
     """
+    # Get database session manually for traffic incident loading
+    from models import SessionLocal
+    db = SessionLocal()
+    
     try:
         logger.info(f"Flood-aware routing: ({request.start_lat}, {request.start_lng}) -> ({request.end_lat}, {request.end_lng})")
         
@@ -1065,3 +1069,6 @@ async def get_flood_aware_routes(request: FloodRouteRequest, db: Session = Depen
     except Exception as e:
         logger.error(f"Error generating flood-aware routes: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Routing error: {str(e)}")
+    finally:
+        # Always close the database session
+        db.close()
