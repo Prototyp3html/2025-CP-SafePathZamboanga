@@ -28,6 +28,7 @@ from services.transportation_modes import (
     get_flood_safety_for_mode
 )
 from services.route_logger import get_route_logger, RoutingPhase
+from services.real_traffic_detection import RealTrafficDetectionService
 
 logger = logging.getLogger(__name__)
 route_logger = get_route_logger()
@@ -320,6 +321,51 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
         if request.waypoints and len(request.waypoints) > 0:
             logger.info(f"Including {len(request.waypoints)} waypoints in routing")
             waypoint_coords = [(wp['lng'], wp['lat']) for wp in request.waypoints]
+        
+        # Load traffic incidents FIRST before generating routes
+        logger.info("Loading traffic incidents from db (type: Session)")
+        traffic_service = RealTrafficDetectionService()
+        traffic_incidents = await traffic_service.load_incidents_from_db(db)
+        logger.info(f"Loaded {len(traffic_incidents)} traffic incidents")
+        
+        # Generate avoidance waypoints if traffic incidents exist on/near the direct route
+        traffic_avoidance_waypoints = []
+        if traffic_incidents:
+            logger.info("Generating waypoints to avoid traffic incidents...")
+            
+            # Calculate the midpoint of the route
+            mid_lat = (request.start_lat + request.end_lat) / 2
+            mid_lng = (request.start_lng + request.end_lng) / 2
+            
+            # Calculate perpendicular direction to the route
+            route_lng = request.end_lng - request.start_lng
+            route_lat = request.end_lat - request.start_lat
+            route_distance = math.sqrt(route_lng**2 + route_lat**2)
+            
+            if route_distance > 0:
+                # Perpendicular vectors (rotated 90 degrees)
+                perp_x = -route_lat / route_distance
+                perp_y = route_lng / route_distance
+                
+                # For each incident, create waypoints on both sides to force avoidance
+                for incident in traffic_incidents:
+                    # Create waypoint on each side of the route to steer around the incident
+                    # Use larger offset (500m) to ensure OSRM routing goes around
+                    offset_distance = 0.0045  # ~500m at equator
+                    
+                    # Left bypass waypoint
+                    wp_left = (mid_lng + perp_x * offset_distance, mid_lat + perp_y * offset_distance)
+                    # Right bypass waypoint  
+                    wp_right = (mid_lng - perp_x * offset_distance, mid_lat - perp_y * offset_distance)
+                    
+                    traffic_avoidance_waypoints.append(wp_left)
+                    traffic_avoidance_waypoints.append(wp_right)
+                    logger.info(f"Added traffic avoidance waypoints around incident at ({incident.location_lat:.4f}, {incident.location_lng:.4f})")
+        
+        # Combine user waypoints with traffic avoidance waypoints
+        if traffic_avoidance_waypoints:
+            waypoint_coords.extend(traffic_avoidance_waypoints)
+            logger.info(f"Total waypoints for routing: {len(waypoint_coords)} (user + traffic avoidance)")
         
         # Strategy 1: Try to get OSRM alternatives (or route through waypoints)
         logger.info("Strategy 1: Requesting OSRM routing...")
