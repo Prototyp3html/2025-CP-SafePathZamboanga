@@ -71,12 +71,13 @@ display_analysis_banner()
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://safepathzc_user:safepath123@localhost:5432/safepathzc")
 
 try:
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(DATABASE_URL, echo=False)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     
-    # Create tables
-    Base.metadata.create_all(bind=engine)
-    print("Database connected successfully")
+    # Create tables with isolation level autocommit for DDL
+    with engine.begin() as connection:
+        Base.metadata.create_all(bind=connection)
+    print("✅ Database connected and tables initialized successfully")
     
     # Run migration for image columns
     try:
