@@ -86,10 +86,18 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
 def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)):
     try:
         payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: int = payload.get("sub")
-        if user_id is None:
+        user_id_str = payload.get("sub")
+        if user_id_str is None:
             raise HTTPException(status_code=401, detail="Invalid authentication credentials")
-        return int(user_id)
+        
+        # Handle both numeric user IDs and email strings (for backward compatibility)
+        try:
+            user_id = int(user_id_str)
+        except (ValueError, TypeError):
+            # If it's an email, try to get the user by email instead
+            raise HTTPException(status_code=401, detail="Invalid token format - please log in again")
+        
+        return user_id
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
 

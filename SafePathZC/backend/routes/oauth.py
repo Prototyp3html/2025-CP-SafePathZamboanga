@@ -162,7 +162,7 @@ async def google_callback(callback_data: OAuthCallbackData, db: Session = Depend
             print(f"👥 User {user.email} (ID: {user.id}) authenticated")
             
             # Create JWT token
-            token = create_access_token(data={"sub": user.email, "user_id": user.id})
+            token = create_access_token(data={"sub": str(user.id)})
             print(f"🔐 JWT token created")
             
             response_data = {
@@ -250,7 +250,7 @@ async def facebook_callback(callback_data: OAuthCallbackData, db: Session = Depe
             )
             
             # Create JWT token
-            token = create_access_token(data={"sub": user.email, "user_id": user.id})
+            token = create_access_token(data={"sub": str(user.id)})
             
             return {
                 "token": token,
