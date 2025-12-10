@@ -11,13 +11,15 @@ ROUTE CATEGORIES:
 - Manageable (Orange): Moderate flood percentage - balanced approach
 - Flood-Prone (Red): Higher flood percentage - typically shortest/fastest route
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional, Tuple
+from sqlalchemy.orm import Session
 import httpx
 import logging
 import math
 import os
+from models import get_db
 from services.local_routing import analyze_route_flood_risk, get_routing_service, Coordinate
 from services.transportation_modes import (
     TRANSPORTATION_MODES, 
