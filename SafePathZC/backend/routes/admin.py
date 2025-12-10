@@ -63,36 +63,6 @@ class FloodUpdateState:
 # Global instance
 flood_update_state = FloodUpdateState()
 
-# System Configuration State
-class SystemConfigState:
-    """Tracks system configuration settings"""
-    def __init__(self):
-        self.elevation_weight = 0.35
-        self.rainfall_weight = 0.35
-        self.proximity_weight = 0.30
-        self.safe_route_penalty = 1.0
-        self.manageable_route_penalty = 1.5
-        self.flood_prone_route_penalty = 2.5
-        self.api_update_frequency = 60  # minutes
-        self.last_updated = datetime.utcnow()
-        
-    def to_dict(self):
-        return {
-            "values": {
-                "elevation_weight": self.elevation_weight,
-                "rainfall_weight": self.rainfall_weight,
-                "proximity_weight": self.proximity_weight,
-                "safe_route_penalty": self.safe_route_penalty,
-                "manageable_route_penalty": self.manageable_route_penalty,
-                "flood_prone_route_penalty": self.flood_prone_route_penalty,
-                "api_update_frequency": self.api_update_frequency,
-            },
-            "last_updated": self.last_updated.isoformat()
-        }
-
-# Global system config instance
-system_config = SystemConfigState()
-
 from models import AdminUser, Report, User, Post, Comment, PostLike, RouteHistory, FavoriteRoute, SearchHistory, SessionLocal
 
 # Dependency to get DB session
@@ -167,15 +137,6 @@ class UserResponse(BaseModel):
     report_count: int
     joined_at: datetime
     last_activity: datetime
-
-class SystemConfigUpdate(BaseModel):
-    elevation_weight: float
-    rainfall_weight: float
-    proximity_weight: float
-    safe_route_penalty: float
-    manageable_route_penalty: float
-    flood_prone_route_penalty: float
-    api_update_frequency: int
 
 # Utility functions
 def hash_password(password: str) -> str:
@@ -1321,132 +1282,6 @@ async def get_flood_update_status(
     """Get current flood update status"""
     return flood_update_state.get_status()
 
-@router.get("/system-config")
-async def get_system_config(
-    admin_id: int = Depends(verify_admin_token),
-    db: Session = Depends(get_db)
-):
-    """Get current system configuration"""
-    from models import SystemConfig
-    
-    try:
-        # Get config from database
-        config = db.query(SystemConfig).filter(SystemConfig.id == 1).first()
-        
-        if not config:
-            # Create default config if it doesn't exist
-            logger.warning("No system config found in database, creating defaults")
-            config = SystemConfig()
-            db.add(config)
-            db.commit()
-        
-        response_data = {
-            "values": {
-                "elevation_weight": config.elevation_weight,
-                "rainfall_weight": config.rainfall_weight,
-                "proximity_weight": config.proximity_weight,
-                "safe_route_penalty": config.safe_route_penalty,
-                "manageable_route_penalty": config.manageable_route_penalty,
-                "flood_prone_route_penalty": config.flood_prone_route_penalty,
-                "api_update_frequency": config.api_update_frequency,
-            },
-            "last_updated": config.updated_at.isoformat() if config.updated_at else None
-        }
-        
-        logger.info(f"System config retrieved for admin {admin_id}: {response_data['values']}")
-        return response_data
-        
-    except Exception as e:
-        logger.error(f"Error loading system config: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to load configuration: {str(e)}")
-
-@router.put("/system-config")
-async def update_system_config(
-    config_update: SystemConfigUpdate,
-    admin_id: int = Depends(verify_admin_token),
-    db: Session = Depends(get_db)
-):
-    """Update system configuration"""
-    
-    try:
-        # Validate weights sum to 1.0
-        weight_sum = (
-            config_update.elevation_weight +
-            config_update.rainfall_weight +
-            config_update.proximity_weight
-        )
-        if abs(weight_sum - 1.0) > 0.01:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Risk weights must sum to 1.0 (currently {weight_sum:.2f})"
-            )
-        
-        # Validate penalties are positive
-        if (config_update.safe_route_penalty <= 0 or
-            config_update.manageable_route_penalty <= 0 or
-            config_update.flood_prone_route_penalty <= 0):
-            raise HTTPException(
-                status_code=400,
-                detail="Route penalties must be positive numbers"
-            )
-        
-        # Validate update frequency
-        if config_update.api_update_frequency < 15:
-            raise HTTPException(
-                status_code=400,
-                detail="Update frequency must be at least 15 minutes"
-            )
-        
-        # Update global config
-        system_config.elevation_weight = config_update.elevation_weight
-        system_config.rainfall_weight = config_update.rainfall_weight
-        system_config.proximity_weight = config_update.proximity_weight
-        system_config.safe_route_penalty = config_update.safe_route_penalty
-        system_config.manageable_route_penalty = config_update.manageable_route_penalty
-        system_config.flood_prone_route_penalty = config_update.flood_prone_route_penalty
-        system_config.api_update_frequency = config_update.api_update_frequency
-        system_config.last_updated = datetime.utcnow()
-        
-        # Also save to database
-        from models import SystemConfig
-        
-        config = db.query(SystemConfig).filter(SystemConfig.id == 1).first()
-        if not config:
-            config = SystemConfig()
-            db.add(config)
-        
-        config.elevation_weight = config_update.elevation_weight
-        config.rainfall_weight = config_update.rainfall_weight
-        config.proximity_weight = config_update.proximity_weight
-        config.safe_route_penalty = config_update.safe_route_penalty
-        config.manageable_route_penalty = config_update.manageable_route_penalty
-        config.flood_prone_route_penalty = config_update.flood_prone_route_penalty
-        config.api_update_frequency = config_update.api_update_frequency
-        config.updated_at = datetime.utcnow()
-        config.updated_by_admin_id = admin_id
-        
-        db.commit()
-        
-        logger.info(f"System configuration updated by admin {admin_id}")
-        
-        return {
-            "values": {
-                "elevation_weight": config.elevation_weight,
-                "rainfall_weight": config.rainfall_weight,
-                "proximity_weight": config.proximity_weight,
-                "safe_route_penalty": config.safe_route_penalty,
-                "manageable_route_penalty": config.manageable_route_penalty,
-                "flood_prone_route_penalty": config.flood_prone_route_penalty,
-                "api_update_frequency": config.api_update_frequency,
-            },
-            "last_updated": config.updated_at.isoformat() if config.updated_at else None
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error updating system config: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to update configuration: {str(e)}")
 
 async def run_flood_update_task():
     """Background task to run flood data update"""
