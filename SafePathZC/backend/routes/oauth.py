@@ -149,6 +149,7 @@ async def google_callback(callback_data: OAuthCallbackData, db: Session = Depend
             
             user_info = user_response.json()
             print(f"✅ Got user info: {user_info.get('email', 'No email')}")
+            print(f"📸 Profile picture URL: {user_info.get('picture', 'No picture')}")
             
             # Find or create user
             user = find_or_create_user(
@@ -159,7 +160,19 @@ async def google_callback(callback_data: OAuthCallbackData, db: Session = Depend
                 provider_id=user_info["id"]
             )
             
-            print(f"👥 User {user.email} (ID: {user.id}) authenticated")
+            # Update profile picture if available
+            if user_info.get("picture"):
+                try:
+                    # Download profile picture and convert to base64
+                    async with httpx.AsyncClient() as pic_client:
+                        pic_response = await pic_client.get(user_info["picture"])
+                        if pic_response.status_code == 200:
+                            import base64
+                            user.profile_picture = f"data:image/jpeg;base64,{base64.b64encode(pic_response.content).decode()}"
+                            db.commit()
+                            print(f"✅ Updated profile picture")
+                except Exception as e:
+                    print(f"⚠️ Failed to download profile picture: {e}")
             
             # Create JWT token
             token = create_access_token(data={"sub": str(user.id)})
@@ -173,6 +186,7 @@ async def google_callback(callback_data: OAuthCallbackData, db: Session = Depend
                     "name": user.name,
                     "phone": user.phone,
                     "location": user.location,
+                    "profile_picture": user.profile_picture,
                     "role": user.role,
                     "oauth_provider": "google"
                 }

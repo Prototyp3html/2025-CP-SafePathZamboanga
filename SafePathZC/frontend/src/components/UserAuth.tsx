@@ -233,7 +233,8 @@ export const UserAuth: React.FC<UserAuthProps> = ({
       }
     } catch (error) {
       console.error("Registration error:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to connect to server";
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to connect to server";
       setError(errorMessage);
     } finally {
       setIsLoading(false);
@@ -507,7 +508,7 @@ export const UserAuth: React.FC<UserAuthProps> = ({
             </div>
           </div>
 
-          <div className="mt-6 grid grid-cols-2 gap-3">
+          <div className="mt-6 grid grid-cols-1 gap-3 max-w-xs mx-auto">
             <button
               type="button"
               onClick={() => handleSocialLogin("google")}
@@ -540,8 +541,6 @@ export const UserAuth: React.FC<UserAuthProps> = ({
                 </>
               )}
             </button>
-
-            
           </div>
         </div>
 

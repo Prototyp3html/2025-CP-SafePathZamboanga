@@ -932,34 +932,7 @@ const CommunityForum = () => {
                                     )}
                                   </div>
 
-                                  {/* Safety Notice */}
-                                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
-                                    <div className="flex items-start space-x-3">
-                                      <div className="flex-shrink-0">
-                                        <svg
-                                          className="w-5 h-5 text-blue-600 mt-0.5"
-                                          fill="currentColor"
-                                          viewBox="0 0 20 20"
-                                        >
-                                          <path
-                                            fillRule="evenodd"
-                                            d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                                            clipRule="evenodd"
-                                          />
-                                        </svg>
-                                      </div>
-                                      <div>
-                                        <h4 className="text-sm font-medium text-blue-800">
-                                          Safety Advisory
-                                        </h4>
-                                        <p className="text-sm text-blue-700 mt-1">
-                                          Please exercise caution when traveling
-                                          through this area and consider
-                                          alternative routes if possible.
-                                        </p>
-                                      </div>
-                                    </div>
-                                  </div>
+                                  {/* Safety Notice - MOVED TO AFTER ATTACHMENTS */}
                                 </div>
                               );
                             }
@@ -973,6 +946,85 @@ const CommunityForum = () => {
                           })()}
 
                           {/* Display Images from Report */}
+                          {post.images && post.images.length > 0 && (
+                            <div className="mb-6">
+                              <h4 className="text-sm font-medium text-gray-700 mb-3">
+                                Evidence & Attachments
+                              </h4>
+                              <div
+                                className={`grid gap-3 ${
+                                  post.images.length === 1
+                                    ? "grid-cols-1"
+                                    : post.images.length === 2
+                                    ? "grid-cols-2"
+                                    : "grid-cols-2 sm:grid-cols-3"
+                                }`}
+                              >
+                                {post.images.map((image, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="relative rounded-lg overflow-hidden bg-gray-100 group border border-gray-300"
+                                    style={{ minHeight: "200px" }}
+                                  >
+                                    <img
+                                      src={image.image_data}
+                                      alt={image.filename}
+                                      className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105"
+                                      style={{ maxHeight: "400px" }}
+                                    />
+                                    <div className="absolute inset-0 bg-black opacity-0 group-hover:opacity-30 transition-opacity duration-300" />
+                                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                      <p className="text-xs text-white truncate">
+                                        {image.filename}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Safety Advisory - NOW AFTER ATTACHMENTS */}
+                          {(() => {
+                            // Check if this is a damage/flood report
+                            if (
+                              post.category === "reports" &&
+                              (post.content.includes("DAMAGE ALERT") ||
+                                post.content.includes("FLOOD ALERT") ||
+                                post.content.includes("Severity"))
+                            ) {
+                              return (
+                                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 mb-6">
+                                  <div className="flex items-start space-x-3">
+                                    <div className="flex-shrink-0">
+                                      <svg
+                                        className="w-5 h-5 text-blue-600 mt-0.5"
+                                        fill="currentColor"
+                                        viewBox="0 0 20 20"
+                                      >
+                                        <path
+                                          fillRule="evenodd"
+                                          d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                                          clipRule="evenodd"
+                                        />
+                                      </svg>
+                                    </div>
+                                    <div>
+                                      <h4 className="text-sm font-medium text-blue-800">
+                                        Safety Advisory
+                                      </h4>
+                                      <p className="text-sm text-blue-700 mt-1">
+                                        Please exercise caution when traveling
+                                        through this area and consider
+                                        alternative routes if possible.
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
                           {post.images && post.images.length > 0 && (
                             <div className="mb-6">
                               <h4 className="text-sm font-medium text-gray-700 mb-3">
