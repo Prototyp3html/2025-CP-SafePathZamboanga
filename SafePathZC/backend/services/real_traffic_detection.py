@@ -80,13 +80,19 @@ class RealTrafficDetectionService:
             from sqlalchemy import and_
             
             # Only fetch incidents that cause traffic:
-            # - accidents (active/recent)
-            # - road_closure (obviously blocking traffic)
-            # - infrastructure/construction (blocking lanes)
-            traffic_causing_categories = ['accident', 'road_closure', 'infrastructure']
+            # - roadblock: Road blockages/closures (obviously blocking traffic)
+            # - damage: Road damage (potholes, collapsed roads, etc.)
+            # - flood: Flooding (can block roads severely)
+            traffic_causing_categories = ['roadblock', 'damage', 'flood']
             
             # Only incidents from last 24 hours (otherwise they're resolved)
             cutoff_time = datetime.utcnow() - timedelta(hours=24)
+            
+            # Debug: Check all recent reports first
+            all_recent = db_session.query(Report).filter(Report.created_at >= cutoff_time).all()
+            logger.info(f"Found {len(all_recent)} total reports in last 24h")
+            for r in all_recent:
+                logger.info(f"  Report #{r.id}: category={r.category}, visible={r.is_visible}, score={r.verification_score}")
             
             incidents = db_session.query(Report).filter(
                 and_(
@@ -96,6 +102,8 @@ class RealTrafficDetectionService:
                     Report.verification_score >= 0.5  # Somewhat verified
                 )
             ).all()
+            
+            logger.info(f"After filtering: {len(incidents)} traffic-causing incidents")
             
             # Convert DB reports to TrafficIncident objects
             traffic_incidents = []
