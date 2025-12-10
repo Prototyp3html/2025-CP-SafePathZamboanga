@@ -1025,43 +1025,6 @@ const CommunityForum = () => {
                             }
                             return null;
                           })()}
-                          {post.images && post.images.length > 0 && (
-                            <div className="mb-6">
-                              <h4 className="text-sm font-medium text-gray-700 mb-3">
-                                Evidence & Attachments
-                              </h4>
-                              <div
-                                className={`grid gap-3 ${
-                                  post.images.length === 1
-                                    ? "grid-cols-1"
-                                    : post.images.length === 2
-                                    ? "grid-cols-2"
-                                    : "grid-cols-2 sm:grid-cols-3"
-                                }`}
-                              >
-                                {post.images.map((image, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="relative rounded-lg overflow-hidden bg-gray-100 group border border-gray-300"
-                                    style={{ minHeight: "200px" }}
-                                  >
-                                    <img
-                                      src={image.image_data}
-                                      alt={image.filename}
-                                      className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105"
-                                      style={{ maxHeight: "400px" }}
-                                    />
-                                    <div className="absolute inset-0 bg-black opacity-0 group-hover:opacity-30 transition-opacity duration-300" />
-                                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                                      <p className="text-xs text-white truncate">
-                                        {image.filename}
-                                      </p>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
 
                           {/* Enhanced Tags */}
                           <div className="flex flex-wrap gap-2 mb-6">
