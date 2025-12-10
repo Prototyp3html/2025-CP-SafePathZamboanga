@@ -3198,6 +3198,24 @@ async def startup_event():
             import traceback
             traceback.print_exc()
         
+        # Fix NULL joined_at values for existing users
+        try:
+            print("🔧 Fixing NULL joined_at values...")
+            with engine.connect() as connection:
+                is_postgres = "postgresql" in DATABASE_URL.lower()
+                
+                if is_postgres:
+                    # Update NULL joined_at to current timestamp
+                    result = connection.execute(text("""
+                        UPDATE users 
+                        SET joined_at = CURRENT_TIMESTAMP 
+                        WHERE joined_at IS NULL
+                    """))
+                    connection.commit()
+                    print(f"✅ Fixed {result.rowcount} users with NULL joined_at")
+        except Exception as fix_err:
+            print(f"⚠️ Error fixing joined_at: {fix_err}")
+        
         # Initialize routing service (zcroadmap.geojson - has highway classification)
         routing_service = get_routing_service()
         print(f"âœ“ Routing service loaded with {len(routing_service.road_segments)} road segments from zcroadmap.geojson")
