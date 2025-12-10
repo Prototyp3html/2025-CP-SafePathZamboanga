@@ -524,7 +524,7 @@ const CommunityForum = () => {
     <>
       {/* Check if user is logged in */}
       {user ? (
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 dark:from-gray-900 dark:to-gray-800">
+        <div className="bg-gradient-to-br from-gray-50 to-blue-50 dark:from-gray-900 dark:to-gray-800 pb-8">
           {/* Header Section - Starts from top */}
           <div className="relative bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-700 overflow-hidden">
             {/* Navbar positioned absolutely on top */}

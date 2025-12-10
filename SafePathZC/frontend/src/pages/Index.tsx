@@ -82,7 +82,10 @@ const Index = () => {
       </main>
 
       {/* Modals */}
-      <WelcomeModal isOpen={showWelcome} onClose={() => setShowWelcome(false)} />
+      <WelcomeModal
+        isOpen={showWelcome}
+        onClose={() => setShowWelcome(false)}
+      />
       {activeModal === "report" && (
         <ReportModal
           onClose={() => setActiveModal(null)}

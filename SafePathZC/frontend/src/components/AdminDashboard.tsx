@@ -77,9 +77,9 @@ interface User {
 export const AdminDashboard: React.FC = () => {
   const { confirm } = useConfirmation();
 
-  const [activeTab, setActiveTab] = useState<"reports" | "users" | "analytics" | "flood" | "config">(
-    "reports"
-  );
+  const [activeTab, setActiveTab] = useState<
+    "reports" | "users" | "analytics" | "flood" | "config"
+  >("reports");
   const [reports, setReports] = useState<Report[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<{
@@ -1075,7 +1075,9 @@ export const AdminDashboard: React.FC = () => {
                         >
                           <div
                             className={`w-2 h-2 rounded-full mr-2 ${
-                              user.isOnline ? "bg-white animate-pulse" : "bg-white opacity-70"
+                              user.isOnline
+                                ? "bg-white animate-pulse"
+                                : "bg-white opacity-70"
                             }`}
                           ></div>
                           {user.isOnline ? "Online" : "Offline"}

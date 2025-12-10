@@ -66,7 +66,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onAdminAccess }) => {
         const userProfilePicture = localStorage.getItem(
           `user_profile_picture_${userKey}`
         );
-        
+
         if (userProfilePicture) {
           setProfilePicture(userProfilePicture);
         } else if (parsedUser.profilePicture) {
@@ -120,11 +120,11 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onAdminAccess }) => {
     if (user?.email) {
       localStorage.removeItem(`user_profile_picture_${user.email}`);
     }
-    
+
     localStorage.removeItem("user_token");
     localStorage.removeItem("user_data");
     // Don't remove user_preferences as they can be reused
-    
+
     setUser(null);
     setProfilePicture(null);
   };
@@ -174,7 +174,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onAdminAccess }) => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="h-screen bg-gray-50 flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
       </div>
     );
@@ -183,7 +183,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onAdminAccess }) => {
   // Show login form if user is not authenticated
   if (!user) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-lg p-8 w-full max-w-md text-center">
           <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <User className="w-8 h-8 text-blue-600" />
@@ -212,7 +212,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onAdminAccess }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="bg-gray-50 pb-8">
       {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
