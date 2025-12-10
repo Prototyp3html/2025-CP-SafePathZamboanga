@@ -239,25 +239,8 @@ async def verify_user_token(user_id: int = Depends(verify_token), db: Session = 
 # Initialize demo user
 def init_demo_user(db: Session):
     """Create demo user if not exists"""
-    demo_email = "maria.santos@email.com"
-    existing_user = db.query(User).filter(User.email == demo_email).first()
-    
-    if not existing_user:
-        demo_user = User(
-            email=demo_email,
-            password_hash=hash_password("demo123"),
-            name="Maria Santos",
-            phone="+63 912 345 6789",
-            location="Zamboanga City",
-            community_points=340,
-            routes_used=127,
-            reports_submitted=8,
-            joined_at=datetime(2024, 6, 1),
-            last_activity=datetime.utcnow()
-        )
-        db.add(demo_user)
-        db.commit()
-        print("✅ Demo user created: maria.santos@email.com / demo123")
+    # Demo user initialization removed - users should register normally
+    pass
 
 # Preferences model
 class UserPreferences(BaseModel):
