@@ -98,8 +98,8 @@ class RealTrafficDetectionService:
                 and_(
                     Report.category.in_(traffic_causing_categories),
                     Report.is_visible == True,  # Only approved/visible reports
-                    Report.created_at >= cutoff_time,
-                    Report.verification_score >= 0.5  # Somewhat verified
+                    Report.created_at >= cutoff_time
+                    # Verification score check removed - approved reports are trusted
                 )
             ).all()
             

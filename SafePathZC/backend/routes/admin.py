@@ -322,6 +322,7 @@ async def update_report_status(
         # If report is approved, make it visible and create/approve forum post
         if update_data.status == "approved":
             report.is_visible = True  # Make report visible when approved
+            report.verification_score = 1.0  # Approved reports are verified
             try:
                 from models import Post
                 # Find existing forum post that contains this report ID
