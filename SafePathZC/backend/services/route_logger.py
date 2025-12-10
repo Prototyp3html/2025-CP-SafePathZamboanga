@@ -84,12 +84,9 @@ class RouteLogger:
         
         self.logger.info("")
     
-    def progress(self, current: int, total: int, message: str):
+    def progress(self, current: int, total: int, message: str, visited_count: int = 0, open_set_size: int = 0):
         """Log progress for long operations (A* search)"""
-        # Only log every 10th iteration to reduce spam
-        if current % 10 == 0:
-            pct = (current / total) * 100
-            self.logger.debug(f"  [{'█' * int(pct/5)}{'░' * (20-int(pct/5))}] {pct:3.0f}% - {message}")
+        self.logger.info(f"A* Progress: Iter {current}/{total}, {message}, visited {visited_count} nodes, open set size={open_set_size}")
     
     def dead_end_detected(self, point1: int, point2: int, straight: float, path: float):
         """Log dead-end detection"""

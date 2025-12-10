@@ -813,9 +813,9 @@ class LocalRoutingService:
                             heapq.heappush(open_set, (f_score[neighbor], neighbor))
                             neighbors_added_to_open_set += 1
                 
-                # Log progress less frequently using route logger (every 1000 iterations)
-                if iterations % 1000 == 0:
-                    route_logger.progress(iterations, max_iterations, f"Distance to goal: {distance_to_end:.1f}m")
+                # Log progress every 500 iterations to show node exploration
+                if iterations % 500 == 0:
+                    route_logger.progress(iterations, max_iterations, f"Distance to goal: {distance_to_end:.1f}m", len(visited), len(open_set))
             else:
                 logger.warning(f"Iter {iterations}: Current node NOT in routing graph!")
         
