@@ -234,7 +234,7 @@ class FloodRouteResponse(BaseModel):
     message: str
 
 @router.post("/flood-routes", response_model=FloodRouteResponse)
-async def get_flood_aware_routes(request: FloodRouteRequest):
+async def get_flood_aware_routes(request: FloodRouteRequest, db: Session = Depends(get_db)):
     """
     Generate 3 distinct routes with different flood risk profiles:
     - Safest: Lowest flood exposure (avoids flooded roads heavily)
@@ -382,8 +382,8 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                     from services.real_traffic_detection import get_traffic_service
                                     traffic_service = get_traffic_service()
                                     
-                                    # Skip loading incidents from db - db connection not available in this context
-                                    # Just use the traffic service for basic analysis
+                                    # Load incidents from database
+                                    await traffic_service.load_incidents_from_db(db)
                                     traffic_analysis = traffic_service.calculate_traffic_for_route(coordinates)
                                     
                                 except Exception as e:
