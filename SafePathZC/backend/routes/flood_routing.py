@@ -336,10 +336,6 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
             logger.info(f"   End: ({request.end_lat:.4f}, {request.end_lng:.4f})")
             logger.info(f"   Incidents to avoid: {len(traffic_incidents)}")
             
-            # Calculate the midpoint of the route
-            mid_lat = (request.start_lat + request.end_lat) / 2
-            mid_lng = (request.start_lng + request.end_lng) / 2
-            
             # Calculate perpendicular direction to the route
             route_lng = request.end_lng - request.start_lng
             route_lat = request.end_lat - request.start_lat
@@ -352,20 +348,23 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                 
                 # For EACH incident, generate waypoints that go around it
                 for idx, incident in enumerate(traffic_incidents):
+                    incident_lat = incident.location_lat
+                    incident_lng = incident.location_lng
+                    
                     # Create waypoint on each side of this specific incident
                     # Use impact radius + buffer to ensure OSRM routing goes around
                     impact_radius_deg = (incident.impact_radius_m / 111000)  # Convert meters to degrees
-                    offset_distance = impact_radius_deg + 0.005  # Add 500m buffer
+                    offset_distance = impact_radius_deg + 0.003  # Add ~300m buffer
                     
-                    # Left bypass waypoint
-                    wp_left = (mid_lng + perp_x * offset_distance, mid_lat + perp_y * offset_distance)
+                    # Left bypass waypoint (perpendicular offset from incident location)
+                    wp_left = (incident_lng + perp_x * offset_distance, incident_lat + perp_y * offset_distance)
                     # Right bypass waypoint  
-                    wp_right = (mid_lng - perp_x * offset_distance, mid_lat - perp_y * offset_distance)
+                    wp_right = (incident_lng - perp_x * offset_distance, incident_lat - perp_y * offset_distance)
                     
-                    logger.info(f"\n   Incident #{idx+1} ({incident.incident_type})")
-                    logger.info(f"     Location: ({incident.location_lat:.4f}, {incident.location_lng:.4f})")
+                    logger.info(f"\n   Incident #{idx+1} ({incident.incident_type}) - SEVERITY: {incident.severity}")
+                    logger.info(f"     Location: ({incident_lat:.4f}, {incident_lng:.4f})")
                     logger.info(f"     Impact radius: {incident.impact_radius_m:.1f}m")
-                    logger.info(f"     Avoidance waypoints generated:")
+                    logger.info(f"     Avoidance waypoints (perpendicular to route):")
                     logger.info(f"       Left:  ({wp_left[0]:.4f}, {wp_left[1]:.4f})")
                     logger.info(f"       Right: ({wp_right[0]:.4f}, {wp_right[1]:.4f})")
                     
@@ -377,7 +376,7 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
         # Combine user waypoints with traffic avoidance waypoints
         if traffic_avoidance_waypoints:
             waypoint_coords.extend(traffic_avoidance_waypoints)
-            logger.info(f"Total waypoints for routing: {len(waypoint_coords)} (user + traffic avoidance)")
+            logger.info(f"Total waypoints for routing: {len(waypoint_coords)} (user + traffic avoidance)\n")
         
         # Strategy 1: Try to get OSRM alternatives (or route through waypoints)
         logger.info("Strategy 1: Requesting OSRM routing...")
@@ -934,14 +933,33 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
             flood_score = route["flood_percentage"]  # 0-100
             traffic_penalty = route.get("traffic_analysis", {}).get("traffic_penalty", 1.0)  # 1.0-2.5
             
-            # Combined score: flood risk + traffic impact
+            # Check if route has traffic incidents on it
+            incidents_on_route = route.get("traffic_analysis", {}).get("incidents_on_route", [])
+            num_incidents = len(incidents_on_route)
+            
+            # Penalize routes that pass through incidents
+            # Higher penalty for higher severity incidents
+            incident_penalty = 0
+            for incident in incidents_on_route:
+                severity = incident.get('severity', 'low')
+                severity_penalties = {
+                    'low': 30,      # +30 points for low severity
+                    'moderate': 60, # +60 points for moderate
+                    'high': 150     # +150 points for high
+                }
+                incident_penalty += severity_penalties.get(severity, 30)
+            
+            # Combined score: flood risk + traffic impact + incident penalty
             # Traffic penalty is weighted heavily to avoid congested routes
             traffic_score = (traffic_penalty - 1.0) * 50  # Convert penalty to 0-75 score
             
-            route["routing_score"] = flood_score + traffic_score
-            route["traffic_impact"] = traffic_score
+            route["routing_score"] = flood_score + traffic_score + incident_penalty
+            route["incident_penalty"] = incident_penalty
             
-            logger.info(f"  Route score: flood={flood_score:.1f}, traffic={traffic_score:.1f}, TOTAL={route['routing_score']:.1f}")
+            if num_incidents > 0:
+                logger.info(f"  Route has {num_incidents} incident(s): +{incident_penalty} penalty points")
+            
+            logger.info(f"  Route score: flood={flood_score:.1f}, traffic={traffic_score:.1f}, incidents={incident_penalty:.1f}, TOTAL={route['routing_score']:.1f}")
         
         # Sort all routes by combined score (ascending - best first)
         all_routes.sort(key=lambda r: r["routing_score"])
