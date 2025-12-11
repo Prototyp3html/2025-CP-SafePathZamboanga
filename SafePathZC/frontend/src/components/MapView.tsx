@@ -1763,11 +1763,12 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           if (reportsData && Array.isArray(reportsData)) {
             for (const report of reportsData) {
               try {
-                // Check if we already have this report from forum posts
+                // Create a unique ID for this report (add offset to distinguish from forum IDs)
+                const reportId = report.id + 10000;
+                
+                // Check if we already have this report in our list
                 const existingReport = reports.find(
-                  (r) =>
-                    r.location === report.location?.address &&
-                    r.title === report.title
+                  (r) => r.id === reportId
                 );
 
                 if (
@@ -1800,7 +1801,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
                   if (coordinates && coordinates.lat && coordinates.lng) {
                     reports.push({
-                      id: report.id + 10000, // Add offset to distinguish from forum post IDs
+                      id: reportId,
                       title: report.title,
                       content: report.description,
                       location: report.location.address,
