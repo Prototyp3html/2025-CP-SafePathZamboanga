@@ -983,8 +983,6 @@ class FloodDataUpdater:
             logger.info(f"✅ Roads STOPPED FLOODING: {roads_stopped_flooding}")
         logger.info(f"🌧️  Current rainfall: {current_rainfall}mm")
         logger.info(f"⏰ Last updated: {datetime.now(tz=PHILIPPINE_TZ).strftime('%Y-%m-%d %H:%M:%S %Z')}")
-        if longest_flooded:
-            logger.info(f"⚠️  LONGEST FLOODED: {longest_flooded['properties']['name']} for {longest_flooded['properties']['flood_duration_hours']} hours")
         logger.info("=" * 60)
         
         # Step 9: Save GeoJSON to PostgreSQL as well (for persistence across restarts)
