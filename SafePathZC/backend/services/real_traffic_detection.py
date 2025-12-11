@@ -190,8 +190,11 @@ class RealTrafficDetectionService:
         logger.info(f"Route: {len(coordinates)} waypoints")
         logger.info(f"Active incidents in system: {len(self.active_incidents)}")
         
-        # Analyze incidents on this route
-        incidents_on_route = self._find_incidents_on_route(coordinates)
+        # Detailed incident distance analysis
+        incidents_analysis = self._analyze_incident_distances(coordinates)
+        incidents_on_route = incidents_analysis['incidents_affecting_route']
+        all_incidents_analysis = incidents_analysis['all_incidents_details']
+        
         logger.info(f"  ✓ Found {len(incidents_on_route)} incidents on/near route:")
         for inc in incidents_on_route:
             logger.info(f"    - {inc.incident_type.upper()} (severity: {inc.severity}) at ({inc.location_lat:.4f}, {inc.location_lng:.4f})")
@@ -242,9 +245,62 @@ class RealTrafficDetectionService:
                 ' / '.join(inter.road_names) for inter in intersections_on_route
             ],
             'total_delay_minutes': delay_minutes,
-            'traffic_penalty': penalty
+            'traffic_penalty': penalty,
+            'all_incidents_analysis': all_incidents_analysis
         }
     
+    def _analyze_incident_distances(self, coordinates: List[List[float]]) -> Dict:
+        """Detailed analysis showing distance from each incident to the route"""
+        incidents_affecting_route = []
+        all_incidents_details = []
+        
+        logger.info("\n" + "=" * 80)
+        logger.info("📍 DETAILED INCIDENT DISTANCE ANALYSIS")
+        logger.info("=" * 80)
+        
+        for incident in self.active_incidents:
+            min_distance = float('inf')
+            closest_point_idx = -1
+            
+            # Find closest point on route to this incident
+            for idx, coord in enumerate(coordinates):
+                distance = self._haversine_distance(
+                    coord[1], coord[0],  # lat, lng
+                    incident.location_lat, incident.location_lng
+                )
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_point_idx = idx
+            
+            logger.info(f"\n🔴 Incident: {incident.incident_type.upper()} (severity: {incident.severity})")
+            logger.info(f"   Location: ({incident.location_lat:.4f}, {incident.location_lng:.4f})")
+            logger.info(f"   Impact radius: {incident.impact_radius_m:.1f}m")
+            logger.info(f"   Closest distance to route: {min_distance:.1f}m (at waypoint {closest_point_idx})")
+            
+            if min_distance <= incident.impact_radius_m:
+                logger.info(f"   ✓ AFFECTS ROUTE (within radius)")
+                incidents_affecting_route.append(incident)
+            else:
+                gap = min_distance - incident.impact_radius_m
+                logger.info(f"   ✗ Does not affect (outside radius by {gap:.1f}m)")
+            
+            all_incidents_details.append({
+                'category': incident.incident_type,
+                'severity': incident.severity,
+                'distance_to_route': min_distance,
+                'impact_radius': incident.impact_radius_m,
+                'affects_route': min_distance <= incident.impact_radius_m,
+                'location': [incident.location_lng, incident.location_lat]
+            })
+        
+        logger.info("\n" + "=" * 80)
+        logger.info(f"SUMMARY: {len(incidents_affecting_route)} incident(s) affect this route")
+        logger.info("=" * 80 + "\n")
+        
+        return {
+            'incidents_affecting_route': incidents_affecting_route,
+            'all_incidents_details': all_incidents_details
+        }
     def _find_incidents_on_route(self, coordinates: List[List[float]]) -> List[TrafficIncident]:
         """Find all real incidents affecting this route"""
         incidents_on_route = []

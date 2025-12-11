@@ -331,7 +331,10 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
         # Generate avoidance waypoints if traffic incidents exist on/near the direct route
         traffic_avoidance_waypoints = []
         if traffic_incidents:
-            logger.info("Generating waypoints to avoid traffic incidents...")
+            logger.info("\n🛣️ GENERATING TRAFFIC-AVOIDING WAYPOINTS")
+            logger.info(f"   Start: ({request.start_lat:.4f}, {request.start_lng:.4f})")
+            logger.info(f"   End: ({request.end_lat:.4f}, {request.end_lng:.4f})")
+            logger.info(f"   Incidents to avoid: {len(traffic_incidents)}")
             
             # Calculate the midpoint of the route
             mid_lat = (request.start_lat + request.end_lat) / 2
@@ -347,20 +350,29 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                 perp_x = -route_lat / route_distance
                 perp_y = route_lng / route_distance
                 
-                # For each incident, create waypoints on both sides to force avoidance
-                for incident in traffic_incidents:
-                    # Create waypoint on each side of the route to steer around the incident
-                    # Use larger offset (500m) to ensure OSRM routing goes around
-                    offset_distance = 0.0045  # ~500m at equator
+                # For EACH incident, generate waypoints that go around it
+                for idx, incident in enumerate(traffic_incidents):
+                    # Create waypoint on each side of this specific incident
+                    # Use impact radius + buffer to ensure OSRM routing goes around
+                    impact_radius_deg = (incident.impact_radius_m / 111000)  # Convert meters to degrees
+                    offset_distance = impact_radius_deg + 0.005  # Add 500m buffer
                     
                     # Left bypass waypoint
                     wp_left = (mid_lng + perp_x * offset_distance, mid_lat + perp_y * offset_distance)
                     # Right bypass waypoint  
                     wp_right = (mid_lng - perp_x * offset_distance, mid_lat - perp_y * offset_distance)
                     
+                    logger.info(f"\n   Incident #{idx+1} ({incident.incident_type})")
+                    logger.info(f"     Location: ({incident.location_lat:.4f}, {incident.location_lng:.4f})")
+                    logger.info(f"     Impact radius: {incident.impact_radius_m:.1f}m")
+                    logger.info(f"     Avoidance waypoints generated:")
+                    logger.info(f"       Left:  ({wp_left[0]:.4f}, {wp_left[1]:.4f})")
+                    logger.info(f"       Right: ({wp_right[0]:.4f}, {wp_right[1]:.4f})")
+                    
                     traffic_avoidance_waypoints.append(wp_left)
                     traffic_avoidance_waypoints.append(wp_right)
-                    logger.info(f"Added traffic avoidance waypoints around incident at ({incident.location_lat:.4f}, {incident.location_lng:.4f})")
+            
+            logger.info(f"\n   Total waypoints generated: {len(traffic_avoidance_waypoints)}")
         
         # Combine user waypoints with traffic avoidance waypoints
         if traffic_avoidance_waypoints:
