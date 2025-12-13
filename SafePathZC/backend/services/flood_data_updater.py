@@ -528,7 +528,7 @@ class FloodDataUpdater:
         # BUT ONLY if elevation data is valid/realistic
         if is_valid_elevation:
             if elevation < 3:
-                flood_score += 60  # Increased: sea level areas are extremely dangerous
+                flood_score += 60  
             elif elevation < 5:
                 flood_score += 50
             elif elevation < 10:
@@ -558,7 +558,6 @@ class FloodDataUpdater:
             flood_score += 8  # Increased from 5
         
         # Determine flood level with adjusted thresholds
-        # IMPORTANT: Only mark as flooded if there's actual rainfall or extreme proximity to water
         if flood_score >= 80:  # High risk requires significant rainfall OR very close to water
             flood_level = "high"
             flooded = True
@@ -786,8 +785,6 @@ class FloodDataUpdater:
             return None
         
         # Step 2: Extract unique coordinates for elevation lookup
-        # OPTIMIZATION: Sample coordinates (every 100m) instead of every point
-        # This reduces ~88k points to ~8-10k, 10x faster elevation fetching!
         coordinates = set()
         for road in roads:
             if road.get('type') == 'way' and 'geometry' in road:
@@ -898,7 +895,6 @@ class FloodDataUpdater:
                     'flood_level': flood_assessment['flood_level'],
                     'flood_score': flood_assessment['flood_score'],
                     'current_rainfall_mm': current_rainfall,
-                    # New: Flood duration tracking
                     'flood_duration_hours': flood_duration_info['flood_duration_hours'],
                     'flood_start_time': flood_duration_info['flooded_start_time'],
                     'times_flooded': flood_duration_info['times_flooded'],

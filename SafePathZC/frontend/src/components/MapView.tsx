@@ -1807,7 +1807,7 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
                       location: report.location.address,
                       reportType: report.category || "Unknown",
                       severity: report.urgency || "Moderate",
-                      author: "SafePath User",
+                      author: report.user_name || report.author || "Anonymous",
                       created_at: report.created_at,
                       coordinates: coordinates,
                     });

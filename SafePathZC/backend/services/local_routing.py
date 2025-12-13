@@ -921,7 +921,7 @@ class LocalRoutingService:
                 neighbors.remove(coords[point_index - 1])
         
         # 3. CRITICAL: Explore connections to OTHER segments at this intersection point
-        # This allows A* to "jump" between road segments at intersections
+        
         if current_coord in self.routing_graph:
             for other_segment, other_index in self.routing_graph[current_coord].connected_segments:
                 # Skip the current segment we're already on
