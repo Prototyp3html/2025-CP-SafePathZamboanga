@@ -24,8 +24,11 @@ export function FloodHotspotPins({ map, isVisible, onHotspotClick }: FloodHotspo
     const fetchHotspots = async () => {
       setLoading(true);
       try {
+        console.log('🌊 Fetching flood hotspots...');
         const data = await getFloodHotspots(50, 0); // Get top 50 hotspots
+        console.log('✅ Fetched hotspots:', data);
         setHotspots(data);
+        console.log(`📍 Found ${data.length} flood hotspots`);
       } catch (error) {
         console.error('Error fetching flood hotspots:', error);
       } finally {
@@ -34,29 +37,42 @@ export function FloodHotspotPins({ map, isVisible, onHotspotClick }: FloodHotspo
     };
 
     if (isVisible) {
+      console.log('🔍 Flood hotspots visibility toggled to TRUE - fetching data');
       fetchHotspots();
       // Refresh every 30 minutes for auto-updated data
       const interval = setInterval(fetchHotspots, 30 * 60 * 1000);
       return () => clearInterval(interval);
+    } else {
+      console.log('🔍 Flood hotspots visibility toggled to FALSE');
     }
   }, [isVisible]);
 
   // Add/remove markers from map
   useEffect(() => {
-    if (!map || !isVisible) {
+    if (!map) {
+      console.warn('⚠️ Map is not available yet');
+      return;
+    }
+
+    if (!isVisible) {
+      console.log('📍 Removing flood hotspot markers (isVisible=false)');
       // Remove all markers
-      markersRef.current.forEach(marker => map?.removeLayer(marker));
+      markersRef.current.forEach(marker => map.removeLayer(marker));
       markersRef.current = [];
       return;
     }
+
+    console.log(`📍 Adding ${hotspots.length} flood hotspot markers to map`);
 
     // Clear existing markers
     markersRef.current.forEach(marker => map.removeLayer(marker));
     markersRef.current = [];
 
     // Add new markers
-    hotspots.forEach(hotspot => {
+    hotspots.forEach((hotspot, index) => {
       const riskInfo = getRiskLevelInfo(hotspot.risk_score);
+      
+      console.log(`📍 Creating marker ${index + 1}/${hotspots.length}: ${hotspot.road_name} at [${hotspot.location.lat}, ${hotspot.location.lon}]`);
 
       // Create custom icon
       const icon = L.divIcon({

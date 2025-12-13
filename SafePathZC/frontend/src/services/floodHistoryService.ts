@@ -78,12 +78,17 @@ export async function getFloodHotspots(
       limit: limit.toString(),
       min_risk_score: minRiskScore.toString()
     });
-    const response = await fetch(`${API_BASE_URL}/api/flood-history/hotspots?${params}`);
+    const url = `${API_BASE_URL}/api/flood-history/hotspots?${params}`;
+    console.log('🌊 Fetching flood hotspots from:', url);
+    const response = await fetch(url);
+    console.log('📡 Response status:', response.status);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
+    console.log('✅ API returned:', data);
+    console.log('📊 Hotspots array:', data.hotspots);
     return data.hotspots || [];
   } catch (error) {
-    console.error('Error fetching flood hotspots:', error);
+    console.error('❌ Error fetching flood hotspots:', error);
     return [];
   }
 }
