@@ -1194,8 +1194,16 @@ class FloodDataUpdater:
             road_name = road.get('tags', {}).get('name', f'Road {road_counter}')
             mid_point = geometry[len(geometry) // 2]
             
+            # Log detailed info for flooded roads only
+            if flood_assessment['flooded']:
+                lat = float(mid_point['lat']) if isinstance(mid_point['lat'], str) else mid_point['lat']
+                lon = float(mid_point['lon']) if isinstance(mid_point['lon'], str) else mid_point['lon']
+                rainfall = float(current_rainfall) if isinstance(current_rainfall, str) else current_rainfall
+                logger.info(f"🌊 FLOODED: {road_name} | Lat: {lat:.4f}, Lon: {lon:.4f} | Level: {flood_assessment['flood_level']} | Rainfall: {rainfall:.0f}mm")
+            
             # Log if road just started flooding
             if flood_assessment['flooded'] and flood_duration_info['flooded_start_time'] is not None:
+                logger.info(f"🚨 FLOOD START: {road_name} | {flood_duration_info['flooded_start_time']}")
                 self.log_flood_event(
                     road_id=road_id,
                     road_name=road_name,
@@ -1210,6 +1218,8 @@ class FloodDataUpdater:
             
             # Log if road just stopped flooding
             if not flood_assessment['flooded'] and flood_duration_info.get('flood_duration_hours', 0) > 0:
+                duration = float(flood_duration_info['flood_duration_hours']) if isinstance(flood_duration_info.get('flood_duration_hours'), str) else flood_duration_info.get('flood_duration_hours', 0)
+                logger.info(f"✅ FLOOD END: {road_name} | Duration: {duration:.1f} hours")
                 self.log_flood_event(
                     road_id=road_id,
                     road_name=road_name,

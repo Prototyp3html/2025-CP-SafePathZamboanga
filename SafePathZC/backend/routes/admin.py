@@ -28,6 +28,7 @@ class FloodUpdateState:
         self.roads_updated = 0
         self.error_message = None
         self.start_time = None
+        self.logs = []  # Store update logs
         
     def start_update(self):
         self.is_updating = True
@@ -36,6 +37,11 @@ class FloodUpdateState:
         self.start_time = datetime.utcnow()
         self.roads_updated = 0
         self.error_message = None
+        self.logs = []  # Clear logs on new update
+        
+    def add_log(self, message: str):
+        """Add a log message to the update log"""
+        self.logs.append(message)
         
     def complete_update(self, roads_count: int):
         self.is_updating = False
@@ -59,10 +65,22 @@ class FloodUpdateState:
             "error_message": self.error_message,
             "elapsed_seconds": (datetime.utcnow() - self.start_time).total_seconds() if self.start_time else 0
         }
+    
+    def get_logs(self) -> list:
+        """Return the current logs"""
+        return self.logs
 
 # Global instance
 flood_update_state = FloodUpdateState()
 
+# Set up custom log capture for frontend display
+try:
+    from services.log_capture import FrontendLogCapture
+    log_handler = FrontendLogCapture(flood_update_state)
+    log_handler.setFormatter(logging.Formatter('%(levelname)s - %(message)s'))
+    logger.addHandler(log_handler)
+except ImportError:
+    logger.warning("Could not import FrontendLogCapture")
 from models import AdminUser, Report, User, Post, Comment, PostLike, RouteHistory, FavoriteRoute, SearchHistory, SessionLocal
 
 # Dependency to get DB session
@@ -157,12 +175,31 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
 
 def verify_admin_token(credentials: HTTPAuthorizationCredentials = Security(security)):
     try:
-        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        if not credentials:
+            logger.error("No credentials provided in Authorization header")
+            raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+        
+        token = credentials.credentials
+        logger.info(f"Verifying admin token, token length: {len(token)}")
+        
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: int = payload.get("sub")
+        logger.info(f"Token verified successfully for user_id: {user_id}")
+        
         if user_id is None:
+            logger.error("No user_id found in token payload")
             raise HTTPException(status_code=401, detail="Invalid authentication credentials")
         return user_id
-    except jwt.PyJWTError:
+    except HTTPException as he:
+        raise he
+    except jwt.ExpiredSignatureError:
+        logger.error("Token has expired")
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.PyJWTError as e:
+        logger.error(f"JWT verification failed: {str(e)}")
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+    except Exception as e:
+        logger.error(f"Unexpected error in token verification: {str(e)}")
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
 
 def verify_admin_token_direct(token: str, db: Session):
@@ -1283,6 +1320,14 @@ async def get_flood_update_status(
 ):
     """Get current flood update status"""
     return flood_update_state.get_status()
+
+
+@router.get("/flood/update-logs")
+async def get_flood_update_logs(
+    admin_id: int = Depends(verify_admin_token)
+):
+    """Get logs from the current/last flood data update"""
+    return {"logs": flood_update_state.get_logs()}
 
 
 async def run_flood_update_task():

@@ -3093,44 +3093,22 @@ global_last_traffic_cache_time = None
 background_tasks_running = False
 
 async def flood_data_update_loop():
-    """Background task that updates flood data every 6 hours"""
+    """Background task that updates flood data every 60 minutes"""
     from services.flood_data_updater import update_flood_data
     
     logger.info("ðŸ”„ Flood data auto-update scheduler started")
-    logger.info("ðŸ“… Will update every 6 hours at: 12:00 AM, 6:00 AM, 12:00 PM, 6:00 PM")
+    logger.info("Will update every 60 minutes (1 hour)")
     
     while background_tasks_running:
         try:
-            # Calculate time until next scheduled update (12am, 6am, 12pm, 6pm)
-            now = datetime.now()
-            current_hour = now.hour
+            update_interval_seconds = 60 * 60  # 60 minutes in seconds
+            logger.info(f"Next flood data update in {update_interval_seconds // 60} minutes")
             
-            # Determine next update hour
-            update_hours = [0, 6, 12, 18]  # 12am, 6am, 12pm, 6pm
-            next_hour = None
-            for hour in update_hours:
-                if current_hour < hour:
-                    next_hour = hour
-                    break
-            
-            if next_hour is None:
-                next_hour = update_hours[0]  # Next day at midnight
-            
-            # Calculate seconds until next update
-            if next_hour > current_hour:
-                hours_until = next_hour - current_hour
-            else:
-                hours_until = (24 - current_hour) + next_hour
-            
-            seconds_until = hours_until * 3600 - (now.minute * 60) - now.second
-            
-            logger.info(f"â° Next flood data update in {hours_until} hours ({seconds_until} seconds)")
-            
-            # Wait until next scheduled time
-            await asyncio.sleep(seconds_until)
+            # Wait for 60 minutes before next update
+            await asyncio.sleep(update_interval_seconds)
             
             # Perform the update
-            logger.info("ðŸš€ Starting scheduled flood data update...")
+            logger.info("Starting scheduled flood data update...")
             output_path = await update_flood_data()
             
             if output_path:
