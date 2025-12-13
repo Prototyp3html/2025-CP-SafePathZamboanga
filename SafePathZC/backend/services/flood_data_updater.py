@@ -33,11 +33,17 @@ db_engine = create_engine(DATABASE_URL)
 def get_db_models():
     """Import models dynamically to avoid import issues"""
     try:
-        from models import ElevationCache, FloodedRoadsHistory
-        return ElevationCache, FloodedRoadsHistory
+        from models import (
+            ElevationCache, 
+            FloodedRoadsHistory,
+            FloodEventLog,
+            FloodStatistics,
+            FloodHotspot
+        )
+        return ElevationCache, FloodedRoadsHistory, FloodEventLog, FloodStatistics, FloodHotspot
     except ImportError:
         logger.warning("Could not import database models - falling back to JSON cache")
-        return None, None
+        return None, None, None, None, None
 
 
 @dataclass
@@ -87,7 +93,7 @@ class FloodDataUpdater:
         
         # Database session for caching
         self.db_session = db_session
-        self.ElevationCache, self.FloodedRoadsHistory = get_db_models()
+        self.ElevationCache, self.FloodedRoadsHistory, self.FloodEventLog, self.FloodStatistics, self.FloodHotspot = get_db_models()
         
         # Set up flooded history file path (fallback if DB unavailable)
         self._flooded_history_path = self.cache_dir / "flooded_history.json"
@@ -693,6 +699,136 @@ class FloodDataUpdater:
         except Exception as e:
             logger.warning(f"Failed to save flooded history to JSON: {e}")
     
+    def log_flood_event(self, road_id: str, road_name: str, event_type: str, 
+                       flood_level: str, rainfall_mm: float, elevation_m: float,
+                       distance_to_water_m: float, location_lat: float, 
+                       location_lon: float) -> None:
+        """
+        Log a flood event to the lifetime history database
+        
+        Args:
+            road_id: Road identifier
+            road_name: Name of the road
+            event_type: 'flood_start' or 'flood_end'
+            flood_level: 'low', 'medium', 'high'
+            rainfall_mm: Rainfall at time of event
+            elevation_m: Road elevation
+            distance_to_water_m: Distance to water bodies
+            location_lat: Road latitude
+            location_lon: Road longitude
+        """
+        if not self.db_session or not self.FloodEventLog:
+            return
+        
+        try:
+            event_log = self.FloodEventLog(
+                road_id=road_id,
+                road_name=road_name,
+                event_type=event_type,
+                flood_level=flood_level,
+                rainfall_mm=rainfall_mm,
+                elevation_m=elevation_m,
+                distance_to_water_m=distance_to_water_m,
+                location_lat=location_lat,
+                location_lon=location_lon,
+                event_time=datetime.utcnow(),
+                update_source='automated_api'
+            )
+            self.db_session.add(event_log)
+            self.db_session.commit()
+            logger.info(f"📝 Logged {event_type} event for {road_name} ({road_id})")
+        except Exception as e:
+            logger.warning(f"Failed to log flood event: {e}")
+            self.db_session.rollback()
+    
+    def update_flood_hotspot(self, road_id: str, road_name: str, 
+                            location_lat: float, location_lon: float,
+                            is_currently_flooded: bool, flood_duration_hours: float,
+                            flood_level: str) -> None:
+        """
+        Update flood hotspot data - tracks roads that flood repeatedly
+        
+        Args:
+            road_id: Road identifier
+            road_name: Name of the road
+            location_lat: Road latitude
+            location_lon: Road longitude
+            is_currently_flooded: Is it flooded now?
+            flood_duration_hours: How long has it been flooded
+            flood_level: 'low', 'medium', 'high'
+        """
+        if not self.db_session or not self.FloodHotspot:
+            return
+        
+        try:
+            hotspot = self.db_session.query(self.FloodHotspot).filter(
+                self.FloodHotspot.road_id == road_id
+            ).first()
+            
+            now = datetime.utcnow()
+            
+            if not hotspot:
+                # Create new hotspot entry
+                hotspot = self.FloodHotspot(
+                    road_id=road_id,
+                    road_name=road_name,
+                    location_lat=location_lat,
+                    location_lon=location_lon,
+                    total_flood_events=1 if is_currently_flooded else 0,
+                    total_flooded_hours=0,
+                    first_flood_recorded=now if is_currently_flooded else None,
+                    last_flood_start=now if is_currently_flooded else None,
+                    flood_risk_score=self._calculate_risk_score(1, 0),
+                    last_updated=now
+                )
+                self.db_session.add(hotspot)
+            else:
+                # Update existing hotspot
+                if is_currently_flooded:
+                    # Increment flood event count only on start
+                    if not hasattr(hotspot, '_was_flooded_before'):
+                        hotspot.total_flood_events += 1
+                        hotspot.last_flood_start = now
+                    
+                    # Update flood risk score based on history
+                    hotspot.flood_risk_score = self._calculate_risk_score(
+                        hotspot.total_flood_events,
+                        hotspot.total_flooded_hours
+                    )
+                else:
+                    # Flood ended - accumulate duration
+                    if hotspot.last_flood_start:
+                        duration = (now - hotspot.last_flood_start).total_seconds() / 3600
+                        hotspot.total_flooded_hours += duration
+                        hotspot.last_flood_end = now
+                        hotspot.average_flood_duration_hours = (
+                            hotspot.total_flooded_hours / max(1, hotspot.total_flood_events)
+                        )
+                
+                hotspot.last_updated = now
+                
+                # Calculate days since last flood
+                if hotspot.last_flood_end:
+                    days_since = (now - hotspot.last_flood_end).days
+                    hotspot.days_since_last_flood = days_since
+            
+            self.db_session.commit()
+            logger.debug(f"Updated hotspot data for {road_name}")
+        except Exception as e:
+            logger.warning(f"Failed to update hotspot data: {e}")
+            self.db_session.rollback()
+    
+    def _calculate_risk_score(self, total_flood_events: int, total_flooded_hours: float) -> float:
+        """Calculate flood risk score for a hotspot (0-100)"""
+        # Base score: frequency (how many times has it flooded)
+        frequency_score = min(50, total_flood_events * 5)  # Max 50 points for frequency
+        
+        # Duration score: total hours flooded
+        duration_score = min(50, total_flooded_hours * 0.5)  # Max 50 points for duration
+        
+        total_score = frequency_score + duration_score
+        return min(100, max(0, total_score))
+    
     def calculate_flood_duration_hours(self, road_id: str, currently_flooded: bool, 
                                        flooded_history: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -756,6 +892,181 @@ class FloodDataUpdater:
             'flooded_start_time': road_history.get('flooded_start_time'),
             'last_update': road_history.get('last_update')
         }
+    
+    def get_flood_hotspots(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """
+        Get the top flood hotspots (roads that flood repeatedly)
+        
+        Args:
+            limit: Maximum number of hotspots to return
+        
+        Returns:
+            List of hotspot data sorted by risk score
+        """
+        if not self.db_session or not self.FloodHotspot:
+            return []
+        
+        try:
+            hotspots = self.db_session.query(self.FloodHotspot).filter(
+                self.FloodHotspot.total_flood_events > 0
+            ).order_by(self.FloodHotspot.flood_risk_score.desc()).limit(limit).all()
+            
+            result = []
+            for hotspot in hotspots:
+                result.append({
+                    'road_id': hotspot.road_id,
+                    'road_name': hotspot.road_name,
+                    'location': {
+                        'lat': hotspot.location_lat,
+                        'lon': hotspot.location_lon
+                    },
+                    'flood_history': {
+                        'total_events': hotspot.total_flood_events,
+                        'total_flooded_hours': round(hotspot.total_flooded_hours, 2),
+                        'average_duration_hours': round(hotspot.average_flood_duration_hours, 2),
+                        'frequency_per_year': round(hotspot.frequency_per_year, 2)
+                    },
+                    'risk_score': round(hotspot.flood_risk_score, 2),
+                    'last_flood': {
+                        'start': hotspot.last_flood_start.isoformat() if hotspot.last_flood_start else None,
+                        'end': hotspot.last_flood_end.isoformat() if hotspot.last_flood_end else None,
+                        'days_since': hotspot.days_since_last_flood
+                    },
+                    'first_recorded': hotspot.first_flood_recorded.isoformat() if hotspot.first_flood_recorded else None
+                })
+            
+            logger.info(f"Retrieved {len(result)} flood hotspots")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to get flood hotspots: {e}")
+            return []
+    
+    def get_flood_events(self, road_id: str = None, days_back: int = 30, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Get historical flood events for analysis
+        
+        Args:
+            road_id: Optional specific road to query. If None, gets all roads
+            days_back: Number of days to look back in history
+            limit: Maximum number of events to return
+        
+        Returns:
+            List of flood events with timestamps and details
+        """
+        if not self.db_session or not self.FloodEventLog:
+            return []
+        
+        try:
+            cutoff_date = datetime.utcnow() - timedelta(days=days_back)
+            query = self.db_session.query(self.FloodEventLog).filter(
+                self.FloodEventLog.event_time >= cutoff_date
+            )
+            
+            if road_id:
+                query = query.filter(self.FloodEventLog.road_id == road_id)
+            
+            events = query.order_by(self.FloodEventLog.event_time.desc()).limit(limit).all()
+            
+            result = []
+            for event in events:
+                result.append({
+                    'event_id': event.id,
+                    'road_id': event.road_id,
+                    'road_name': event.road_name,
+                    'event_type': event.event_type,  # 'flood_start' or 'flood_end'
+                    'event_time': event.event_time.isoformat(),
+                    'flood_level': event.flood_level,
+                    'environmental_data': {
+                        'rainfall_mm': event.rainfall_mm,
+                        'elevation_m': event.elevation_m,
+                        'distance_to_water_m': event.distance_to_water_m
+                    },
+                    'location': {
+                        'lat': event.location_lat,
+                        'lon': event.location_lon
+                    }
+                })
+            
+            logger.info(f"Retrieved {len(result)} flood events")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to get flood events: {e}")
+            return []
+    
+    def get_flood_statistics(self, days_back: int = 30) -> Dict[str, Any]:
+        """
+        Get aggregate flood statistics over a time period
+        
+        Args:
+            days_back: Number of days to analyze
+        
+        Returns:
+            Dict with flood statistics and trends
+        """
+        if not self.db_session or not self.FloodEventLog:
+            return {}
+        
+        try:
+            cutoff_date = datetime.utcnow() - timedelta(days=days_back)
+            
+            # Get all flood events in the period
+            events = self.db_session.query(self.FloodEventLog).filter(
+                self.FloodEventLog.event_time >= cutoff_date
+            ).all()
+            
+            # Calculate statistics
+            total_events = len(events)
+            start_events = len([e for e in events if e.event_type == 'flood_start'])
+            end_events = len([e for e in events if e.event_type == 'flood_end'])
+            
+            # Get unique roads flooded
+            roads_flooded = len(set(e.road_id for e in events))
+            
+            # Get flood level distribution
+            high_severity = len([e for e in events if e.flood_level == 'high'])
+            medium_severity = len([e for e in events if e.flood_level == 'medium'])
+            low_severity = len([e for e in events if e.flood_level == 'low'])
+            
+            # Calculate average rainfall during floods
+            avg_rainfall = 0
+            if events:
+                rainfall_values = [e.rainfall_mm for e in events if e.rainfall_mm is not None]
+                if rainfall_values:
+                    avg_rainfall = sum(rainfall_values) / len(rainfall_values)
+            
+            # Get top 5 most flooded roads
+            road_counts = {}
+            for event in events:
+                road_counts[event.road_id] = road_counts.get(event.road_id, 0) + 1
+            
+            top_flooded_roads = sorted(
+                road_counts.items(), 
+                key=lambda x: x[1], 
+                reverse=True
+            )[:5]
+            
+            return {
+                'period_days': days_back,
+                'analysis_start_date': cutoff_date.isoformat(),
+                'analysis_end_date': datetime.utcnow().isoformat(),
+                'total_events': total_events,
+                'flood_start_events': start_events,
+                'flood_end_events': end_events,
+                'unique_roads_affected': roads_flooded,
+                'severity_distribution': {
+                    'high': high_severity,
+                    'medium': medium_severity,
+                    'low': low_severity
+                },
+                'average_rainfall_mm': round(avg_rainfall, 2),
+                'top_flooded_roads': [
+                    {'road_id': road_id, 'flood_count': count}
+                    for road_id, count in top_flooded_roads
+                ]
+            }
+        except Exception as e:
+            logger.error(f"Failed to get flood statistics: {e}")
+            return {}
     
     async def generate_updated_terrain_geojson(self, output_path: str = None, manual_rainfall_mm: float = None) -> str:
         """
@@ -877,6 +1188,49 @@ class FloodDataUpdater:
                 road_id,
                 flood_assessment['flooded'],
                 flooded_history
+            )
+            
+            # Log flood events to lifetime history
+            road_name = road.get('tags', {}).get('name', f'Road {road_counter}')
+            mid_point = geometry[len(geometry) // 2]
+            
+            # Log if road just started flooding
+            if flood_assessment['flooded'] and flood_duration_info['flooded_start_time'] is not None:
+                self.log_flood_event(
+                    road_id=road_id,
+                    road_name=road_name,
+                    event_type='flood_start',
+                    flood_level=flood_assessment['flood_level'],
+                    rainfall_mm=current_rainfall,
+                    elevation_m=elev_mean,
+                    distance_to_water_m=distance_to_flood_zone,
+                    location_lat=mid_point['lat'],
+                    location_lon=mid_point['lon']
+                )
+            
+            # Log if road just stopped flooding
+            if not flood_assessment['flooded'] and flood_duration_info.get('flood_duration_hours', 0) > 0:
+                self.log_flood_event(
+                    road_id=road_id,
+                    road_name=road_name,
+                    event_type='flood_end',
+                    flood_level=flood_assessment['flood_level'],
+                    rainfall_mm=current_rainfall,
+                    elevation_m=elev_mean,
+                    distance_to_water_m=distance_to_flood_zone,
+                    location_lat=mid_point['lat'],
+                    location_lon=mid_point['lon']
+                )
+            
+            # Update hotspot data for lifetime tracking
+            self.update_flood_hotspot(
+                road_id=road_id,
+                road_name=road_name,
+                location_lat=mid_point['lat'],
+                location_lon=mid_point['lon'],
+                is_currently_flooded=flood_assessment['flooded'],
+                flood_duration_hours=flood_duration_info['flood_duration_hours'],
+                flood_level=flood_assessment['flood_level']
             )
             
             # Build feature

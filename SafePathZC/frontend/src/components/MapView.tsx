@@ -18,6 +18,8 @@ import "../App.css";
 import { RouteModal } from "./RouteModal";
 import { AlertBanner } from "./AlertBanner";
 import { WeatherDashboard } from "./WeatherDashboard";
+import { FloodHotspotPins } from "./FloodHotspotPins";
+import { FloodHistoryModal } from "./FloodHistoryModal";
 import {
   TransportationSelector,
   TransportationMode,
@@ -1291,6 +1293,11 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
     []
   );
   const [showReportMarkers, setShowReportMarkers] = useState(true);
+
+  // 🆕 Flood Hotspot States
+  const [showFloodHotspots, setShowFloodHotspots] = useState(false);
+  const [selectedFloodHotspot, setSelectedFloodHotspot] = useState<any | null>(null);
+  const [showFloodHistoryModal, setShowFloodHistoryModal] = useState(false);
 
   // New states for route planner modal
   const [showRoutePlannerModal, setShowRoutePlannerModal] = useState(false);
@@ -9929,6 +9936,14 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             </button>
 
             <button
+              onClick={() => setShowFloodHotspots(!showFloodHotspots)}
+              className={`action-button flood-button ${showFloodHotspots ? 'active' : ''}`}
+              title={showFloodHotspots ? 'Hide flood hotspots' : 'Show flood hotspots'}
+            >
+              💧 Flood Hotspots {showFloodHotspots && '✓'}
+            </button>
+
+            <button
               onClick={() => onModalOpen("report")}
               className="action-button report-button"
             >
@@ -10917,6 +10932,26 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
       <WeatherDashboard
         isOpen={showWeatherDashboard}
         onClose={() => setShowWeatherDashboard(false)}
+      />
+
+      {/* 🆕 Flood Hotspot Pins */}
+      <FloodHotspotPins
+        map={mapRef.current}
+        isVisible={showFloodHotspots}
+        onHotspotClick={(hotspot) => {
+          setSelectedFloodHotspot(hotspot);
+          setShowFloodHistoryModal(true);
+        }}
+      />
+
+      {/* 🆕 Flood History Modal */}
+      <FloodHistoryModal
+        isOpen={showFloodHistoryModal}
+        hotspot={selectedFloodHotspot}
+        onClose={() => {
+          setShowFloodHistoryModal(false);
+          setSelectedFloodHotspot(null);
+        }}
       />
 
       {/* 🆕 GPS Tracking Status Indicator - Draggable */}

@@ -293,6 +293,19 @@ body {
   margin-top: 2px;
 }
 
+.flood-button {
+  background: linear-gradient(135deg, #06b6d4, #0891b2);
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+  margin-top: 2px;
+  transition: all 0.3s ease;
+}
+
+.flood-button.active {
+  background: linear-gradient(135deg, #0891b2, #164e63);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3), 0 0 10px rgba(6, 182, 212, 0.5);
+}
+
 .action-button:hover {
   transform: translateX(-5px);
 }

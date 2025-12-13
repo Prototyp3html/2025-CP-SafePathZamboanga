@@ -223,6 +223,108 @@ class TerrainRoadsCache(Base):
         UniqueConstraint('id', name='unique_terrain_cache'),
     )
 
+class FloodEventLog(Base):
+    """Detailed log of every flood event (start and end) for lifetime history"""
+    __tablename__ = "flood_event_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    road_id = Column(String, nullable=False, index=True)  # OSM way ID
+    road_name = Column(String, nullable=True)
+    
+    # Event type: 'flood_start' or 'flood_end'
+    event_type = Column(String, nullable=False, index=True)  # flood_start, flood_end
+    
+    # Event details
+    flood_level = Column(String, nullable=True)  # low, medium, high
+    rainfall_mm = Column(Float, nullable=True)  # Rainfall at time of event
+    elevation_m = Column(Float, nullable=True)  # Elevation of road
+    distance_to_water_m = Column(Float, nullable=True)  # Distance to water bodies
+    
+    # Location coordinates
+    location_lat = Column(Float, nullable=True)
+    location_lon = Column(Float, nullable=True)
+    
+    # Timestamps
+    event_time = Column(DateTime, default=datetime.utcnow, index=True)  # When did this event occur
+    created_at = Column(DateTime, default=datetime.utcnow)  # When was this logged
+    
+    # For debugging/audit trail
+    update_source = Column(String, nullable=True)  # API source or manual
+
+
+class FloodStatistics(Base):
+    """Aggregate statistics for flood analysis - daily summaries"""
+    __tablename__ = "flood_statistics"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # Time period (date for daily stats)
+    stat_date = Column(DateTime, nullable=False, index=True)  # Day this statistic covers
+    
+    # Road-specific stats
+    road_id = Column(String, nullable=True, index=True)  # If NULL, it's city-wide stats
+    road_name = Column(String, nullable=True)
+    
+    # Count statistics
+    total_flood_events = Column(Integer, default=0)  # Total events on this day
+    flood_start_events = Column(Integer, default=0)  # How many times did flooding START
+    flood_end_events = Column(Integer, default=0)  # How many times did flooding END
+    max_simultaneous_flooded_roads = Column(Integer, default=0)  # Peak flood count
+    
+    # Duration statistics
+    total_flooded_hours = Column(Float, default=0)  # Total hours flooded during this day
+    average_flood_duration_hours = Column(Float, default=0)  # Average length of flood events
+    longest_flood_duration_hours = Column(Float, default=0)  # Longest continuous flood
+    
+    # Environmental data
+    max_rainfall_mm = Column(Float, default=0)  # Max rainfall during this day
+    average_rainfall_mm = Column(Float, default=0)  # Average rainfall
+    
+    # Flood severity
+    high_severity_events = Column(Integer, default=0)  # Count of "high" level floods
+    medium_severity_events = Column(Integer, default=0)  # Count of "medium" level floods
+    low_severity_events = Column(Integer, default=0)  # Count of "low" level floods
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class FloodHotspot(Base):
+    """Track flood-prone areas (locations that flood repeatedly)"""
+    __tablename__ = "flood_hotspots"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    road_id = Column(String, nullable=False, unique=True, index=True)  # OSM way ID
+    road_name = Column(String, nullable=True)
+    
+    # Location
+    location_lat = Column(Float, nullable=False)
+    location_lon = Column(Float, nullable=False)
+    
+    # Historical flood data
+    total_flood_events = Column(Integer, default=0)  # Total times flooded in history
+    total_flooded_hours = Column(Float, default=0)  # Total hours flooded in history
+    average_flood_duration_hours = Column(Float, default=0)  # Average flood duration
+    
+    # Last flood info
+    last_flood_start = Column(DateTime, nullable=True)  # When was it last flooded
+    last_flood_end = Column(DateTime, nullable=True)
+    days_since_last_flood = Column(Integer, nullable=True)  # Days since last flood
+    
+    # Risk assessment
+    flood_risk_score = Column(Float, default=0)  # 0-100 score based on history
+    frequency_per_year = Column(Float, default=0)  # How many times per year does it flood
+    
+    # Seasonal patterns
+    flood_months = Column(String, nullable=True)  # JSON list of months when flooding occurs
+    rainy_season_floods = Column(Integer, default=0)  # Floods during rainy season
+    dry_season_floods = Column(Integer, default=0)  # Floods during dry season
+    
+    # Metadata
+    first_flood_recorded = Column(DateTime, nullable=True)  # When was first flood recorded
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 class SystemConfig(Base):
     __tablename__ = "system_config"
     
