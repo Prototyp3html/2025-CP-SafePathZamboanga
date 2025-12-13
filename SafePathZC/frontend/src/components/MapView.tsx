@@ -8564,6 +8564,21 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
         mapViewBtn.appendChild(mapViewIcon);
         mapViewBtn.title = "Toggle Map View";
 
+        // 3. Flood hotspots toggle button
+        const floodHotspotBtn = L.DomUtil.create(
+          "button",
+          "leaflet-control-custom",
+          menuContainer
+        );
+        styleSubBtn(floodHotspotBtn);
+        const floodHotspotIcon = document.createElement("span");
+        floodHotspotIcon.innerText = "💧";
+        floodHotspotIcon.style.cssText = `
+            font-size: 20px;
+          `;
+        floodHotspotBtn.appendChild(floodHotspotIcon);
+        floodHotspotBtn.title = "Toggle Flood Hotspots";
+
         // Toggle menu function
         const toggleMenu = () => {
           isMenuOpen = !isMenuOpen;
@@ -8625,6 +8640,17 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
             topo: "Topographic View",
           };
           mapViewBtn.title = titles[nextLayer] || nextLayer;
+        };
+
+        // Flood hotspot toggle functionality
+        floodHotspotBtn.onclick = (e: Event) => {
+          e.stopPropagation();
+          setShowFloodHotspots((prev) => {
+            const newState = !prev;
+            floodHotspotBtn.style.background = newState ? "#06b6d4" : "#451ae0ff";
+            floodHotspotIcon.style.opacity = newState ? "1" : "0.6";
+            return newState;
+          });
         };
 
         return container;
@@ -9933,14 +9959,6 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               className="action-button weather-button"
             >
               Weather Dashboard
-            </button>
-
-            <button
-              onClick={() => setShowFloodHotspots(!showFloodHotspots)}
-              className={`action-button flood-button ${showFloodHotspots ? 'active' : ''}`}
-              title={showFloodHotspots ? 'Hide flood hotspots' : 'Show flood hotspots'}
-            >
-              💧 Flood Hotspots {showFloodHotspots && '✓'}
             </button>
 
             <button
