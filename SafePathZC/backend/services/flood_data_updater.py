@@ -1136,142 +1136,168 @@ class FloodDataUpdater:
         # Step 5: Process roads and calculate flood risk
         features = []
         road_counter = 0
+        processed_roads = 0
+        failed_roads = 0
         
         for road in roads:
-            if road.get('type') != 'way' or 'geometry' not in road:
-                continue
-            
-            geometry = road['geometry']
-            if len(geometry) < 2:
-                continue
-            
-            # Calculate road properties
-            coordinates_list = [[point['lon'], point['lat']] for point in geometry]
-            
-            # Get elevation data for this road
-            elevations = []
-            for point in geometry:
-                coord = (point['lat'], point['lon'])
-                elev = elevation_map.get(coord, 0.0)
-                elevations.append(elev)
-            
-            elev_mean = sum(elevations) / len(elevations) if elevations else 0.0
-            elev_min = min(elevations) if elevations else 0.0
-            elev_max = max(elevations) if elevations else 0.0
-            
-            # Calculate distance to nearest flood-prone area
-            mid_point = geometry[len(geometry) // 2]
-            distance_to_flood_zone, zone_risk = self.find_nearest_flood_zone(
-                mid_point['lat'], mid_point['lon']
-            )
-            
-            # Calculate flood risk
-            flood_assessment = self.calculate_flood_risk(
-                elevation=elev_mean,
-                rainfall_mm=current_rainfall,
-                distance_to_water=distance_to_flood_zone
-            )
-            
-            # Calculate road length
-            length_m = 0
-            for i in range(len(geometry) - 1):
-                length_m += self.calculate_distance(
-                    geometry[i]['lat'], geometry[i]['lon'],
-                    geometry[i + 1]['lat'], geometry[i + 1]['lon']
+            try:
+                if road.get('type') != 'way' or 'geometry' not in road:
+                    continue
+                
+                geometry = road['geometry']
+                if len(geometry) < 2:
+                    continue
+                
+                # Calculate road properties
+                coordinates_list = [[point['lon'], point['lat']] for point in geometry]
+                
+                # Get elevation data for this road
+                elevations = []
+                for point in geometry:
+                    coord = (point['lat'], point['lon'])
+                    elev = elevation_map.get(coord, 0.0)
+                    elevations.append(elev)
+                
+                elev_mean = sum(elevations) / len(elevations) if elevations else 0.0
+                elev_min = min(elevations) if elevations else 0.0
+                elev_max = max(elevations) if elevations else 0.0
+                
+                # Calculate distance to nearest flood-prone area
+                mid_point = geometry[len(geometry) // 2]
+                distance_to_flood_zone, zone_risk = self.find_nearest_flood_zone(
+                    mid_point['lat'], mid_point['lon']
                 )
-            
-            road_counter += 1
-            
-            # Calculate flood duration
-            road_id = f"w{road.get('id', road_counter)}"
-            flood_duration_info = self.calculate_flood_duration_hours(
-                road_id,
-                flood_assessment['flooded'],
-                flooded_history
-            )
-            
-            # Log flood events to lifetime history
-            road_name = road.get('tags', {}).get('name', f'Road {road_counter}')
-            mid_point = geometry[len(geometry) // 2]
-            
-            # Log detailed info for flooded roads only
-            if flood_assessment['flooded']:
-                lat = float(mid_point['lat']) if isinstance(mid_point['lat'], str) else mid_point['lat']
-                lon = float(mid_point['lon']) if isinstance(mid_point['lon'], str) else mid_point['lon']
-                rainfall = float(current_rainfall) if isinstance(current_rainfall, str) else current_rainfall
-                logger.info(f"🌊 FLOODED: {road_name} | Lat: {lat:.4f}, Lon: {lon:.4f} | Level: {flood_assessment['flood_level']} | Rainfall: {rainfall:.0f}mm")
-            
-            # Log if road just started flooding
-            if flood_assessment['flooded'] and flood_duration_info['flooded_start_time'] is not None:
-                logger.info(f"🚨 FLOOD START: {road_name} | {flood_duration_info['flooded_start_time']}")
-                self.log_flood_event(
+                
+                # Calculate flood risk
+                flood_assessment = self.calculate_flood_risk(
+                    elevation=elev_mean,
+                    rainfall_mm=current_rainfall,
+                    distance_to_water=distance_to_flood_zone
+                )
+                
+                # Calculate road length
+                length_m = 0
+                for i in range(len(geometry) - 1):
+                    length_m += self.calculate_distance(
+                        geometry[i]['lat'], geometry[i]['lon'],
+                        geometry[i + 1]['lat'], geometry[i + 1]['lon']
+                    )
+                
+                road_counter += 1
+                
+                # Calculate flood duration
+                road_id = f"w{road.get('id', road_counter)}"
+                flood_duration_info = self.calculate_flood_duration_hours(
+                    road_id,
+                    flood_assessment['flooded'],
+                    flooded_history
+                )
+                
+                # Log flood events to lifetime history
+                road_name = road.get('tags', {}).get('name', f'Road {road_counter}')
+                mid_point = geometry[len(geometry) // 2]
+                
+                # Log detailed info for flooded roads only
+                if flood_assessment['flooded']:
+                    lat = float(mid_point['lat']) if isinstance(mid_point['lat'], str) else mid_point['lat']
+                    lon = float(mid_point['lon']) if isinstance(mid_point['lon'], str) else mid_point['lon']
+                    rainfall = float(current_rainfall) if isinstance(current_rainfall, str) else current_rainfall
+                    logger.info(f"🌊 FLOODED: {road_name} | Lat: {lat:.4f}, Lon: {lon:.4f} | Level: {flood_assessment['flood_level']} | Rainfall: {rainfall:.0f}mm")
+                
+                # Log if road just started flooding
+                if flood_assessment['flooded'] and flood_duration_info['flooded_start_time'] is not None:
+                    logger.info(f"🚨 FLOOD START: {road_name} | {flood_duration_info['flooded_start_time']}")
+                    self.log_flood_event(
+                        road_id=road_id,
+                        road_name=road_name,
+                        event_type='flood_start',
+                        flood_level=flood_assessment['flood_level'],
+                        rainfall_mm=current_rainfall,
+                        elevation_m=elev_mean,
+                        distance_to_water_m=distance_to_flood_zone,
+                        location_lat=mid_point['lat'],
+                        location_lon=mid_point['lon']
+                    )
+                
+                # Log if road just stopped flooding
+                if not flood_assessment['flooded'] and flood_duration_info.get('flood_duration_hours', 0) > 0:
+                    duration = float(flood_duration_info['flood_duration_hours']) if isinstance(flood_duration_info.get('flood_duration_hours'), str) else flood_duration_info.get('flood_duration_hours', 0)
+                    logger.info(f"✅ FLOOD END: {road_name} | Duration: {duration:.1f} hours")
+                    self.log_flood_event(
+                        road_id=road_id,
+                        road_name=road_name,
+                        event_type='flood_end',
+                        flood_level=flood_assessment['flood_level'],
+                        rainfall_mm=current_rainfall,
+                        elevation_m=elev_mean,
+                        distance_to_water_m=distance_to_flood_zone,
+                        location_lat=mid_point['lat'],
+                        location_lon=mid_point['lon']
+                    )
+                
+                # Update hotspot data for lifetime tracking
+                self.update_flood_hotspot(
                     road_id=road_id,
                     road_name=road_name,
-                    event_type='flood_start',
-                    flood_level=flood_assessment['flood_level'],
-                    rainfall_mm=current_rainfall,
-                    elevation_m=elev_mean,
-                    distance_to_water_m=distance_to_flood_zone,
                     location_lat=mid_point['lat'],
-                    location_lon=mid_point['lon']
+                    location_lon=mid_point['lon'],
+                    is_currently_flooded=flood_assessment['flooded'],
+                    flood_duration_hours=flood_duration_info['flood_duration_hours'],
+                    flood_level=flood_assessment['flood_level']
                 )
-            
-            # Log if road just stopped flooding
-            if not flood_assessment['flooded'] and flood_duration_info.get('flood_duration_hours', 0) > 0:
-                duration = float(flood_duration_info['flood_duration_hours']) if isinstance(flood_duration_info.get('flood_duration_hours'), str) else flood_duration_info.get('flood_duration_hours', 0)
-                logger.info(f"✅ FLOOD END: {road_name} | Duration: {duration:.1f} hours")
-                self.log_flood_event(
-                    road_id=road_id,
-                    road_name=road_name,
-                    event_type='flood_end',
-                    flood_level=flood_assessment['flood_level'],
-                    rainfall_mm=current_rainfall,
-                    elevation_m=elev_mean,
-                    distance_to_water_m=distance_to_flood_zone,
-                    location_lat=mid_point['lat'],
-                    location_lon=mid_point['lon']
-                )
-            
-            # Update hotspot data for lifetime tracking
-            self.update_flood_hotspot(
-                road_id=road_id,
-                road_name=road_name,
-                location_lat=mid_point['lat'],
-                location_lon=mid_point['lon'],
-                is_currently_flooded=flood_assessment['flooded'],
-                flood_duration_hours=flood_duration_info['flood_duration_hours'],
-                flood_level=flood_assessment['flood_level']
-            )
-            
-            # Build feature
-            feature = {
-                'type': 'Feature',
-                'properties': {
-                    'osm_id': road_id,
-                    'road_id': road_counter,
-                    'name': road.get('tags', {}).get('name', ''),
-                    'highway': road.get('tags', {}).get('highway', 'unclassified'),
-                    'length_m': round(length_m, 2),
-                    'elev_mean': round(elev_mean, 2),
-                    'elev_min': round(elev_min, 2),
-                    'elev_max': round(elev_max, 2),
-                    'flooded': "1" if flood_assessment['flooded'] else "0",
-                    'flood_level': flood_assessment['flood_level'],
-                    'flood_score': flood_assessment['flood_score'],
-                    'current_rainfall_mm': current_rainfall,
-                    'flood_duration_hours': flood_duration_info['flood_duration_hours'],
-                    'flood_start_time': flood_duration_info['flooded_start_time'],
-                    'times_flooded': flood_duration_info['times_flooded'],
-                    'last_updated': datetime.now(tz=PHILIPPINE_TZ).isoformat(),
-                    'data_source': 'OSM + Open-Elevation + Open-Meteo'
-                },
-                'geometry': {
-                    'type': 'LineString',
-                    'coordinates': coordinates_list
+                
+                # Build feature
+                feature = {
+                    'type': 'Feature',
+                    'properties': {
+                        'osm_id': road_id,
+                        'road_id': road_counter,
+                        'name': road.get('tags', {}).get('name', ''),
+                        'highway': road.get('tags', {}).get('highway', 'unclassified'),
+                        'length_m': round(length_m, 2),
+                        'elev_mean': round(elev_mean, 2),
+                        'elev_min': round(elev_min, 2),
+                        'elev_max': round(elev_max, 2),
+                        'flooded': "1" if flood_assessment['flooded'] else "0",
+                        'flood_level': flood_assessment['flood_level'],
+                        'flood_score': flood_assessment['flood_score'],
+                        'current_rainfall_mm': current_rainfall,
+                        'flood_duration_hours': flood_duration_info['flood_duration_hours'],
+                        'flood_start_time': flood_duration_info['flooded_start_time'],
+                        'times_flooded': flood_duration_info['times_flooded'],
+                        'last_updated': datetime.now(tz=PHILIPPINE_TZ).isoformat(),
+                        'data_source': 'OSM + Open-Elevation + Open-Meteo'
+                    },
+                    'geometry': {
+                        'type': 'LineString',
+                        'coordinates': coordinates_list
+                    }
                 }
-            }
-            
-            features.append(feature)
+                
+                features.append(feature)
+                processed_roads += 1
+                
+                # Log progress every 1000 roads
+                if processed_roads % 1000 == 0:
+                    logger.info(f"Progress: {processed_roads}/{len(roads)} roads processed")
+                    
+            except Exception as e:
+                failed_roads += 1
+                logger.warning(f"Error processing road {road_counter}: {str(e)}")
+                continue
+        
+        logger.info(f"✅ Processed {processed_roads} roads successfully, {failed_roads} failed")
+        
+        # Step 5b: Commit hotspot updates in batches to avoid connection issues
+        if self.db_session:
+            try:
+                logger.info("Committing flood hotspot updates to database...")
+                self.db_session.commit()
+                logger.info("✅ Database commit successful")
+            except Exception as e:
+                logger.error(f"❌ Database commit failed: {e}")
+                self.db_session.rollback()
+                raise
         
         # Step 6: Save flood history for next run
         self.save_flooded_history(flooded_history)

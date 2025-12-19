@@ -1337,21 +1337,27 @@ async def run_flood_update_task():
         
         logger.info("Starting background flood data update...")
         
-        # Run the flood update
-        output_path = await update_flood_data()
-        
-        if output_path:
-            # Simulate progress by reading the output
-            roads_updated = 234  # Default estimate - could be calculated from actual data
-            flood_update_state.complete_update(roads_updated)
-            logger.info(f"✅ Flood update completed: {output_path}")
-        else:
-            flood_update_state.fail_update("No output generated from flood update")
-            logger.error("Flood update failed - no output")
+        # Run the flood update with explicit error handling
+        try:
+            output_path = await update_flood_data()
+            
+            if output_path:
+                # Simulate progress by reading the output
+                roads_updated = 234  # Default estimate - could be calculated from actual data
+                flood_update_state.complete_update(roads_updated)
+                logger.info(f"✅ Flood update completed: {output_path}")
+            else:
+                flood_update_state.fail_update("No output generated from flood update")
+                logger.error("Flood update failed - no output")
+        except Exception as inner_e:
+            error_msg = str(inner_e)
+            logger.error(f"❌ Flood updater crashed: {error_msg}", exc_info=True)
+            flood_update_state.fail_update(error_msg)
             
     except Exception as e:
-        flood_update_state.fail_update(str(e))
-        logger.error(f"Flood update task failed: {e}", exc_info=True)
+        error_msg = str(e)
+        logger.error(f"❌ Flood update task failed: {error_msg}", exc_info=True)
+        flood_update_state.fail_update(error_msg)
 
 
 def init_admin_user(db: Session):
