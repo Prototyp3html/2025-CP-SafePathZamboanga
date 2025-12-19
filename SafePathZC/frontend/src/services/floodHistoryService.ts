@@ -3,7 +3,7 @@
  * Fetches flood hotspots and historical data from the backend API
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export interface FloodHotspot {
   road_id: string;
