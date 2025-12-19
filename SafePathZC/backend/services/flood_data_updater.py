@@ -60,12 +60,13 @@ class FloodDataUpdater:
     Automatically fetch and update flood analysis data from live APIs
     """
     
-    # Zamboanga City boundaries
+    # Zamboanga City boundaries (EXPANDED for complete coverage)
+    # Now includes all of Zamboanga City including peripheral areas
     ZAMBOANGA_BOUNDS = {
-        'min_lat': 6.85,
-        'max_lat': 7.15,
-        'min_lon': 121.95,
-        'max_lon': 122.30
+        'min_lat': 6.83,
+        'max_lat': 7.18,
+        'min_lon': 121.92,
+        'max_lon': 122.32
     }
     
     # Known flood-prone areas in Zamboanga (from historical data)
