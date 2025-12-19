@@ -1198,11 +1198,38 @@ async def get_admin_dashboard(
     """Get admin dashboard with system overview metrics"""
     
     try:
-        # Count total road segments (from database or hardcoded from OSM data)
-        total_roads = 10494  # From OpenStreetMap data collection
+        # Load current flood data from GeoJSON to get actual counts
+        import json
+        from pathlib import Path
         
-        # Count currently flooded roads
-        flooded_roads = 49  # From current flood data
+        total_roads = 10494  # Default fallback
+        flooded_roads = 49   # Default fallback
+        
+        # Try to read from terrain_roads.geojson
+        try:
+            geojson_path = Path(__file__).parent.parent / "data" / "terrain_roads.geojson"
+            if geojson_path.exists():
+                with open(geojson_path, 'r') as f:
+                    geojson_data = json.load(f)
+                
+                # Count total and flooded roads from GeoJSON
+                total_roads = len(geojson_data.get('features', []))
+                flooded_roads = sum(1 for feature in geojson_data.get('features', []) 
+                                   if feature.get('properties', {}).get('flood_level') in ['high', 'medium'])
+                
+                logger.info(f"✅ Loaded flood counts from GeoJSON: {total_roads} total, {flooded_roads} flooded")
+        except Exception as e:
+            logger.warning(f"Could not load flood data from GeoJSON: {e}")
+            # Fall back to database counts if available
+            try:
+                from models import RoadFloodHistory
+                total_roads = db.query(RoadFloodHistory).distinct(RoadFloodHistory.road_id).count()
+                flooded_roads = db.query(RoadFloodHistory).filter(
+                    RoadFloodHistory.flood_level.in_(['high', 'medium'])
+                ).distinct(RoadFloodHistory.road_id).count()
+                logger.info(f"✅ Loaded flood counts from database: {total_roads} total, {flooded_roads} flooded")
+            except Exception as db_e:
+                logger.warning(f"Could not load from database: {db_e}, using defaults")
         
         # Count total users
         total_users = db.query(User).count()
