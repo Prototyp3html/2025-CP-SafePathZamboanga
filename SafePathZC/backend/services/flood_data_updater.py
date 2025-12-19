@@ -1134,10 +1134,14 @@ class FloodDataUpdater:
         flooded_history = self.load_flooded_history()
         
         # Step 5: Process roads and calculate flood risk
+        # Use batch processing to commit to database every BATCH_SIZE roads
+        # This prevents connection timeouts when processing thousands of roads
+        BATCH_SIZE = 500  # Commit every 500 roads to avoid memory/connection issues
         features = []
         road_counter = 0
         processed_roads = 0
         failed_roads = 0
+        batch_hotspots = []  # Track hotspots for this batch
         
         for road in roads:
             try:
@@ -1277,9 +1281,18 @@ class FloodDataUpdater:
                 features.append(feature)
                 processed_roads += 1
                 
-                # Log progress every 1000 roads
-                if processed_roads % 1000 == 0:
-                    logger.info(f"Progress: {processed_roads}/{len(roads)} roads processed")
+                # Commit in batches to avoid connection timeouts
+                if processed_roads % BATCH_SIZE == 0:
+                    logger.info(f"Progress: {processed_roads}/{len(roads)} roads processed - BATCH COMMIT")
+                    try:
+                        if self.db_session:
+                            self.db_session.commit()
+                            logger.info(f"✅ Batch commit successful at {processed_roads} roads")
+                    except Exception as e:
+                        logger.error(f"❌ Batch commit failed at {processed_roads}: {e}")
+                        if self.db_session:
+                            self.db_session.rollback()
+                        raise
                     
             except Exception as e:
                 failed_roads += 1
@@ -1288,14 +1301,14 @@ class FloodDataUpdater:
         
         logger.info(f"✅ Processed {processed_roads} roads successfully, {failed_roads} failed")
         
-        # Step 5b: Commit hotspot updates in batches to avoid connection issues
-        if self.db_session:
+        # Final commit for remaining roads (if any after last batch)
+        if self.db_session and (processed_roads % BATCH_SIZE != 0):
             try:
-                logger.info("Committing flood hotspot updates to database...")
+                logger.info(f"Committing final batch of {processed_roads % BATCH_SIZE} roads...")
                 self.db_session.commit()
-                logger.info("✅ Database commit successful")
+                logger.info("✅ Final database commit successful")
             except Exception as e:
-                logger.error(f"❌ Database commit failed: {e}")
+                logger.error(f"❌ Final database commit failed: {e}")
                 self.db_session.rollback()
                 raise
         
