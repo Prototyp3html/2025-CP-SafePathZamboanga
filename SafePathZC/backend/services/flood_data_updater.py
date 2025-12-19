@@ -107,38 +107,59 @@ class FloodDataUpdater:
         if self.session:
             await self.session.close()
     
-    async def fetch_osm_roads(self) -> Dict[str, Any]:
+    def load_roads_from_geojson(self) -> Dict[str, Any]:
         """
-        Fetch latest road network from OpenStreetMap Overpass API
-        Always up-to-date with latest OSM edits
+        Load complete road network from pre-processed zcroadmap.geojson
+        This provides full Zamboanga City coverage (11,982 roads) without API latency
+        Much faster and more reliable than Overpass API queries
         """
-        logger.info("Fetching latest roads from OpenStreetMap...")
+        logger.info("Loading roads from zcroadmap.geojson...")
         
-        # Overpass API query for Zamboanga roads
-        overpass_query = f"""
-        [out:json][timeout:180];
-        (
-          way["highway"]
-            ({self.ZAMBOANGA_BOUNDS['min_lat']},{self.ZAMBOANGA_BOUNDS['min_lon']},
-             {self.ZAMBOANGA_BOUNDS['max_lat']},{self.ZAMBOANGA_BOUNDS['max_lon']});
-        );
-        out geom;
-        """
+        road_file = Path(__file__).parent.parent / "data" / "zcroadmap.geojson"
         
-        overpass_url = "https://overpass-api.de/api/interpreter"
+        if not road_file.exists():
+            logger.error(f"Road file not found: {road_file}")
+            return {'features': []}
         
         try:
-            async with self.session.post(overpass_url, data={'data': overpass_query}) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    logger.info(f"Fetched {len(data.get('elements', []))} road segments from OSM")
-                    return data
-                else:
-                    logger.error(f"OSM API error: {response.status}")
-                    return {'elements': []}
+            with open(road_file, 'r', encoding='utf-8') as f:
+                geojson_data = json.load(f)
+            
+            features = geojson_data.get('features', [])
+            logger.info(f"✅ Loaded {len(features)} roads from zcroadmap.geojson")
+            logger.info(f"   This provides complete coverage of Zamboanga City")
+            
+            # Convert GeoJSON features to OSM-like format for compatibility
+            # IMPORTANT: Ensure ID format matches existing flood history (add 'w' prefix)
+            osm_elements = []
+            for feature in features:
+                osm_id = feature.get('properties', {}).get('osm_id', '')
+                # Ensure proper OSM ID format: add 'w' prefix if not present
+                if osm_id and not str(osm_id).startswith('w'):
+                    osm_id = f"w{osm_id}"
+                
+                # Convert GeoJSON coordinates to lat/lon format for compatibility
+                geometry = feature.get('geometry', {}).get('coordinates', [])
+                osm_geometry = [{'lat': coord[1], 'lon': coord[0]} for coord in geometry]
+                
+                element = {
+                    'type': 'way',
+                    'id': osm_id,
+                    'geometry': osm_geometry
+                }
+                osm_elements.append(element)
+            
+            return {'elements': osm_elements}
         except Exception as e:
-            logger.error(f"Failed to fetch OSM data: {e}")
+            logger.error(f"Failed to load roads from GeoJSON: {e}")
             return {'elements': []}
+    
+    async def fetch_osm_roads(self) -> Dict[str, Any]:
+        """
+        Load road network from local zcroadmap.geojson instead of Overpass API
+        Provides complete coverage of Zamboanga City (11,982 roads)
+        """
+        return self.load_roads_from_geojson()
     
     async def fetch_water_bodies(self) -> List[Dict[str, Any]]:
         """
