@@ -60,13 +60,13 @@ class FloodDataUpdater:
     Automatically fetch and update flood analysis data from live APIs
     """
     
-    # Zamboanga City boundaries (EXPANDED for complete coverage)
-    # Now includes all of Zamboanga City including peripheral areas
+    # Zamboanga City official boundaries (from government/ChatGPT)
+    # Complete coverage of entire Zamboanga City, no Basilan or other municipalities
     ZAMBOANGA_BOUNDS = {
-        'min_lat': 6.83,
-        'max_lat': 7.18,
-        'min_lon': 121.92,
-        'max_lon': 122.32
+        'min_lat': 6.80,
+        'max_lat': 7.20,
+        'min_lon': 121.85,
+        'max_lon': 122.35
     }
     
     # Known flood-prone areas in Zamboanga (from historical data)
@@ -110,8 +110,8 @@ class FloodDataUpdater:
     def load_roads_from_geojson(self) -> Dict[str, Any]:
         """
         Load complete road network from pre-processed zcroadmap.geojson
-        This provides full Zamboanga City coverage (11,982 roads) without API latency
-        Much faster and more reliable than Overpass API queries
+        Filters to only include roads within Zamboanga City bounds (no Basilan/outside)
+        This provides accurate Zamboanga City coverage only
         """
         logger.info("Loading roads from zcroadmap.geojson...")
         
@@ -119,7 +119,7 @@ class FloodDataUpdater:
         
         if not road_file.exists():
             logger.error(f"Road file not found: {road_file}")
-            return {'features': []}
+            return {'elements': []}
         
         try:
             with open(road_file, 'r', encoding='utf-8') as f:
@@ -127,12 +127,28 @@ class FloodDataUpdater:
             
             features = geojson_data.get('features', [])
             logger.info(f"✅ Loaded {len(features)} roads from zcroadmap.geojson")
-            logger.info(f"   This provides complete coverage of Zamboanga City")
+            
+            # Filter to only Zamboanga City bounds (exclude Basilan)
+            def is_in_zamboanga(feature):
+                coords = feature.get('geometry', {}).get('coordinates', [])
+                for coord in coords:
+                    lon, lat = coord[0], coord[1]
+                    if (self.ZAMBOANGA_BOUNDS['min_lat'] <= lat <= self.ZAMBOANGA_BOUNDS['max_lat'] and
+                        self.ZAMBOANGA_BOUNDS['min_lon'] <= lon <= self.ZAMBOANGA_BOUNDS['max_lon']):
+                        return True
+                return False
+            
+            filtered_features = [f for f in features if is_in_zamboanga(f)]
+            removed_count = len(features) - len(filtered_features)
+            
+            if removed_count > 0:
+                logger.info(f"   Filtered out {removed_count} roads outside Zamboanga City bounds")
+            logger.info(f"   Processing {len(filtered_features)} Zamboanga City roads only")
             
             # Convert GeoJSON features to OSM-like format for compatibility
             # IMPORTANT: Ensure ID format matches existing flood history (add 'w' prefix)
             osm_elements = []
-            for feature in features:
+            for feature in filtered_features:
                 osm_id = feature.get('properties', {}).get('osm_id', '')
                 # Ensure proper OSM ID format: add 'w' prefix if not present
                 if osm_id and not str(osm_id).startswith('w'):
