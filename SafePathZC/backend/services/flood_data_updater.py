@@ -553,6 +553,7 @@ class FloodDataUpdater:
                            distance_to_water: float) -> Dict[str, Any]:
         """
         Calculate flood risk based on elevation, rainfall, and distance to water bodies
+        RAINFALL-RESPONSIVE: Flood detection increases significantly with rainfall
         
         Args:
             elevation: Height above sea level (meters)
@@ -568,53 +569,73 @@ class FloodDataUpdater:
         # Only use elevation data that is realistic (>1m above sea level)
         is_valid_elevation = elevation > 1.0
         
-        # Low elevation = VERY high flood risk (critical factor in Zamboanga)
+        # Low elevation = HIGH flood risk (critical factor in Zamboanga)
         # BUT ONLY if elevation data is valid/realistic
         if is_valid_elevation:
             if elevation < 3:
-                flood_score += 60  
+                flood_score += 40  
             elif elevation < 5:
-                flood_score += 50
-            elif elevation < 10:
                 flood_score += 30
+            elif elevation < 10:
+                flood_score += 20
             elif elevation < 20:
                 flood_score += 10
         
-        # Heavy rainfall = VERY high flood risk (primary flood cause)
-        # Zamboanga gets monsoon rains, so more sensitive detection
-        if rainfall_mm > 30:  # Heavy rain (increased sensitivity)
-            flood_score += 50  # Increased from 40
-        elif rainfall_mm > 15:  # Moderate rain (increased sensitivity)
-            flood_score += 30  # Increased from 20
-        elif rainfall_mm > 5:  # Light rain
-            flood_score += 10  # Increased from 5
-        elif rainfall_mm > 2:  # Drizzle
-            flood_score += 3
+        # RAINFALL = PRIMARY FLOOD DRIVER (Zamboanga is monsoon-prone)
+        # Make rainfall the dominant factor - heavier rain should dramatically increase flooded roads
+        if rainfall_mm > 50:  # Extreme rainfall
+            flood_score += 80  # Very heavy flooding
+        elif rainfall_mm > 30:  # Heavy rain
+            flood_score += 70  # Significantly increased
+        elif rainfall_mm > 15:  # Moderate rain
+            flood_score += 50  # Major impact
+        elif rainfall_mm > 10:  # Moderate-light rain
+            flood_score += 35
+        elif rainfall_mm > 5:   # Light rain
+            flood_score += 20
+        elif rainfall_mm > 2:   # Drizzle
+            flood_score += 8
         
         # Close to water bodies = higher flood risk (spillover and overflow)
         if distance_to_water < 50:  # Very close to water
-            flood_score += 40  # Increased from 30
+            flood_score += 25
         elif distance_to_water < 100:
-            flood_score += 35  # Increased from 30
+            flood_score += 20
         elif distance_to_water < 500:
-            flood_score += 20  # Increased from 15
+            flood_score += 15
         elif distance_to_water < 1000:
-            flood_score += 8  # Increased from 5
+            flood_score += 8
         
-        # Determine flood level with adjusted thresholds
-        if flood_score >= 80:  # High risk requires significant rainfall OR very close to water
-            flood_level = "high"
-            flooded = True
-        elif flood_score >= 50:  # Medium risk
-            flood_level = "medium"
-            # Only flood if there's actual rainfall or EXTREME water proximity
-            flooded = (rainfall_mm > 2) or (distance_to_water < 50)
-        elif flood_score >= 25:  # Low risk
-            flood_level = "low"
-            flooded = False  # Don't mark as flooded
+        # RAINFALL-RESPONSIVE THRESHOLDS
+        # Lower the threshold when there's rainfall so more roads flood
+        if rainfall_mm > 0:
+            # With any rainfall, use lower threshold for flood detection
+            if flood_score >= 50:  
+                flood_level = "high"
+                flooded = True
+            elif flood_score >= 30:  
+                flood_level = "medium"
+                flooded = True  # Now flood at medium threshold with rain
+            elif flood_score >= 15:
+                flood_level = "low"
+                flooded = True  # Now flood at low threshold with rain
+            else:
+                flood_level = "none"
+                flooded = False
         else:
-            flood_level = "none"
-            flooded = False
+            # No rainfall: only flood naturally low-lying areas near water
+            if flood_score >= 60:  
+                flood_level = "high"
+                flooded = True
+            elif flood_score >= 40:  
+                flood_level = "medium"
+                flooded = (distance_to_water < 100)  # Only if very close to water
+            elif flood_score >= 20:
+                flood_level = "low"
+                flooded = False
+            else:
+                flood_level = "none"
+                flooded = False
         
         return {
             'flood_score': flood_score,
