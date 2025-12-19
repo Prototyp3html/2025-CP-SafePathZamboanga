@@ -3099,13 +3099,19 @@ async def flood_data_update_loop():
     logger.info("ðŸ”„ Flood data auto-update scheduler started")
     logger.info("Will update every 60 minutes (1 hour)")
     
+    first_run = True
+    
     while background_tasks_running:
         try:
             update_interval_seconds = 60 * 60  # 60 minutes in seconds
-            logger.info(f"Next flood data update in {update_interval_seconds // 60} minutes")
             
-            # Wait for 60 minutes before next update
-            await asyncio.sleep(update_interval_seconds)
+            # Run immediately on startup, then wait between updates
+            if first_run:
+                logger.info("🚀 Running initial flood data update immediately on startup...")
+                first_run = False
+            else:
+                logger.info(f"⏳ Next flood data update in {update_interval_seconds // 60} minutes")
+                await asyncio.sleep(update_interval_seconds)
             
             # Perform the update
             logger.info("Starting scheduled flood data update...")
