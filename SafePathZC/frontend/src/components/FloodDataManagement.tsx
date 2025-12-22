@@ -252,7 +252,10 @@ export const FloodDataManagement: React.FC = () => {
         
         // Refresh flood status after update completes
         if (status.status === "completed") {
-          setTimeout(() => fetchCurrentFloodStatus(), 1000);
+          setTimeout(() => {
+            fetchCurrentFloodStatus();
+            fetchFloodHistoryStats();  // Also refresh hotspot data
+          }, 1000);
         }
       }
     } catch (error) {
