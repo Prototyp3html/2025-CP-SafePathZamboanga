@@ -1198,38 +1198,52 @@ async def get_admin_dashboard(
     """Get admin dashboard with system overview metrics"""
     
     try:
-        # Load current flood data from GeoJSON to get actual counts
+        # Load current flood data from GeoJSON to get ACTUAL counts
         import json
         from pathlib import Path
+        import os
         
-        total_roads = 10494  # Default fallback
-        flooded_roads = 49   # Default fallback
+        total_roads = 0
+        flooded_roads = 0
+        geojson_loaded = False
         
-        # Try to read from terrain_roads.geojson
-        try:
-            geojson_path = Path(__file__).parent.parent / "data" / "terrain_roads.geojson"
-            if geojson_path.exists():
-                with open(geojson_path, 'r') as f:
-                    geojson_data = json.load(f)
-                
-                # Count total and flooded roads from GeoJSON
-                total_roads = len(geojson_data.get('features', []))
-                flooded_roads = sum(1 for feature in geojson_data.get('features', []) 
-                                   if feature.get('properties', {}).get('flood_level') in ['high', 'medium'])
-                
-                logger.info(f"✅ Loaded flood counts from GeoJSON: {total_roads} total, {flooded_roads} flooded")
-        except Exception as e:
-            logger.warning(f"Could not load flood data from GeoJSON: {e}")
-            # Fall back to database counts if available
+        # Try multiple possible paths to terrain_roads.geojson
+        possible_paths = [
+            Path(__file__).parent.parent / "data" / "terrain_roads.geojson",  # Local development
+            Path("/app/data/terrain_roads.geojson"),  # Railway production
+            Path("./data/terrain_roads.geojson"),  # Relative path
+            Path(os.getcwd()) / "data" / "terrain_roads.geojson",  # Current working directory
+        ]
+        
+        logger.info(f"🔍 Looking for terrain_roads.geojson...")
+        logger.info(f"   Current working directory: {os.getcwd()}")
+        logger.info(f"   Script location: {Path(__file__).parent}")
+        
+        for geojson_path in possible_paths:
+            logger.info(f"   Checking: {geojson_path} ... {geojson_path.exists()}")
             try:
-                from models import RoadFloodHistory
-                total_roads = db.query(RoadFloodHistory).distinct(RoadFloodHistory.road_id).count()
-                flooded_roads = db.query(RoadFloodHistory).filter(
-                    RoadFloodHistory.flood_level.in_(['high', 'medium'])
-                ).distinct(RoadFloodHistory.road_id).count()
-                logger.info(f"✅ Loaded flood counts from database: {total_roads} total, {flooded_roads} flooded")
-            except Exception as db_e:
-                logger.warning(f"Could not load from database: {db_e}, using defaults")
+                if geojson_path.exists():
+                    logger.info(f"✅ Found terrain_roads.geojson at: {geojson_path}")
+                    with open(geojson_path, 'r', encoding='utf-8') as f:
+                        geojson_data = json.load(f)
+                    
+                    # Count total and flooded roads from GeoJSON
+                    features = geojson_data.get('features', [])
+                    total_roads = len(features)
+                    flooded_roads = sum(1 for feature in features 
+                                       if feature.get('properties', {}).get('flood_level') in ['high', 'medium'])
+                    
+                    logger.info(f"✅ LOADED ACTUAL DATA: {total_roads} total roads, {flooded_roads} flooded")
+                    geojson_loaded = True
+                    break
+            except Exception as path_e:
+                logger.error(f"❌ Error loading from {geojson_path}: {path_e}")
+                continue
+        
+        if not geojson_loaded:
+            error_msg = f"❌ CRITICAL: terrain_roads.geojson NOT FOUND! Checked locations: {[str(p) for p in possible_paths]}"
+            logger.error(error_msg)
+            raise HTTPException(status_code=500, detail=error_msg)
         
         # Count total users
         total_users = db.query(User).count()
