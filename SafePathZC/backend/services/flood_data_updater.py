@@ -1127,6 +1127,132 @@ class FloodDataUpdater:
             logger.error(f"Failed to get flood statistics: {e}")
             return {}
     
+    def recalculate_flood_hotspots(self) -> None:
+        """
+        Recalculate flood hotspot statistics based on FloodEventLog
+        Updates total_flooded_hours, frequency, and risk_score in FloodHotspot table
+        
+        This should be called after each flood update to ensure statistics are fresh
+        """
+        if not self.db_session or not self.FloodEventLog or not self.FloodHotspot:
+            logger.warning("Database session or models not available - skipping hotspot recalculation")
+            return
+        
+        try:
+            logger.info("🔄 Recalculating flood hotspot statistics...")
+            
+            # Get all unique roads that have flood events
+            roads_with_events = self.db_session.query(self.FloodEventLog.road_id).distinct().all()
+            roads_with_events = [r[0] for r in roads_with_events]
+            
+            logger.info(f"Found {len(roads_with_events)} roads with flood event history")
+            
+            for road_id in roads_with_events:
+                try:
+                    # Get all flood events for this road, sorted by time
+                    events = self.db_session.query(self.FloodEventLog).filter(
+                        self.FloodEventLog.road_id == road_id
+                    ).order_by(self.FloodEventLog.event_time).all()
+                    
+                    if not events:
+                        continue
+                    
+                    # Count flood_start events
+                    total_flood_events = len([e for e in events if e.event_type == 'flood_start'])
+                    
+                    # Calculate total flooded hours by pairing consecutive start/end events
+                    total_flooded_hours = 0.0
+                    i = 0
+                    while i < len(events) - 1:
+                        current = events[i]
+                        next_event = events[i + 1]
+                        
+                        # If we have a flood_start followed by flood_end, calculate duration
+                        if current.event_type == 'flood_start' and next_event.event_type == 'flood_end':
+                            duration_hours = (next_event.event_time - current.event_time).total_seconds() / 3600
+                            if duration_hours >= 0:  # Only count positive durations
+                                total_flooded_hours += duration_hours
+                            i += 2
+                        else:
+                            i += 1
+                    
+                    # Get first and last event times
+                    first_event = min(events, key=lambda e: e.event_time)
+                    last_event = max(events, key=lambda e: e.event_time)
+                    days_between = (last_event.event_time - first_event.event_time).days + 1
+                    
+                    # Calculate frequency per year
+                    frequency_per_year = (total_flood_events / max(days_between, 1)) * 365
+                    
+                    # Calculate average duration
+                    average_duration = total_flooded_hours / max(total_flood_events, 1)
+                    
+                    # IMPROVED RISK SCORING - More nuanced and differentiated
+                    # Score components (total max 100):
+                    frequency_score = min(35, (frequency_per_year / 10) * 35)  # Max 35 points (10 floods/year = max)
+                    hours_score = min(35, (total_flooded_hours / 50) * 35)     # Max 35 points (50+ hours = max)
+                    
+                    # Recency bonus (up to 30 points, decays with time)
+                    days_since_last = (datetime.utcnow() - last_event.event_time).days
+                    recency_score = max(0, 30 * (1 - min(days_since_last / 30, 1)))  # Fully decays after 30 days
+                    
+                    risk_score = min(100, frequency_score + hours_score + recency_score)
+                    
+                    # Get road info from latest event
+                    road_name = last_event.road_name
+                    location_lat = last_event.location_lat
+                    location_lon = last_event.location_lon
+                    
+                    # Find or create hotspot
+                    hotspot = self.db_session.query(self.FloodHotspot).filter(
+                        self.FloodHotspot.road_id == road_id
+                    ).first()
+                    
+                    if hotspot:
+                        # Update existing hotspot
+                        hotspot.total_flood_events = total_flood_events
+                        hotspot.total_flooded_hours = round(total_flooded_hours, 2)
+                        hotspot.average_flood_duration_hours = round(average_duration, 2)
+                        hotspot.frequency_per_year = round(frequency_per_year, 2)
+                        hotspot.flood_risk_score = round(risk_score, 2)
+                        hotspot.last_updated = datetime.utcnow()
+                        if last_event.event_type == 'flood_end':
+                            hotspot.last_flood_end = last_event.event_time
+                        if first_event.event_type == 'flood_start':
+                            hotspot.last_flood_start = first_event.event_time
+                    else:
+                        # Create new hotspot
+                        hotspot = self.FloodHotspot(
+                            road_id=road_id,
+                            road_name=road_name,
+                            location_lat=location_lat,
+                            location_lon=location_lon,
+                            total_flood_events=total_flood_events,
+                            total_flooded_hours=round(total_flooded_hours, 2),
+                            average_flood_duration_hours=round(average_duration, 2),
+                            frequency_per_year=round(frequency_per_year, 2),
+                            flood_risk_score=round(risk_score, 2),
+                            first_flood_recorded=first_event.event_time,
+                            last_flood_start=first_event.event_time if first_event.event_type == 'flood_start' else last_event.event_time,
+                            last_flood_end=last_event.event_time if last_event.event_type == 'flood_end' else first_event.event_time,
+                            last_updated=datetime.utcnow()
+                        )
+                        self.db_session.add(hotspot)
+                    
+                    self.db_session.commit()
+                    logger.info(f"✅ Updated: {road_name} | Events: {total_flood_events} | Hours: {round(total_flooded_hours, 1)}h | Freq: {round(frequency_per_year, 2)}/yr | Score: {risk_score:.1f}/100 | Days: {days_since_last}d")
+                    
+                except Exception as e:
+                    logger.error(f"Error recalculating hotspot for road {road_id}: {e}")
+                    self.db_session.rollback()
+                    continue
+            
+            logger.info("✅ Flood hotspot statistics recalculation completed!")
+            
+        except Exception as e:
+            logger.error(f"Error during hotspot recalculation: {e}")
+            self.db_session.rollback()
+
     async def generate_updated_terrain_geojson(self, output_path: str = None, manual_rainfall_mm: float = None) -> str:
         """
         Generate updated terrain_roads.geojson with live data from APIs
@@ -1468,6 +1594,9 @@ class FloodDataUpdater:
             except Exception as e:
                 logger.warning(f"Failed to save GeoJSON to PostgreSQL: {e}")
                 self.db_session.rollback()
+        
+        # Step 10: Recalculate flood hotspot statistics based on actual event logs
+        self.recalculate_flood_hotspots()
         
         return str(output_path)
 

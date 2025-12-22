@@ -68,6 +68,13 @@ export const FloodDataManagement: React.FC = () => {
   const [loadingStats, setLoadingStats] = useState(false);
   const [filterDays, setFilterDays] = useState(30);
   const [sortBy, setSortBy] = useState<'events' | 'hours' | 'risk'>('events');
+  
+  // Current flood status (dynamically fetched)
+  const [currentFloodStatus, setCurrentFloodStatus] = useState<{
+    currently_flooded_roads: number;
+    total_road_segments: number;
+  } | null>(null);
+  const [loadingFloodStatus, setLoadingFloodStatus] = useState(false);
 
   const BACKEND_URL =
     import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
@@ -90,7 +97,46 @@ export const FloodDataManagement: React.FC = () => {
   // Load initial status on mount
   useEffect(() => {
     checkUpdateStatus();
+    fetchCurrentFloodStatus();
+    fetchFloodHistoryStats();
   }, []);
+
+  const fetchCurrentFloodStatus = async () => {
+    try {
+      setLoadingFloodStatus(true);
+      const token = localStorage.getItem("admin_token");
+      
+      const response = await fetch(`${BACKEND_URL}/admin/dashboard`, {
+        headers: {
+          ...(token && { Authorization: `Bearer ${token}` }),
+          "Content-Type": "application/json",
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log("Dashboard response:", data); // Debug log
+        
+        // Data is nested in system_overview
+        const overview = data.system_overview;
+        if (overview) {
+          setCurrentFloodStatus({
+            currently_flooded_roads: overview.currently_flooded_roads,
+            total_road_segments: overview.total_road_segments,
+          });
+          console.log("Flood status set:", overview);
+        } else {
+          console.error("system_overview not found in response");
+        }
+      } else {
+        console.error("Failed to fetch current flood status:", response.status);
+      }
+    } catch (error) {
+      console.error("Error fetching current flood status:", error);
+    } finally {
+      setLoadingFloodStatus(false);
+    }
+  };
 
   // Fetch flood history analytics
   const fetchFloodHistoryStats = async () => {
@@ -134,8 +180,19 @@ export const FloodDataManagement: React.FC = () => {
       
       console.log("Hotspots fetched:", hotspots.length);
       
+      // Convert hotspots to the expected format
+      const convertedHotspots = hotspots.map((h: any) => ({
+        road_id: h.road_id,
+        road_name: h.road_name,
+        total_flood_events: h.flood_history?.total_events || 0,
+        total_flooded_hours: h.flood_history?.total_flooded_hours || 0,
+        frequency_per_year: h.flood_history?.frequency_per_year || 0,
+        flood_risk_score: h.risk_score || 0,
+        last_flood_start: h.last_flood?.start || null,
+      }));
+      
       // Sort based on selected criteria
-      let sorted = [...hotspots];
+      let sorted = [...convertedHotspots];
       if (sortBy === 'hours') {
         sorted.sort((a, b) => b.total_flooded_hours - a.total_flooded_hours);
       } else if (sortBy === 'risk') {
@@ -145,10 +202,10 @@ export const FloodDataManagement: React.FC = () => {
       }
 
       const stats = {
-        total_events: data.statistics?.total_events || 0,
-        unique_roads_affected: data.statistics?.unique_roads_affected || 0,
-        average_events_per_road: hotspots.length > 0 
-          ? (data.statistics?.total_events || 0) / hotspots.length 
+        total_events: data.total_events || 0,
+        unique_roads_affected: data.unique_roads_affected || 0,
+        average_events_per_road: convertedHotspots.length > 0 
+          ? (data.total_events || 0) / convertedHotspots.length 
           : 0,
         top_flooded_roads: sorted.slice(0, 10),
       };
@@ -191,6 +248,11 @@ export const FloodDataManagement: React.FC = () => {
         // Also fetch logs if update is in progress or just completed
         if (status.is_updating || status.status === "completed" || status.status === "failed") {
           fetchUpdateLogs();
+        }
+        
+        // Refresh flood status after update completes
+        if (status.status === "completed") {
+          setTimeout(() => fetchCurrentFloodStatus(), 1000);
         }
       }
     } catch (error) {
@@ -507,17 +569,31 @@ export const FloodDataManagement: React.FC = () => {
             <h4 className="font-semibold text-gray-900">Current Status</h4>
           </div>
           <div className="space-y-2">
-            <div className="flex justify-between">
-              <span className="text-gray-700">Flooded Roads</span>
-              <span className="font-bold text-red-600">49 / 10,494</span>
-            </div>
-            <div className="w-full bg-red-200 rounded-full h-2">
-              <div
-                className="bg-gradient-to-r from-red-500 to-red-600 h-2 rounded-full"
-                style={{ width: "0.47%" }}
-              ></div>
-            </div>
-            <p className="text-sm text-gray-600 pt-2">0.47% of roads affected</p>
+            {loadingFloodStatus ? (
+              <div className="text-gray-600 text-sm">Loading...</div>
+            ) : currentFloodStatus ? (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-gray-700">Flooded Roads</span>
+                  <span className="font-bold text-red-600">
+                    {currentFloodStatus.currently_flooded_roads} / {currentFloodStatus.total_road_segments}
+                  </span>
+                </div>
+                <div className="w-full bg-red-200 rounded-full h-2">
+                  <div
+                    className="bg-gradient-to-r from-red-500 to-red-600 h-2 rounded-full"
+                    style={{
+                      width: `${((currentFloodStatus.currently_flooded_roads / currentFloodStatus.total_road_segments) * 100).toFixed(2)}%`,
+                    }}
+                  ></div>
+                </div>
+                <p className="text-sm text-gray-600 pt-2">
+                  {((currentFloodStatus.currently_flooded_roads / currentFloodStatus.total_road_segments) * 100).toFixed(2)}% of roads affected
+                </p>
+              </>
+            ) : (
+              <div className="text-gray-600 text-sm">Unable to load flood status</div>
+            )}
           </div>
         </div>
 
