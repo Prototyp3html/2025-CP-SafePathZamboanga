@@ -194,7 +194,8 @@ interface Waypoint {
 }
 
 interface MapViewProps {
-  onModalOpen?: (modal: "report" | "emergency") => void;
+  onModalOpen?: (modal: "report" | "emergency" | "whatif") => void;
+  simulationScenario?: any;
 }
 
 type LatLngBounds = {
@@ -814,7 +815,7 @@ const pickTerrainWaypoint = (
   return bestCandidate;
 };
 
-export const MapView = ({ onModalOpen }: MapViewProps) => {
+export const MapView = ({ onModalOpen, simulationScenario }: MapViewProps) => {
   // Configuration for routing services
   const BACKEND_URL = API_URL;
   const USE_LOCAL_OSRM = import.meta.env.VITE_USE_LOCAL_OSRM === "true"; // Use environment variable to control local OSRM
@@ -1296,7 +1297,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
 
   // 🆕 Flood Hotspot States
   const [showFloodHotspots, setShowFloodHotspots] = useState(false);
-  const [selectedFloodHotspot, setSelectedFloodHotspot] = useState<any | null>(null);
+  const [selectedFloodHotspot, setSelectedFloodHotspot] = useState<any | null>(
+    null
+  );
   const [showFloodHistoryModal, setShowFloodHistoryModal] = useState(false);
 
   // New states for route planner modal
@@ -1772,11 +1775,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               try {
                 // Create a unique ID for this report (add offset to distinguish from forum IDs)
                 const reportId = report.id + 10000;
-                
+
                 // Check if we already have this report in our list
-                const existingReport = reports.find(
-                  (r) => r.id === reportId
-                );
+                const existingReport = reports.find((r) => r.id === reportId);
 
                 if (
                   !existingReport &&
@@ -8647,7 +8648,9 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           e.stopPropagation();
           setShowFloodHotspots((prev) => {
             const newState = !prev;
-            floodHotspotBtn.style.background = newState ? "#06b6d4" : "#451ae0ff";
+            floodHotspotBtn.style.background = newState
+              ? "#06b6d4"
+              : "#451ae0ff";
             floodHotspotIcon.style.opacity = newState ? "1" : "0.6";
             return newState;
           });
@@ -9734,6 +9737,10 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
           background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
         }
         
+        .whatif-button {
+          background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+        }
+        
         .emergency-button {
           background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
         }
@@ -9966,6 +9973,13 @@ export const MapView = ({ onModalOpen }: MapViewProps) => {
               className="action-button report-button"
             >
               Report Issue
+            </button>
+
+            <button
+              onClick={() => onModalOpen("whatif")}
+              className="action-button whatif-button"
+            >
+              What-If Analysis
             </button>
 
             <button

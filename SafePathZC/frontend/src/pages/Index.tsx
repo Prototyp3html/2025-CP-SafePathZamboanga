@@ -4,15 +4,21 @@ import { NavigationBar } from "../components/NavigationBar";
 import { ReportModal } from "../components/ReportModal";
 import { EmergencyModal } from "../components/EmergencyModal";
 import { WelcomeModal } from "../components/WelcomeModal";
+import {
+  WhatIfSimulation,
+  SimulationScenario,
+} from "../components/WhatIfSimulation";
 import { useNavigate } from "react-router-dom";
 
 const Index = () => {
   const [activeModal, setActiveModal] = useState<
-    "route" | "report" | "emergency" | null
+    "route" | "report" | "emergency" | "whatif" | null
   >(null);
   const [selectedRoute, setSelectedRoute] = useState<string>("");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [simulationScenario, setSimulationScenario] =
+    useState<SimulationScenario | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -62,6 +68,13 @@ const Index = () => {
     console.log("Route selected:", route);
   };
 
+  const handleRunSimulation = (scenario: SimulationScenario) => {
+    console.log("Running simulation with scenario:", scenario);
+    setSimulationScenario(scenario);
+    setActiveModal(null);
+    // The MapView component will receive this scenario and adjust routing accordingly
+  };
+
   return (
     <div className="h-screen bg-gray-50 font-sans overflow-hidden">
       <NavigationBar />
@@ -74,7 +87,10 @@ const Index = () => {
             <div className="col-span-1">
               {/* Your MapView component */}
               <div className="h-full w-full rounded-lg overflow-hidden shadow-sm sm:shadow-md">
-                <MapView onModalOpen={setActiveModal} />
+                <MapView
+                  onModalOpen={setActiveModal}
+                  simulationScenario={simulationScenario}
+                />
               </div>
             </div>
           </div>
@@ -95,6 +111,12 @@ const Index = () => {
       )}
       {activeModal === "emergency" && (
         <EmergencyModal onClose={() => setActiveModal(null)} />
+      )}
+      {activeModal === "whatif" && (
+        <WhatIfSimulation
+          onClose={() => setActiveModal(null)}
+          onRunSimulation={handleRunSimulation}
+        />
       )}
     </div>
   );
