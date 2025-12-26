@@ -1,12 +1,35 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { notification } from "@/utils/notifications";
+
+// Add animation styles
+const slideInLeftAnimation = `
+  @keyframes slideInLeft {
+    from {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  .animate-slide-in-left {
+    animation: slideInLeft 0.3s ease-out;
+  }
+`;
 
 interface WhatIfSimulationProps {
   onClose: () => void;
   onRunSimulation: (scenario: SimulationScenario) => void;
+  startLocation?: { lat: number; lng: number; address: string } | null;
+  endLocation?: { lat: number; lng: number; address: string } | null;
 }
 
 export interface SimulationScenario {
+  start_lat: number;
+  start_lng: number;
+  end_lat: number;
+  end_lng: number;
   weatherCondition:
     | "clear"
     | "light_rain"
@@ -26,20 +49,24 @@ export interface SimulationScenario {
     type: "damage" | "roadblock" | "flood";
     severity: "low" | "moderate" | "high";
   }>;
-  timeOfDay: "morning" | "afternoon" | "evening" | "night";
   description?: string;
 }
 
 export const WhatIfSimulation = ({
   onClose,
   onRunSimulation,
+  startLocation,
+  endLocation,
 }: WhatIfSimulationProps) => {
   const [scenario, setScenario] = useState<SimulationScenario>({
+    start_lat: startLocation?.lat || 0,
+    start_lng: startLocation?.lng || 0,
+    end_lat: endLocation?.lat || 0,
+    end_lng: endLocation?.lng || 0,
     weatherCondition: "clear",
     customRainfall: 0,
     floodZones: [],
     incidents: [],
-    timeOfDay: "morning",
     description: "",
   });
 
@@ -49,42 +76,54 @@ export const WhatIfSimulation = ({
   } | null>(null);
   const [isAddingFloodZone, setIsAddingFloodZone] = useState(false);
   const [isAddingIncident, setIsAddingIncident] = useState(false);
+  const [floodZoneRadius, setFloodZoneRadius] = useState(500);
+  const [floodZoneSeverity, setFloodZoneSeverity] = useState("moderate");
+  const [incidentType, setIncidentType] = useState("damage");
+  const [incidentSeverity, setIncidentSeverity] = useState("moderate");
+
+  useEffect(() => {
+    // Update scenario when start/end locations change
+    if (startLocation && endLocation) {
+      setScenario((prev) => ({
+        ...prev,
+        start_lat: startLocation.lat,
+        start_lng: startLocation.lng,
+        end_lat: endLocation.lat,
+        end_lng: endLocation.lng,
+      }));
+    }
+  }, [startLocation, endLocation]);
 
   const weatherPresets = [
     {
       id: "clear",
-      label: "Clear Weather",
+      label: "Clear",
       rainfall: 0,
       icon: "sun",
-      color: "blue",
     },
     {
       id: "light_rain",
-      label: "Light Rain",
+      label: "Light",
       rainfall: 2.5,
       icon: "cloud-rain",
-      color: "cyan",
     },
     {
       id: "moderate_rain",
-      label: "Moderate Rain",
+      label: "Moderate",
       rainfall: 10,
       icon: "cloud-showers-heavy",
-      color: "yellow",
     },
     {
       id: "heavy_rain",
-      label: "Heavy Rain",
+      label: "Heavy",
       rainfall: 25,
       icon: "cloud-showers-heavy",
-      color: "orange",
     },
     {
       id: "extreme_rain",
-      label: "Extreme Rain",
+      label: "Extreme",
       rainfall: 50,
       icon: "cloud-bolt",
-      color: "red",
     },
   ];
 
@@ -110,13 +149,13 @@ export const WhatIfSimulation = ({
         {
           lat: selectedLocation.lat,
           lng: selectedLocation.lng,
-          radius: 500,
-          severity: "moderate",
+          radius: floodZoneRadius,
+          severity: floodZoneSeverity as any,
         },
       ],
     });
 
-    notification.success("Flood zone added to simulation");
+    notification.success("Flood zone added!");
     setSelectedLocation(null);
     setIsAddingFloodZone(false);
   };
@@ -134,13 +173,13 @@ export const WhatIfSimulation = ({
         {
           lat: selectedLocation.lat,
           lng: selectedLocation.lng,
-          type: "damage",
-          severity: "moderate",
+          type: incidentType as any,
+          severity: incidentSeverity as any,
         },
       ],
     });
 
-    notification.success("Incident added to simulation");
+    notification.success("Incident added!");
     setSelectedLocation(null);
     setIsAddingIncident(false);
   };
@@ -159,17 +198,32 @@ export const WhatIfSimulation = ({
     });
   };
 
+  const hasValidRoute =
+    scenario.start_lat &&
+    scenario.start_lng &&
+    scenario.end_lat &&
+    scenario.end_lng;
+
   const handleRunSimulation = () => {
+    if (!hasValidRoute) {
+      notification.error(
+        "❌ Please set both start and end locations on the map first"
+      );
+      return;
+    }
+
     if (
       scenario.floodZones.length === 0 &&
       scenario.incidents.length === 0 &&
       scenario.customRainfall === 0
     ) {
-      notification.warning("Please add at least one condition to simulate");
+      notification.warning(
+        "⚠️ Please add at least one weather/condition to simulate"
+      );
       return;
     }
 
-    notification.info("Running What-If simulation...");
+    notification.info("🔬 Running What-If simulation...");
     onRunSimulation(scenario);
   };
 
@@ -199,18 +253,22 @@ export const WhatIfSimulation = ({
   const impactScore = calculateImpact();
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 pointer-events-none">
+      {/* Semi-transparent backdrop */}
+      <div className="absolute inset-0 bg-black bg-opacity-30 pointer-events-none"></div>
+
+      {/* Side Panel */}
+      <div className="absolute left-0 top-0 bottom-0 w-full max-w-md bg-white shadow-2xl overflow-hidden flex flex-col pointer-events-auto animate-slide-in-left">
         {/* Header */}
-        <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-6">
+        <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-4 flex-shrink-0">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-2xl font-bold flex items-center">
-                <i className="fas fa-flask mr-3"></i>
+              <h2 className="text-lg font-bold flex items-center">
+                <i className="fas fa-flask mr-2"></i>
                 What-If Simulation
               </h2>
-              <p className="text-purple-100 text-sm mt-1">
-                Test different scenarios and analyze route impacts
+              <p className="text-purple-100 text-xs mt-1">
+                🔬 Test your route with different weather & conditions
               </p>
             </div>
             <button
@@ -222,42 +280,84 @@ export const WhatIfSimulation = ({
           </div>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {/* Scrollable Content */}
+        <div
+          className="flex-1 overflow-y-auto p-4 space-y-4"
+          style={{ maxHeight: "calc(100vh - 180px)" }}
+        >
+          {/* Route Information */}
+          <div
+            className={`rounded-lg p-3 border ${
+              hasValidRoute
+                ? "bg-green-50 border-green-200"
+                : "bg-yellow-50 border-yellow-200"
+            }`}
+          >
+            <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+              <i
+                className={`fas fa-route mr-2 text-sm ${
+                  hasValidRoute ? "text-green-600" : "text-yellow-600"
+                }`}
+              ></i>
+              Your Route
+            </h3>
+            <div className="space-y-2 text-xs">
+              <div>
+                <p className="text-gray-600 font-medium">📍 Start:</p>
+                <p className="text-gray-900 font-semibold">
+                  {startLocation?.address || "Not selected"}
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-600 font-medium">🎯 End:</p>
+                <p className="text-gray-900 font-semibold">
+                  {endLocation?.address || "Not selected"}
+                </p>
+              </div>
+              {!hasValidRoute && (
+                <div className="bg-yellow-100 border border-yellow-300 rounded p-2 text-yellow-800 text-xs font-medium">
+                  <i className="fas fa-exclamation-circle mr-1"></i>
+                  Select start & end locations on the map
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Weather Conditions */}
-          <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg p-5 border border-blue-200">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <i className="fas fa-cloud-sun-rain text-blue-600 mr-2"></i>
-              Weather Conditions
+          <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg p-3 border border-blue-200">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+              <i className="fas fa-cloud-sun-rain text-blue-600 mr-2 text-sm"></i>
+              Weather Forecast
             </h3>
 
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+            <div className="grid grid-cols-3 gap-2 mb-3">
               {weatherPresets.map((preset) => (
                 <button
                   key={preset.id}
                   onClick={() => handleWeatherChange(preset.id)}
-                  className={`p-4 rounded-lg border-2 transition-all ${
+                  className={`p-2 rounded-lg border-2 transition-all text-center text-xs ${
                     scenario.weatherCondition === preset.id
-                      ? `border-${preset.color}-500 bg-${preset.color}-50 shadow-lg scale-105`
+                      ? `border-blue-500 bg-blue-50 shadow-lg`
                       : "border-gray-200 bg-white hover:border-gray-300"
                   }`}
                 >
                   <i
-                    className={`fas fa-${preset.icon} text-2xl text-${preset.color}-500 mb-2`}
+                    className={`fas fa-${preset.icon} text-base text-blue-500 mb-1`}
                   ></i>
-                  <p className="text-xs font-semibold text-gray-800">
+                  <p className="font-semibold text-gray-800 text-xs">
                     {preset.label}
                   </p>
-                  <p className="text-xs text-gray-500">
-                    {preset.rainfall}mm/hr
-                  </p>
+                  <p className="text-gray-500">{preset.rainfall}mm</p>
                 </button>
               ))}
             </div>
 
-            <div className="bg-white rounded-lg p-4 border border-blue-200">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Custom Rainfall (mm/hr)
+            <div className="bg-white rounded-lg p-3 border border-blue-200">
+              <label className="block text-xs font-medium text-gray-700 mb-2">
+                Custom Rainfall:{" "}
+                <span className="text-blue-600 font-bold">
+                  {scenario.customRainfall?.toFixed(1)}mm/hr
+                </span>
               </label>
               <input
                 type="range"
@@ -272,26 +372,19 @@ export const WhatIfSimulation = ({
                 }
                 className="w-full"
               />
-              <div className="flex justify-between text-sm text-gray-600 mt-2">
-                <span>0mm</span>
-                <span className="font-bold text-blue-600">
-                  {scenario.customRainfall?.toFixed(1)}mm/hr
-                </span>
-                <span>100mm</span>
-              </div>
             </div>
           </div>
 
           {/* Flood Zones */}
-          <div className="bg-gradient-to-br from-orange-50 to-red-50 rounded-lg p-5 border border-orange-200">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                <i className="fas fa-water text-orange-600 mr-2"></i>
-                Simulated Flood Zones ({scenario.floodZones.length})
+          <div className="bg-gradient-to-br from-orange-50 to-red-50 rounded-lg p-3 border border-orange-200">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center">
+                <i className="fas fa-water text-orange-600 mr-2 text-sm"></i>
+                Flood Risk Zones ({scenario.floodZones.length})
               </h3>
               <button
                 onClick={() => setIsAddingFloodZone(!isAddingFloodZone)}
-                className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                className={`px-2 py-1 text-xs rounded-lg font-medium transition-all ${
                   isAddingFloodZone
                     ? "bg-gray-600 text-white"
                     : "bg-orange-600 text-white hover:bg-orange-700"
@@ -300,46 +393,60 @@ export const WhatIfSimulation = ({
                 <i
                   className={`fas fa-${
                     isAddingFloodZone ? "times" : "plus"
-                  } mr-2`}
+                  } mr-1`}
                 ></i>
-                {isAddingFloodZone ? "Cancel" : "Add Zone"}
+                {isAddingFloodZone ? "Cancel" : "Add"}
               </button>
             </div>
 
             {isAddingFloodZone && (
-              <div className="bg-orange-100 border border-orange-300 rounded-lg p-4 mb-4">
-                <p className="text-sm text-orange-800 mb-3">
-                  <i className="fas fa-info-circle mr-2"></i>
-                  Click on the map to place a flood zone, then configure its
-                  properties below
+              <div className="bg-orange-100 border border-orange-300 rounded-lg p-3 mb-3">
+                <p className="text-xs text-orange-800 mb-2 font-medium">
+                  <i className="fas fa-hand-pointer mr-1"></i>
+                  Click on the map → Configure below
                 </p>
                 {selectedLocation && (
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Radius (meters)
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Radius:{" "}
+                        <span className="text-orange-600 font-bold">
+                          {floodZoneRadius}m
+                        </span>
                       </label>
                       <input
-                        type="number"
-                        defaultValue={500}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        type="range"
+                        min="100"
+                        max="2000"
+                        step="50"
+                        value={floodZoneRadius}
+                        onChange={(e) =>
+                          setFloodZoneRadius(parseInt(e.target.value))
+                        }
+                        className="w-full"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
                         Severity
                       </label>
-                      <select className="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                        <option value="low">Low</option>
-                        <option value="moderate">Moderate</option>
-                        <option value="high">High</option>
+                      <select
+                        value={floodZoneSeverity}
+                        onChange={(e) => setFloodZoneSeverity(e.target.value)}
+                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg"
+                      >
+                        <option value="low">Low - Minor flooding</option>
+                        <option value="moderate">
+                          Moderate - Area flooded
+                        </option>
+                        <option value="high">High - Route impassable</option>
                       </select>
                     </div>
                     <button
                       onClick={handleAddFloodZone}
-                      className="w-full bg-orange-600 text-white py-2 rounded-lg hover:bg-orange-700"
+                      className="w-full bg-orange-600 text-white text-xs py-2 rounded-lg hover:bg-orange-700 font-medium"
                     >
-                      Confirm Flood Zone
+                      ✓ Add Flood Zone
                     </button>
                   </div>
                 )}
@@ -348,32 +455,25 @@ export const WhatIfSimulation = ({
 
             <div className="space-y-2">
               {scenario.floodZones.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-4">
+                <p className="text-xs text-gray-500 text-center py-2">
                   No flood zones added yet
                 </p>
               ) : (
                 scenario.floodZones.map((zone, index) => (
                   <div
                     key={index}
-                    className="bg-white rounded-lg p-3 flex items-center justify-between border border-orange-200"
+                    className="bg-white rounded-lg p-2 flex items-center justify-between border border-orange-200 text-xs"
                   >
-                    <div className="flex items-center space-x-3">
-                      <i className="fas fa-map-marker-alt text-orange-600"></i>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          Zone {index + 1}: {zone.lat.toFixed(4)},{" "}
-                          {zone.lng.toFixed(4)}
-                        </p>
-                        <p className="text-xs text-gray-600">
-                          Radius: {zone.radius}m | Severity: {zone.severity}
-                        </p>
-                      </div>
+                    <div>
+                      <p className="font-medium text-gray-900">
+                        💧 Zone {index + 1}: {zone.radius}m • {zone.severity}
+                      </p>
                     </div>
                     <button
                       onClick={() => handleRemoveFloodZone(index)}
-                      className="text-red-600 hover:bg-red-50 p-2 rounded-lg"
+                      className="text-red-600 hover:bg-red-50 p-1 rounded"
                     >
-                      <i className="fas fa-trash"></i>
+                      <i className="fas fa-trash-alt text-xs"></i>
                     </button>
                   </div>
                 ))
@@ -382,15 +482,15 @@ export const WhatIfSimulation = ({
           </div>
 
           {/* Incidents */}
-          <div className="bg-gradient-to-br from-yellow-50 to-amber-50 rounded-lg p-5 border border-yellow-200">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                <i className="fas fa-triangle-exclamation text-yellow-600 mr-2"></i>
-                Simulated Incidents ({scenario.incidents.length})
+          <div className="bg-gradient-to-br from-yellow-50 to-amber-50 rounded-lg p-3 border border-yellow-200">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center">
+                <i className="fas fa-triangle-exclamation text-yellow-600 mr-2 text-sm"></i>
+                Traffic Incidents ({scenario.incidents.length})
               </h3>
               <button
                 onClick={() => setIsAddingIncident(!isAddingIncident)}
-                className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                className={`px-2 py-1 text-xs rounded-lg font-medium transition-all ${
                   isAddingIncident
                     ? "bg-gray-600 text-white"
                     : "bg-yellow-600 text-white hover:bg-yellow-700"
@@ -399,46 +499,55 @@ export const WhatIfSimulation = ({
                 <i
                   className={`fas fa-${
                     isAddingIncident ? "times" : "plus"
-                  } mr-2`}
+                  } mr-1`}
                 ></i>
-                {isAddingIncident ? "Cancel" : "Add Incident"}
+                {isAddingIncident ? "Cancel" : "Add"}
               </button>
             </div>
 
             {isAddingIncident && (
-              <div className="bg-yellow-100 border border-yellow-300 rounded-lg p-4 mb-4">
-                <p className="text-sm text-yellow-800 mb-3">
-                  <i className="fas fa-info-circle mr-2"></i>
-                  Click on the map to place an incident, then configure its
-                  properties below
+              <div className="bg-yellow-100 border border-yellow-300 rounded-lg p-3 mb-3">
+                <p className="text-xs text-yellow-800 mb-2 font-medium">
+                  <i className="fas fa-hand-pointer mr-1"></i>
+                  Click on the map → Configure below
                 </p>
                 {selectedLocation && (
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
                         Type
                       </label>
-                      <select className="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                        <option value="damage">Road Damage</option>
-                        <option value="roadblock">Road Blockage</option>
-                        <option value="flood">Flooding</option>
+                      <select
+                        value={incidentType}
+                        onChange={(e) => setIncidentType(e.target.value)}
+                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg"
+                      >
+                        <option value="damage">🚗 Road Damage</option>
+                        <option value="roadblock">🚧 Road Blockage</option>
+                        <option value="flood">💧 Flooding</option>
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
                         Severity
                       </label>
-                      <select className="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                        <option value="low">Low</option>
-                        <option value="moderate">Moderate</option>
-                        <option value="high">High</option>
+                      <select
+                        value={incidentSeverity}
+                        onChange={(e) => setIncidentSeverity(e.target.value)}
+                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg"
+                      >
+                        <option value="low">Low - Slight delay</option>
+                        <option value="moderate">
+                          Moderate - Delays expected
+                        </option>
+                        <option value="high">High - Major disruption</option>
                       </select>
                     </div>
                     <button
                       onClick={handleAddIncident}
-                      className="w-full bg-yellow-600 text-white py-2 rounded-lg hover:bg-yellow-700"
+                      className="w-full bg-yellow-600 text-white text-xs py-2 rounded-lg hover:bg-yellow-700 font-medium"
                     >
-                      Confirm Incident
+                      ✓ Add Incident
                     </button>
                   </div>
                 )}
@@ -447,40 +556,30 @@ export const WhatIfSimulation = ({
 
             <div className="space-y-2">
               {scenario.incidents.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-4">
+                <p className="text-xs text-gray-500 text-center py-2">
                   No incidents added yet
                 </p>
               ) : (
                 scenario.incidents.map((incident, index) => (
                   <div
                     key={index}
-                    className="bg-white rounded-lg p-3 flex items-center justify-between border border-yellow-200"
+                    className="bg-white rounded-lg p-2 flex items-center justify-between border border-yellow-200 text-xs"
                   >
-                    <div className="flex items-center space-x-3">
-                      <i
-                        className={`fas fa-${
-                          incident.type === "damage"
-                            ? "road-spikes"
-                            : incident.type === "roadblock"
-                            ? "road-barrier"
-                            : "water"
-                        } text-yellow-600`}
-                      ></i>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900 capitalize">
-                          {incident.type} - {incident.severity} severity
-                        </p>
-                        <p className="text-xs text-gray-600">
-                          Location: {incident.lat.toFixed(4)},{" "}
-                          {incident.lng.toFixed(4)}
-                        </p>
-                      </div>
+                    <div>
+                      <p className="font-medium text-gray-900 capitalize">
+                        {incident.type === "damage"
+                          ? "🚗"
+                          : incident.type === "roadblock"
+                          ? "🚧"
+                          : "💧"}{" "}
+                        {incident.type} • {incident.severity}
+                      </p>
                     </div>
                     <button
                       onClick={() => handleRemoveIncident(index)}
-                      className="text-red-600 hover:bg-red-50 p-2 rounded-lg"
+                      className="text-red-600 hover:bg-red-50 p-1 rounded"
                     >
-                      <i className="fas fa-trash"></i>
+                      <i className="fas fa-trash-alt text-xs"></i>
                     </button>
                   </div>
                 ))
@@ -489,42 +588,15 @@ export const WhatIfSimulation = ({
           </div>
 
           {/* Impact Summary */}
-          <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg p-5 border border-purple-200">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <i className="fas fa-chart-line text-purple-600 mr-2"></i>
-              Estimated Impact
+          <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg p-3 border border-purple-200">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+              <i className="fas fa-chart-line text-purple-600 mr-2 text-sm"></i>
+              Predicted Impact
             </h3>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-white rounded-lg p-4 text-center border border-purple-200">
-                <p className="text-sm text-gray-600 mb-2">Rainfall Impact</p>
-                <p className="text-3xl font-bold text-blue-600">
-                  {scenario.customRainfall
-                    ? `${(scenario.customRainfall * 0.05).toFixed(1)}x`
-                    : "1.0x"}
-                </p>
-              </div>
-              <div className="bg-white rounded-lg p-4 text-center border border-purple-200">
-                <p className="text-sm text-gray-600 mb-2">Flood Zone Impact</p>
-                <p className="text-3xl font-bold text-orange-600">
-                  {scenario.floodZones.length > 0
-                    ? `${scenario.floodZones.length * 15}%`
-                    : "0%"}
-                </p>
-              </div>
-              <div className="bg-white rounded-lg p-4 text-center border border-purple-200">
-                <p className="text-sm text-gray-600 mb-2">Traffic Impact</p>
-                <p className="text-3xl font-bold text-yellow-600">
-                  {scenario.incidents.length > 0
-                    ? `${scenario.incidents.length * 40}%`
-                    : "0%"}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 bg-white rounded-lg p-4 border border-purple-200">
+            <div className="bg-white rounded-lg p-3 border border-purple-200">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-gray-700">
+                <span className="text-xs font-medium text-gray-700">
                   Overall Impact Score
                 </span>
                 <span
@@ -539,9 +611,9 @@ export const WhatIfSimulation = ({
                   {impactScore}/100
                 </span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-3">
+              <div className="w-full bg-gray-200 rounded-full h-2.5">
                 <div
-                  className={`h-3 rounded-full transition-all ${
+                  className={`h-2.5 rounded-full transition-all ${
                     impactScore < 30
                       ? "bg-green-500"
                       : impactScore < 60
@@ -553,54 +625,42 @@ export const WhatIfSimulation = ({
               </div>
               <p className="text-xs text-gray-500 mt-2">
                 {impactScore < 30
-                  ? "Low impact - Routes minimally affected"
+                  ? "✓ Low impact - Routes minimally affected"
                   : impactScore < 60
-                  ? "Moderate impact - Some routes may be affected"
-                  : "High impact - Significant route disruption expected"}
+                  ? "⚠️ Moderate impact - Route changes expected"
+                  : "❌ High impact - Significant route disruption expected"}
               </p>
             </div>
-          </div>
-
-          {/* Scenario Description */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Scenario Description (Optional)
-            </label>
-            <textarea
-              value={scenario.description}
-              onChange={(e) =>
-                setScenario({ ...scenario, description: e.target.value })
-              }
-              placeholder="Describe this simulation scenario..."
-              rows={3}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            ></textarea>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="bg-gray-50 px-6 py-4 border-t border-gray-200 flex justify-between items-center">
-          <div className="text-sm text-gray-600">
-            <i className="fas fa-lightbulb text-yellow-500 mr-2"></i>
-            Configure conditions above and click simulate to see route impacts
-          </div>
-          <div className="flex space-x-3">
+        <div className="bg-gray-50 px-4 py-3 border-t border-gray-200 flex-shrink-0">
+          <div className="flex justify-between items-center gap-2">
             <button
               onClick={onClose}
-              className="px-6 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 font-medium"
+              className="px-4 py-2 text-sm bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 font-medium"
             >
-              Cancel
+              Close
             </button>
             <button
               onClick={handleRunSimulation}
-              className="px-6 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 font-medium shadow-lg"
+              disabled={!hasValidRoute}
+              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${
+                hasValidRoute
+                  ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700 shadow-lg"
+                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
+              }`}
             >
               <i className="fas fa-play mr-2"></i>
-              Run Simulation
+              Simulate Route
             </button>
           </div>
         </div>
       </div>
+
+      {/* Inject animation styles */}
+      <style>{slideInLeftAnimation}</style>
     </div>
   );
 };

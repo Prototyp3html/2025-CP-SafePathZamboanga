@@ -196,6 +196,10 @@ interface Waypoint {
 interface MapViewProps {
   onModalOpen?: (modal: "report" | "emergency" | "whatif") => void;
   simulationScenario?: any;
+  onLocationUpdate?: (
+    start: { lat: number; lng: number; address: string } | null,
+    end: { lat: number; lng: number; address: string } | null
+  ) => void;
 }
 
 type LatLngBounds = {
@@ -815,7 +819,11 @@ const pickTerrainWaypoint = (
   return bestCandidate;
 };
 
-export const MapView = ({ onModalOpen, simulationScenario }: MapViewProps) => {
+export const MapView = ({
+  onModalOpen,
+  simulationScenario,
+  onLocationUpdate,
+}: MapViewProps) => {
   // Configuration for routing services
   const BACKEND_URL = API_URL;
   const USE_LOCAL_OSRM = import.meta.env.VITE_USE_LOCAL_OSRM === "true"; // Use environment variable to control local OSRM
@@ -1424,6 +1432,130 @@ export const MapView = ({ onModalOpen, simulationScenario }: MapViewProps) => {
   >(null);
   const placeVisibilityUpdaterRef = useRef<(() => void) | null>(null);
   const locationPopupRequestRef = useRef<number>(0);
+
+  // Update parent component with current location data
+  useEffect(() => {
+    if (onLocationUpdate && (startPoint || endPoint)) {
+      const startLoc = startPoint
+        ? {
+            lat: startPoint.lat,
+            lng: startPoint.lng,
+            address:
+              startLocationInput ||
+              `${startPoint.lat.toFixed(4)}, ${startPoint.lng.toFixed(4)}`,
+          }
+        : null;
+      const endLoc = endPoint
+        ? {
+            lat: endPoint.lat,
+            lng: endPoint.lng,
+            address:
+              endLocationInput ||
+              `${endPoint.lat.toFixed(4)}, ${endPoint.lng.toFixed(4)}`,
+          }
+        : null;
+      onLocationUpdate(startLoc, endLoc);
+    }
+  }, [
+    startPoint,
+    endPoint,
+    startLocationInput,
+    endLocationInput,
+    onLocationUpdate,
+  ]);
+
+  // Handle simulation scenario updates
+  useEffect(() => {
+    if (simulationScenario && simulationScenario._simulationResult) {
+      console.log(
+        "🔬 What-If Simulation results received:",
+        simulationScenario
+      );
+
+      // Display the simulated routes on the map
+      // The simulation result contains the routes calculated with rainfall/flood/incident conditions
+      // TODO: Render simulated flood zones and incidents as overlays on the map
+      // TODO: Display the recalculated routes (safe/manageable/prone) with simulation applied
+
+      // For now, set the routes as if they were just calculated
+      const result = simulationScenario._simulationResult;
+      if (result.routes && result.routes.length > 0) {
+        // Map the simulation result to our route format
+        const simulatedRoutes = {
+          safe: [] as LatLng[],
+          manageable: [] as LatLng[],
+          prone: [] as LatLng[],
+        };
+
+        for (const routeData of result.routes) {
+          if (routeData.geometry && routeData.geometry.coordinates) {
+            const route = routeData.geometry.coordinates.map(
+              (coord: number[]) => ({
+                lat: coord[1],
+                lng: coord[0],
+              })
+            );
+
+            const label = routeData.label || "";
+            if (label === "safest") {
+              simulatedRoutes.safe = route;
+            } else if (label === "balanced") {
+              simulatedRoutes.manageable = route;
+            } else if (label === "direct") {
+              simulatedRoutes.prone = route;
+            }
+          }
+        }
+
+        // Update the map with simulated routes
+        setRouteDetails({
+          safeRoute: {
+            waypoints: simulatedRoutes.safe,
+            distance: "Simulated",
+            time: "Calculating...",
+            floodRisk: "safe",
+            riskLevel: "Safe",
+            description: "Safest route under simulated conditions",
+            color: "#10b981",
+          },
+          manageableRoute: {
+            waypoints: simulatedRoutes.manageable,
+            distance: "Simulated",
+            time: "Calculating...",
+            floodRisk: "manageable",
+            riskLevel: "Manageable",
+            description: "Manageable route under simulated conditions",
+            color: "#f59e0b",
+          },
+          proneRoute: {
+            waypoints: simulatedRoutes.prone,
+            distance: "Simulated",
+            time: "Calculating...",
+            floodRisk: "prone",
+            riskLevel: "Risky",
+            description:
+              "Direct route under simulated conditions (highest risk)",
+            color: "#ef4444",
+          },
+          startName: `Start: ${
+            startLocationInput ||
+            `${startPoint?.lat.toFixed(4)}, ${startPoint?.lng.toFixed(4)}`
+          }`,
+          endName: `End: ${
+            endLocationInput ||
+            `${endPoint?.lat.toFixed(4)}, ${endPoint?.lng.toFixed(4)}`
+          }`,
+        });
+
+        // Set the map to show these routes
+        setSelectedRoute(null);
+        setShowRouteModal(false);
+
+        // Notify user that simulation results are displayed
+        console.log("✅ Simulated routes displayed on map");
+      }
+    }
+  }, [simulationScenario]);
 
   useEffect(() => {
     let isCancelled = false;
