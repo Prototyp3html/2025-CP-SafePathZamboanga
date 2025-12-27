@@ -158,6 +158,7 @@ const Index = () => {
                     setCurrentStartLocation(start);
                     setCurrentEndLocation(end);
                   }}
+                  activeModal={activeModal}
                 />
               </div>
             </div>

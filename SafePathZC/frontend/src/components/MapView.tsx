@@ -200,6 +200,7 @@ interface MapViewProps {
     start: { lat: number; lng: number; address: string } | null,
     end: { lat: number; lng: number; address: string } | null
   ) => void;
+  activeModal?: "route" | "report" | "emergency" | "whatif" | null;
 }
 
 type LatLngBounds = {
@@ -823,6 +824,7 @@ export const MapView = ({
   onModalOpen,
   simulationScenario,
   onLocationUpdate,
+  activeModal,
 }: MapViewProps) => {
   // Configuration for routing services
   const BACKEND_URL = API_URL;
@@ -1285,6 +1287,10 @@ export const MapView = ({
   const [safeRoutesOnly, setSafeRoutesOnly] = useState(false);
   const [showWeatherDashboard, setShowWeatherDashboard] = useState(false);
 
+  // Overlay layers for What-If preview
+  const whatIfZoneLayersRef = useRef<L.Layer[]>([]);
+  const whatIfIncidentLayersRef = useRef<L.Layer[]>([]);
+
   // Identical terrain notification
   const [
     showIdenticalTerrainNotification,
@@ -1464,6 +1470,105 @@ export const MapView = ({
     onLocationUpdate,
   ]);
 
+  // Live preview overlays while What-If panel is open
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    const drawPreview = (detail: any) => {
+      // Clear previous overlays
+      whatIfZoneLayersRef.current.forEach((layer) => {
+        if (mapRef.current && mapRef.current.hasLayer(layer)) {
+          mapRef.current.removeLayer(layer);
+        }
+      });
+      whatIfIncidentLayersRef.current.forEach((layer) => {
+        if (mapRef.current && mapRef.current.hasLayer(layer)) {
+          mapRef.current.removeLayer(layer);
+        }
+      });
+      whatIfZoneLayersRef.current = [];
+      whatIfIncidentLayersRef.current = [];
+
+      const zones = detail?.floodZones || [];
+      const incidents = detail?.incidents || [];
+
+      // Draw zones
+      zones.forEach((zone: any, i: number) => {
+        const severity = zone.severity || "moderate";
+        const colors: any = {
+          low: { stroke: "#60a5fa", fill: "#93c5fd" },
+          moderate: { stroke: "#f59e0b", fill: "#fbbf24" },
+          high: { stroke: "#ef4444", fill: "#f87171" },
+        };
+        const c = colors[severity];
+        const circle = L.circle([zone.lat, zone.lng], {
+          radius: zone.radius || 300,
+          color: c.stroke,
+          weight: 2,
+          fillColor: c.fill,
+          fillOpacity: 0.25,
+        }).addTo(mapRef.current!);
+        circle.bindTooltip(
+          `Flood Zone (${severity}) • ${zone.radius || 300}m`,
+          { permanent: false }
+        );
+        whatIfZoneLayersRef.current.push(circle);
+      });
+
+      // Draw incidents
+      incidents.forEach((inc: any) => {
+        const type = inc.type || "incident";
+        const colors: any = {
+          damage: "#8b5cf6",
+          roadblock: "#f43f5e",
+          flood: "#0ea5e9",
+        };
+        const marker = L.circleMarker([inc.lat, inc.lng], {
+          radius: 6,
+          color: colors[type] || "#111827",
+          weight: 2,
+          fillColor: colors[type] || "#111827",
+          fillOpacity: 0.8,
+        }).addTo(mapRef.current!);
+        marker.bindTooltip(`Incident: ${type} • ${inc.severity || "moderate"}`);
+        whatIfIncidentLayersRef.current.push(marker);
+      });
+
+      // Fit to overlays if they exist
+      const groupLayers = [
+        ...whatIfZoneLayersRef.current,
+        ...whatIfIncidentLayersRef.current,
+      ];
+      if (groupLayers.length > 0) {
+        const group = new L.FeatureGroup(groupLayers as any);
+        mapRef.current!.fitBounds(group.getBounds().pad(0.1));
+      }
+    };
+
+    const onChanged = (e: Event) => drawPreview((e as CustomEvent).detail);
+    const onClear = () => {
+      [
+        ...whatIfZoneLayersRef.current,
+        ...whatIfIncidentLayersRef.current,
+      ].forEach((layer) => {
+        if (mapRef.current && mapRef.current.hasLayer(layer)) {
+          mapRef.current.removeLayer(layer);
+        }
+      });
+      whatIfZoneLayersRef.current = [];
+      whatIfIncidentLayersRef.current = [];
+    };
+
+    window.addEventListener("whatif-scenario-changed", onChanged);
+    window.addEventListener("whatif-scenario-clear", onClear);
+
+    return () => {
+      window.removeEventListener("whatif-scenario-changed", onChanged);
+      window.removeEventListener("whatif-scenario-clear", onClear);
+      onClear();
+    };
+  }, [mapRef.current]);
+
   // Handle simulation scenario updates
   useEffect(() => {
     if (simulationScenario && simulationScenario._simulationResult) {
@@ -1546,6 +1651,50 @@ export const MapView = ({
             `${endPoint?.lat.toFixed(4)}, ${endPoint?.lng.toFixed(4)}`
           }`,
         });
+
+        // Draw simple polylines for simulated routes so user sees them immediately
+        if (mapRef.current) {
+          // Clear existing route layers
+          routeLayersRef.current.forEach((layer) => {
+            if (mapRef.current && mapRef.current.hasLayer(layer)) {
+              mapRef.current.removeLayer(layer);
+            }
+          });
+          routeLayersRef.current = [];
+
+          const drawPoly = (
+            coords: LatLng[],
+            color: string,
+            weight: number,
+            label: string
+          ) => {
+            if (!coords || coords.length < 2) return;
+            const line = L.polyline(
+              coords.map((c) => [c.lat, c.lng]),
+              { color, weight, opacity: 0.9 }
+            ).addTo(mapRef.current!);
+            line.bindTooltip(label, {
+              permanent: true,
+              direction: "top",
+              offset: [0, -8],
+            });
+            routeLayersRef.current.push(line);
+          };
+
+          drawPoly(simulatedRoutes.safe, "#22c55e", 8, "Safe (simulated)");
+          drawPoly(
+            simulatedRoutes.manageable,
+            "#f59e0b",
+            6,
+            "Manageable (simulated)"
+          );
+          drawPoly(simulatedRoutes.prone, "#ef4444", 5, "Prone (simulated)");
+
+          if (routeLayersRef.current.length > 0) {
+            const group = new L.FeatureGroup(routeLayersRef.current);
+            mapRef.current.fitBounds(group.getBounds().pad(0.1));
+          }
+        }
 
         // Set the map to show these routes
         setSelectedRoute(null);
@@ -9356,6 +9505,16 @@ export const MapView = ({
     map.on("moveend", updateVisibility);
 
     const handleMapClick = async (event: L.LeafletMouseEvent) => {
+      // Forward clicks to What-If panel when it is open so users can drop flood zones/incidents
+      if (activeModal === "whatif") {
+        window.dispatchEvent(
+          new CustomEvent("whatif-map-click", {
+            detail: { lat: event.latlng.lat, lng: event.latlng.lng },
+          })
+        );
+        return;
+      }
+
       const { lat, lng } = event.latlng;
       const nearest = findNearestPlace(lat, lng, 500, places);
       if (nearest) {
