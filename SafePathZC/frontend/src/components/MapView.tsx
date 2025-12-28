@@ -1571,138 +1571,153 @@ export const MapView = ({
 
   // Handle simulation scenario updates
   useEffect(() => {
-    if (simulationScenario && simulationScenario._simulationResult) {
-      console.log(
-        "🔬 What-If Simulation results received:",
-        simulationScenario
-      );
+    console.log(
+      "[What-If Effect] simulationScenario prop:",
+      !!simulationScenario
+    );
+    if (!simulationScenario) return;
+    console.log(
+      "[What-If Effect] _simulationResult:",
+      !!simulationScenario._simulationResult
+    );
+    if (!simulationScenario._simulationResult) return;
 
-      // Display the simulated routes on the map
-      // The simulation result contains the routes calculated with rainfall/flood/incident conditions
-      // TODO: Render simulated flood zones and incidents as overlays on the map
-      // TODO: Display the recalculated routes (safe/manageable/prone) with simulation applied
+    console.log(
+      "🔬 [What-If Effect] Processing results:",
+      simulationScenario._simulationResult
+    );
 
-      // For now, set the routes as if they were just calculated
-      const result = simulationScenario._simulationResult;
-      if (result.routes && result.routes.length > 0) {
-        // Map the simulation result to our route format
-        const simulatedRoutes = {
-          safe: [] as LatLng[],
-          manageable: [] as LatLng[],
-          prone: [] as LatLng[],
+    const result = simulationScenario._simulationResult;
+    console.log("[What-If Effect] Routes count:", result.routes?.length);
+
+    if (result.routes && result.routes.length > 0) {
+      // Map the simulation result to our route format
+      const simulatedRoutes = {
+        safe: [] as LatLng[],
+        manageable: [] as LatLng[],
+        prone: [] as LatLng[],
+      };
+
+      for (const routeData of result.routes) {
+        console.log(
+          "[What-If Effect] Processing route label:",
+          routeData.label
+        );
+        if (routeData.geometry && routeData.geometry.coordinates) {
+          const route = routeData.geometry.coordinates.map(
+            (coord: number[]) => ({
+              lat: coord[1],
+              lng: coord[0],
+            })
+          );
+
+          console.log("[What-If Effect] Route points:", route.length);
+
+          const label = routeData.label || "";
+          if (label === "safest") {
+            simulatedRoutes.safe = route;
+            console.log("[What-If Effect] Assigned safe route");
+          } else if (label === "balanced") {
+            simulatedRoutes.manageable = route;
+            console.log("[What-If Effect] Assigned manageable route");
+          } else if (label === "direct") {
+            simulatedRoutes.prone = route;
+            console.log("[What-If Effect] Assigned prone route");
+          }
+        } else {
+          console.warn("[What-If Effect] Route missing geometry:", routeData);
+        }
+      }
+
+      // Update the map with simulated routes
+      setRouteDetails({
+        safeRoute: {
+          waypoints: simulatedRoutes.safe,
+          distance: "Simulated",
+          time: "Calculating...",
+          floodRisk: "safe",
+          riskLevel: "Safe",
+          description: "Safest route under simulated conditions",
+          color: "#10b981",
+        },
+        manageableRoute: {
+          waypoints: simulatedRoutes.manageable,
+          distance: "Simulated",
+          time: "Calculating...",
+          floodRisk: "manageable",
+          riskLevel: "Manageable",
+          description: "Manageable route under simulated conditions",
+          color: "#f59e0b",
+        },
+        proneRoute: {
+          waypoints: simulatedRoutes.prone,
+          distance: "Simulated",
+          time: "Calculating...",
+          floodRisk: "prone",
+          riskLevel: "Risky",
+          description: "Direct route under simulated conditions (highest risk)",
+          color: "#ef4444",
+        },
+        startName: `Start: ${
+          startLocationInput ||
+          `${startPoint?.lat.toFixed(4)}, ${startPoint?.lng.toFixed(4)}`
+        }`,
+        endName: `End: ${
+          endLocationInput ||
+          `${endPoint?.lat.toFixed(4)}, ${endPoint?.lng.toFixed(4)}`
+        }`,
+      });
+
+      // Draw simple polylines for simulated routes so user sees them immediately
+      if (mapRef.current) {
+        // Clear existing route layers
+        routeLayersRef.current.forEach((layer) => {
+          if (mapRef.current && mapRef.current.hasLayer(layer)) {
+            mapRef.current.removeLayer(layer);
+          }
+        });
+        routeLayersRef.current = [];
+
+        const drawPoly = (
+          coords: LatLng[],
+          color: string,
+          weight: number,
+          label: string
+        ) => {
+          if (!coords || coords.length < 2) return;
+          const line = L.polyline(
+            coords.map((c) => [c.lat, c.lng]),
+            { color, weight, opacity: 0.9 }
+          ).addTo(mapRef.current!);
+          line.bindTooltip(label, {
+            permanent: true,
+            direction: "top",
+            offset: [0, -8],
+          });
+          routeLayersRef.current.push(line);
         };
 
-        for (const routeData of result.routes) {
-          if (routeData.geometry && routeData.geometry.coordinates) {
-            const route = routeData.geometry.coordinates.map(
-              (coord: number[]) => ({
-                lat: coord[1],
-                lng: coord[0],
-              })
-            );
+        drawPoly(simulatedRoutes.safe, "#22c55e", 8, "Safe (simulated)");
+        drawPoly(
+          simulatedRoutes.manageable,
+          "#f59e0b",
+          6,
+          "Manageable (simulated)"
+        );
+        drawPoly(simulatedRoutes.prone, "#ef4444", 5, "Prone (simulated)");
 
-            const label = routeData.label || "";
-            if (label === "safest") {
-              simulatedRoutes.safe = route;
-            } else if (label === "balanced") {
-              simulatedRoutes.manageable = route;
-            } else if (label === "direct") {
-              simulatedRoutes.prone = route;
-            }
-          }
+        if (routeLayersRef.current.length > 0) {
+          const group = new L.FeatureGroup(routeLayersRef.current);
+          mapRef.current.fitBounds(group.getBounds().pad(0.1));
         }
-
-        // Update the map with simulated routes
-        setRouteDetails({
-          safeRoute: {
-            waypoints: simulatedRoutes.safe,
-            distance: "Simulated",
-            time: "Calculating...",
-            floodRisk: "safe",
-            riskLevel: "Safe",
-            description: "Safest route under simulated conditions",
-            color: "#10b981",
-          },
-          manageableRoute: {
-            waypoints: simulatedRoutes.manageable,
-            distance: "Simulated",
-            time: "Calculating...",
-            floodRisk: "manageable",
-            riskLevel: "Manageable",
-            description: "Manageable route under simulated conditions",
-            color: "#f59e0b",
-          },
-          proneRoute: {
-            waypoints: simulatedRoutes.prone,
-            distance: "Simulated",
-            time: "Calculating...",
-            floodRisk: "prone",
-            riskLevel: "Risky",
-            description:
-              "Direct route under simulated conditions (highest risk)",
-            color: "#ef4444",
-          },
-          startName: `Start: ${
-            startLocationInput ||
-            `${startPoint?.lat.toFixed(4)}, ${startPoint?.lng.toFixed(4)}`
-          }`,
-          endName: `End: ${
-            endLocationInput ||
-            `${endPoint?.lat.toFixed(4)}, ${endPoint?.lng.toFixed(4)}`
-          }`,
-        });
-
-        // Draw simple polylines for simulated routes so user sees them immediately
-        if (mapRef.current) {
-          // Clear existing route layers
-          routeLayersRef.current.forEach((layer) => {
-            if (mapRef.current && mapRef.current.hasLayer(layer)) {
-              mapRef.current.removeLayer(layer);
-            }
-          });
-          routeLayersRef.current = [];
-
-          const drawPoly = (
-            coords: LatLng[],
-            color: string,
-            weight: number,
-            label: string
-          ) => {
-            if (!coords || coords.length < 2) return;
-            const line = L.polyline(
-              coords.map((c) => [c.lat, c.lng]),
-              { color, weight, opacity: 0.9 }
-            ).addTo(mapRef.current!);
-            line.bindTooltip(label, {
-              permanent: true,
-              direction: "top",
-              offset: [0, -8],
-            });
-            routeLayersRef.current.push(line);
-          };
-
-          drawPoly(simulatedRoutes.safe, "#22c55e", 8, "Safe (simulated)");
-          drawPoly(
-            simulatedRoutes.manageable,
-            "#f59e0b",
-            6,
-            "Manageable (simulated)"
-          );
-          drawPoly(simulatedRoutes.prone, "#ef4444", 5, "Prone (simulated)");
-
-          if (routeLayersRef.current.length > 0) {
-            const group = new L.FeatureGroup(routeLayersRef.current);
-            mapRef.current.fitBounds(group.getBounds().pad(0.1));
-          }
-        }
-
-        // Set the map to show these routes
-        setSelectedRoute(null);
-        setShowRouteModal(false);
-
-        // Notify user that simulation results are displayed
-        console.log("✅ Simulated routes displayed on map");
       }
+
+      // Set the map to show these routes
+      setSelectedRoute(null);
+      setShowRouteModal(false);
+
+      // Notify user that simulation results are displayed
+      console.log("✅ Simulated routes displayed on map");
     }
   }, [simulationScenario]);
 
@@ -1830,7 +1845,10 @@ export const MapView = ({
         updateUserLocationMarker(location, position.coords.accuracy);
       },
       (error) => {
-        console.warn("Geolocation watch error:", error);
+        // Silently ignore geolocation permission errors (code 1 = PERMISSION_DENIED)
+        if (error.code !== 1) {
+          console.warn("Geolocation watch error:", error);
+        }
       },
       {
         enableHighAccuracy: true,

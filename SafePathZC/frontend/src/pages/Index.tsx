@@ -9,6 +9,7 @@ import {
   SimulationScenario,
 } from "../components/WhatIfSimulation";
 import { useNavigate } from "react-router-dom";
+import { notification } from "@/utils/notifications";
 
 const Index = () => {
   const [activeModal, setActiveModal] = useState<
@@ -79,35 +80,30 @@ const Index = () => {
   };
 
   const handleRunSimulation = async (scenario: SimulationScenario) => {
-    console.log("Running simulation with scenario:", scenario);
+    console.log("🔬 [What-If] Running simulation:", scenario);
+    notification.info("🔬 Running What-If simulation...");
 
     try {
-      // Close the modal first
-      setActiveModal(null);
-
-      // Call the routing API with simulated conditions
       const BACKEND_URL =
         import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
       const floodRoutesUrl = `${BACKEND_URL}/api/routing/flood-routes`;
 
-      // Build weather data with rainfall from simulation
       const weatherData = {
-        rainfall: scenario.customRainfall || 0, // mm/hr
+        rainfall: scenario.customRainfall || 0,
       };
 
-      // Build request body with simulation scenario
       const requestBody = {
         start_lat: scenario.start_lat,
         start_lng: scenario.start_lng,
         end_lat: scenario.end_lat,
         end_lng: scenario.end_lng,
         weather_data: weatherData,
-        // Optional: Include flood zones and incidents for future backend enhancement
         simulated_flood_zones: scenario.floodZones,
         simulated_incidents: scenario.incidents,
       };
 
-      console.log("📡 Sending simulation request to backend:", requestBody);
+      console.log("📡 [What-If] Sending to:", floodRoutesUrl);
+      console.log("📡 [What-If] Body:", requestBody);
 
       const response = await fetch(floodRoutesUrl, {
         method: "POST",
@@ -118,23 +114,42 @@ const Index = () => {
         body: JSON.stringify(requestBody),
       });
 
+      console.log("📡 [What-If] Status:", response.status);
+
       if (response.ok) {
         const data = await response.json();
-        console.log("✅ Simulation routing response:", data);
+        console.log("✅ [What-If] Routes count:", data.routes?.length);
+        console.log("✅ [What-If] Response:", data);
 
-        // Store the simulation result to display on map
+        console.log("✅ [What-If] Setting simulationScenario state");
         setSimulationScenario({
           ...scenario,
-          _simulationResult: data, // Store result for MapView to use
+          _simulationResult: data,
         } as any);
+
+        setActiveModal(null);
+        notification.success(
+          "✅ Simulation complete! Check map.",
+          "Simulation Results"
+        );
       } else {
-        console.error("❌ Simulation routing failed:", response.statusText);
-        alert("Simulation failed. Please check your route and try again.");
+        const errorText = await response.text();
+        console.error(
+          "❌ [What-If] Status",
+          response.statusText,
+          ":",
+          errorText
+        );
+        notification.error(
+          "❌ Simulation failed: " + response.statusText,
+          "Error"
+        );
       }
     } catch (error) {
-      console.error("❌ Error running simulation:", error);
-      alert(
-        "Error running simulation. Please check your connection and try again."
+      console.error("❌ [What-If] Exception:", error);
+      notification.error(
+        "❌ Error: " + (error instanceof Error ? error.message : "Unknown"),
+        "Error"
       );
     }
   };
