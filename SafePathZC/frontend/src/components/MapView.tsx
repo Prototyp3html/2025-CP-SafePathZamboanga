@@ -1613,21 +1613,59 @@ export const MapView = ({
 
           console.log("[What-If Effect] Route points:", route.length);
 
-          const label = routeData.label || "";
-          if (label === "safest") {
+          const label = (
+            routeData.label ||
+            routeData.riskLevel ||
+            ""
+          ).toLowerCase();
+          console.log("[What-If Effect] Normalized label:", label);
+          if (label === "safest" || label === "safe") {
             simulatedRoutes.safe = route;
-            console.log("[What-If Effect] Assigned safe route");
-          } else if (label === "balanced") {
+            console.log(
+              "[What-If Effect] ✅ Assigned safe route with",
+              route.length,
+              "points"
+            );
+          } else if (
+            label === "balanced" ||
+            label === "manageable" ||
+            label === "medium" ||
+            label === "moderate"
+          ) {
             simulatedRoutes.manageable = route;
-            console.log("[What-If Effect] Assigned manageable route");
-          } else if (label === "direct") {
+            console.log(
+              "[What-If Effect] ✅ Assigned manageable route with",
+              route.length,
+              "points"
+            );
+          } else if (
+            label === "direct" ||
+            label === "prone" ||
+            label === "flood-prone" ||
+            label === "high-risk"
+          ) {
             simulatedRoutes.prone = route;
-            console.log("[What-If Effect] Assigned prone route");
+            console.log(
+              "[What-If Effect] ✅ Assigned prone route with",
+              route.length,
+              "points"
+            );
+          } else {
+            console.warn(
+              "[What-If Effect] ⚠️ Unknown label, not assigned:",
+              label
+            );
           }
         } else {
           console.warn("[What-If Effect] Route missing geometry:", routeData);
         }
       }
+
+      console.log("[What-If Effect] Final simulatedRoutes:", {
+        safeCount: simulatedRoutes.safe.length,
+        manageableCount: simulatedRoutes.manageable.length,
+        proneCount: simulatedRoutes.prone.length,
+      });
 
       // Update the map with simulated routes
       setRouteDetails({
@@ -1684,7 +1722,18 @@ export const MapView = ({
           weight: number,
           label: string
         ) => {
-          if (!coords || coords.length < 2) return;
+          console.log(`[What-If Effect] Drawing ${label}:`, {
+            coordsLength: coords?.length,
+            firstPoint: coords?.[0],
+            lastPoint: coords?.[coords?.length - 1],
+            mapRefExists: !!mapRef.current,
+          });
+          if (!coords || coords.length < 2) {
+            console.warn(
+              `[What-If Effect] Skipping ${label} - insufficient points`
+            );
+            return;
+          }
           const line = L.polyline(
             coords.map((c) => [c.lat, c.lng]),
             { color, weight, opacity: 0.9 }
@@ -1695,7 +1744,14 @@ export const MapView = ({
             offset: [0, -8],
           });
           routeLayersRef.current.push(line);
+          console.log(`[What-If Effect] ✅ ${label} drawn successfully`);
         };
+
+        console.log("[What-If Effect] Drawing routes:", {
+          safe: simulatedRoutes.safe.length,
+          manageable: simulatedRoutes.manageable.length,
+          prone: simulatedRoutes.prone.length,
+        });
 
         drawPoly(simulatedRoutes.safe, "#22c55e", 8, "Safe (simulated)");
         drawPoly(
@@ -3240,31 +3296,29 @@ export const MapView = ({
         if (data.routes && data.routes.length > 0) {
           console.log(`  ✅ Got ${data.routes.length} flood-aware routes`);
 
-          // Map routes by label (safest/balanced/direct)
+          // Map routes by label (handles multiple label variants)
           for (const routeData of data.routes) {
             if (routeData.geometry && routeData.geometry.coordinates) {
               const route = routeData.geometry.coordinates.map(
-                (coord: number[]) => ({
-                  lat: coord[1],
-                  lng: coord[0],
-                })
+                (coord: number[]) => ({ lat: coord[1], lng: coord[0] })
               );
 
-              // Map based on label from backend
-              const label = routeData.label || "";
-              const floodPercentage = routeData.flood_percentage || 0;
-
-              console.log(
-                `    Route ${label}: ${floodPercentage.toFixed(1)}% flooded, ${
-                  route.length
-                } points`
-              );
-
-              if (label === "safest") {
+              const rawLabel = (routeData.label || routeData.riskLevel || "")
+                .toLowerCase()
+                .trim();
+              if (["safest", "safe"].includes(rawLabel)) {
                 routes.safe = route;
-              } else if (label === "balanced") {
+              } else if (
+                ["balanced", "manageable", "medium", "moderate"].includes(
+                  rawLabel
+                )
+              ) {
                 routes.manageable = route;
-              } else if (label === "direct") {
+              } else if (
+                ["direct", "prone", "flood-prone", "high-risk"].includes(
+                  rawLabel
+                )
+              ) {
                 routes.prone = route;
               }
             }
