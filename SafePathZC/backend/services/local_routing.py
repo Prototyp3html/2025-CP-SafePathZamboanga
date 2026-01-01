@@ -617,7 +617,7 @@ class LocalRoutingService:
         
         return None
     
-    def calculate_route(self, start: Coordinate, end: Coordinate, mode: str = "car", risk_profile: str = "safe") -> Optional[List[Coordinate]]:
+    def calculate_route(self, start: Coordinate, end: Coordinate, mode: str = "car", risk_profile: str = "safe", simulated_flood_zones: Optional[List[Dict[str, Any]]] = None) -> Optional[List[Coordinate]]:
         """Calculate route using A* algorithm with terrain awareness
         
         Args:
@@ -625,6 +625,7 @@ class LocalRoutingService:
             end: Ending coordinate
             mode: Transportation mode (car/motorcycle/walking) - affects speed and road preferences
             risk_profile: Flood risk tolerance (safe/manageable/prone) - affects route selection
+            simulated_flood_zones: List of simulated flood zones to add to flood risk calculation
         """
         if not self.loaded:
             logger.error("Road network not loaded")
@@ -687,6 +688,30 @@ class LocalRoutingService:
                             flood_cache[coord_key] = True
                 
                 logger.info(f"Flood cache built: {len(flood_cache)} flooded entries indexed (osm_ids + coordinates)")
+        
+        # ADD SIMULATED FLOOD ZONES to the flood cache
+        if simulated_flood_zones:
+            logger.info(f"\nAdding {len(simulated_flood_zones)} simulated flood zones to routing calculation...")
+            for zone in simulated_flood_zones:
+                zone_lat = zone.get('lat')
+                zone_lng = zone.get('lng')
+                zone_radius = zone.get('radius', 300)  # meters
+                zone_severity = zone.get('severity', 'moderate')
+                
+                # Add penalty factor based on severity
+                severity_factor = {'low': 1.2, 'moderate': 1.8, 'high': 2.5}.get(zone_severity, 1.5)
+                
+                logger.info(f"  Zone: ({zone_lat:.4f}, {zone_lng:.4f}) r={zone_radius}m severity={zone_severity} factor={severity_factor}x")
+                
+                # Mark all coordinates within this radius as flooded
+                # We add them to flood_cache with adjusted keys to represent the zone
+                for lat_offset in [-0.0045, 0, 0.0045]:  # ~500m coverage
+                    for lng_offset in [-0.0045, 0, 0.0045]:
+                        coord_key = (round(zone_lat + lat_offset, 4), round(zone_lng + lng_offset, 4))
+                        if coord_key not in flood_cache:
+                            flood_cache[coord_key] = True
+            
+            logger.info(f"Flood cache now includes {len(flood_cache)} total flooded coordinate entries\n")
         
         open_set = [(0, start)]  # (f_score, coordinate)
         came_from = {}

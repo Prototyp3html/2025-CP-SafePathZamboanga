@@ -231,6 +231,8 @@ class FloodRouteRequest(BaseModel):
     waypoints: Optional[List[Dict[str, float]]] = None  # List of {lat, lng} dicts
     weather_data: Optional[Dict[str, Any]] = None
     transport_mode: str = "car"  # car, motorcycle, walking, public_transport, bicycle, truck
+    simulated_flood_zones: Optional[List[Dict[str, Any]]] = None  # [{lat, lng, radius, severity}, ...]
+    simulated_incidents: Optional[List[Dict[str, Any]]] = None  # [{lat, lng, type, severity}, ...]
 
 class FloodRouteResponse(BaseModel):
     routes: List[Dict[str, Any]]
@@ -630,7 +632,8 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                 segment_start,
                                 segment_end,
                                 mode=mode,
-                                risk_profile=risk_profile
+                                risk_profile=risk_profile,
+                                simulated_flood_zones=request.simulated_flood_zones  # Pass what-if zones!
                             )
                             
                             # If A* fails, fallback to OSRM for this segment
