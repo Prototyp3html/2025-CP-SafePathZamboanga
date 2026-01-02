@@ -29,13 +29,17 @@ def cleanup_production():
         print(f"   Flood Events: {events_before:,}")
         print(f"   Hotspots: {hotspots_before:,}")
         
-        # Confirm before deleting
+        # Confirm before deleting (skip if --force flag is used)
         print("\n⚠️  THIS WILL DELETE ALL FLOOD DATA EXCEPT DEC 14 & 17 DEMO DATA")
-        confirm = input("\nType 'YES' to confirm cleanup: ").strip().upper()
         
-        if confirm != "YES":
-            print("❌ Cleanup cancelled")
-            return False
+        auto_confirm = "--force" in sys.argv or "--auto" in sys.argv
+        if not auto_confirm:
+            confirm = input("\nType 'YES' to confirm cleanup: ").strip().upper()
+            if confirm != "YES":
+                print("❌ Cleanup cancelled")
+                return False
+        else:
+            print("(Auto-confirmed with --force flag)")
         
         print("\n🔄 Starting cleanup...")
         

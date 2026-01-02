@@ -34,6 +34,7 @@ from routes.terrain_api import router as terrain_router
 from routes.oauth import router as oauth_router
 from routes.cron import router as cron_router
 from routes.flood_history import router as flood_history_router
+from routes.flood_forecast import router as flood_forecast_router
 
 # Load environment variables
 load_dotenv()
@@ -384,6 +385,7 @@ app.include_router(geocoding_router, prefix="/api/geocoding", tags=["geocoding"]
 app.include_router(terrain_router)  # Terrain data and elevation heatmap
 app.include_router(cron_router)  # Scheduled jobs (flood data updates every 6 hours)
 app.include_router(flood_history_router)  # Flood history and hotspot tracking
+app.include_router(flood_forecast_router)  # Flood predictions based on weather forecast
 
 # Real traffic detection based on user reports and road intersections
 from routes.traffic_incidents import router as traffic_incidents_router
