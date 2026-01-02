@@ -9,7 +9,7 @@ from pathlib import Path
 import sys
 
 # Add backend to path
-sys.path.insert(0, str(Path(__file__).parent / "backend"))
+sys.path.insert(0, str(Path(__file__).parent / "SafePathZC" / "backend"))
 
 async def test_flood_forecast():
     """Test the flood forecast service"""

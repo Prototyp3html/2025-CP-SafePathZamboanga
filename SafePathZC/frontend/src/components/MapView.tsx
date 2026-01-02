@@ -19,6 +19,7 @@ import { RouteModal } from "./RouteModal";
 import { AlertBanner } from "./AlertBanner";
 import { WeatherDashboard } from "./WeatherDashboard";
 import { FloodHotspotPins } from "./FloodHotspotPins";
+import { FloodForecastPins } from "./FloodForecastPins";
 import { FloodHistoryModal } from "./FloodHistoryModal";
 import {
   TransportationSelector,
@@ -1315,6 +1316,9 @@ export const MapView = ({
     null
   );
   const [showFloodHistoryModal, setShowFloodHistoryModal] = useState(false);
+
+  // 🆕 Flood Forecast States (Predicted floods)
+  const [showFloodForecast, setShowFloodForecast] = useState(false);
 
   // New states for route planner modal
   const [showRoutePlannerModal, setShowRoutePlannerModal] = useState(false);
@@ -8933,6 +8937,21 @@ export const MapView = ({
         floodHotspotBtn.appendChild(floodHotspotIcon);
         floodHotspotBtn.title = "Toggle Flood Hotspots";
 
+        // 4. Flood forecast toggle button (New!)
+        const floodForecastBtn = L.DomUtil.create(
+          "button",
+          "leaflet-control-custom",
+          menuContainer
+        );
+        styleSubBtn(floodForecastBtn);
+        const floodForecastIcon = document.createElement("span");
+        floodForecastIcon.innerText = "⚠️";
+        floodForecastIcon.style.cssText = `
+            font-size: 20px;
+          `;
+        floodForecastBtn.appendChild(floodForecastIcon);
+        floodForecastBtn.title = "Toggle Flood Forecast (Next 7 days)";
+
         // Toggle menu function
         const toggleMenu = () => {
           isMenuOpen = !isMenuOpen;
@@ -9005,6 +9024,17 @@ export const MapView = ({
               ? "#06b6d4"
               : "#451ae0ff";
             floodHotspotIcon.style.opacity = newState ? "1" : "0.6";
+            return newState;
+          });
+        };
+
+        // Flood forecast toggle functionality (New!)
+        floodForecastBtn.onclick = (e: Event) => {
+          e.stopPropagation();
+          setShowFloodForecast((prev) => {
+            const newState = !prev;
+            floodForecastBtn.style.background = newState ? "#FF8C00" : "#451ae0ff";
+            floodForecastIcon.style.opacity = newState ? "1" : "0.6";
             return newState;
           });
         };
@@ -11337,6 +11367,12 @@ export const MapView = ({
           setSelectedFloodHotspot(hotspot);
           setShowFloodHistoryModal(true);
         }}
+      />
+
+      {/* 🆕 Flood Forecast Pins (Predicted floods based on weather forecast) */}
+      <FloodForecastPins
+        map={mapRef.current}
+        isVisible={showFloodForecast}
       />
 
       {/* 🆕 Flood History Modal */}
