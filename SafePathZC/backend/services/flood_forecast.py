@@ -256,24 +256,26 @@ class FloodForecastService:
                         )
                         
                         # Dynamic confidence threshold based on rainfall amount
-                        # Light rain = high threshold (only vulnerable roads)
-                        # Heavy rain = low threshold (many roads can flood)
+                        # MAXIMUM STRICT: Cap at ~200 roads/day max to prevent lag
+                        # Only show roads with HIGH confidence (80%+) to reduce map load
                         if rainfall_mm > 25:
-                            confidence_threshold = 25  # Heavy: shows ~70-80% of roads
+                            confidence_threshold = 80  # Heavy: ~100-200 roads
+                        elif rainfall_mm > 20:
+                            confidence_threshold = 82  # Very heavy: ~80-120 roads
                         elif rainfall_mm > 15:
-                            confidence_threshold = 40  # Moderate-heavy: shows ~40-50% of roads
+                            confidence_threshold = 84  # Moderate-heavy: ~50-80 roads
                         elif rainfall_mm > 10:
-                            confidence_threshold = 55  # Moderate: shows ~20-30% of roads
+                            confidence_threshold = 86  # Moderate: ~30-50 roads
                         elif rainfall_mm > 7:
-                            confidence_threshold = 65  # Light-moderate: shows ~10-15% of roads
+                            confidence_threshold = 88  # Light-moderate: ~15-30 roads
                         elif rainfall_mm > 5:
-                            confidence_threshold = 72  # Light: shows ~5-8% of roads
+                            confidence_threshold = 90  # Light: ~5-15 roads
                         elif rainfall_mm > 3:
-                            confidence_threshold = 80  # Very light: shows ~2-4% of roads
+                            confidence_threshold = 92  # Very light: ~2-5 roads
                         else:
-                            confidence_threshold = 88  # Trace: shows <2% of roads
+                            confidence_threshold = 95  # Trace: <2 roads
                         
-                        # Include if predicted to flood with sufficient confidence
+                        # MAXIMUM STRICT: Only highest-confidence predictions to keep map responsive
                         if forecast['will_flood'] and forecast['confidence'] > confidence_threshold:
                             props = road.get('properties', {})
                             road_name = props.get('name') or f"Road {props.get('osm_id', 'Unknown')}"
@@ -290,6 +292,17 @@ class FloodForecastService:
                     except Exception as road_error:
                         logger.debug(f"Error processing road {road.get('id', 'unknown')}: {road_error}")
                         continue
+                
+                # PERFORMANCE: Limit to top 200 roads per day (sorted by confidence)
+                # This prevents map lag from rendering thousands of markers
+                if len(forecast_day['predicted_flooded_roads']) > 200:
+                    # Sort by confidence and keep only top 200
+                    forecast_day['predicted_flooded_roads'].sort(
+                        key=lambda x: x['confidence'], 
+                        reverse=True
+                    )
+                    forecast_day['predicted_flooded_roads'] = forecast_day['predicted_flooded_roads'][:200]
+                    logger.info(f"  ℹ️  Limited {forecast_day['date']} to top 200 highest-confidence roads")
                 
                 forecast_results.append(forecast_day)
             
