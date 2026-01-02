@@ -7,6 +7,7 @@
 import React, { useEffect, useState } from 'react';
 import L from 'leaflet';
 import './FloodForecastPins.css';
+import { API_URL } from '@/config/api';
 
 interface PredictedFloodPin {
   road_id: string;
@@ -41,8 +42,8 @@ export function FloodForecastPins({ map, isVisible }: FloodForecastPinsProps) {
     const fetchPredictions = async () => {
       setLoading(true);
       try {
-        console.log('🌦️ Fetching flood predictions...');
-        const response = await fetch('/api/flood-forecast/predictions');
+        console.log('🌦️ Fetching flood predictions from:', `${API_URL}/api/flood-forecast/predictions`);
+        const response = await fetch(`${API_URL}/api/flood-forecast/predictions`);
         const data = await response.json();
         
         console.log('📊 Forecast API Response:', data);
