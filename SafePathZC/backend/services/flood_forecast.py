@@ -279,6 +279,10 @@ class FloodForecastService:
                         if forecast['will_flood'] and forecast['confidence'] > confidence_threshold:
                             props = road.get('properties', {})
                             road_name = props.get('name') or f"Road {props.get('osm_id', 'Unknown')}"
+                            highway_type = props.get('highway_type', 'residential').lower()
+                            
+                            # Determine if this is a major road (highway, trunk, primary)
+                            is_major = highway_type in ['motorway', 'trunk', 'primary', 'secondary', 'expressway', 'highway']
                             
                             forecast_day['predicted_flooded_roads'].append({
                                 'road_id': props.get('road_id') or props.get('osm_id') or 'unknown',
@@ -287,7 +291,9 @@ class FloodForecastService:
                                 'location': {
                                     'lat': lat,
                                     'lon': lon
-                                }
+                                },
+                                'highway_type': highway_type,
+                                'is_major_road': is_major
                             })
                     except Exception as road_error:
                         logger.debug(f"Error processing road {road.get('id', 'unknown')}: {road_error}")
