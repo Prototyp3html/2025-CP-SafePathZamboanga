@@ -378,7 +378,7 @@ export function FloodForecastPins({ map, isVisible }: FloodForecastPinsProps) {
                     </div>
                     <div className="summary-stat">
                       <span className="stat-label">Expected Rainfall:</span>
-                      <span class="stat-value">
+                      <span className="stat-value">
                         {forecasts.find(f => f.date === selectedDay)?.rainfall_mm || 0}mm
                       </span>
                     </div>
