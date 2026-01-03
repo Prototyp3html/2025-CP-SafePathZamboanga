@@ -353,8 +353,9 @@ if data_dir.exists():
     app.mount("/data", StaticFiles(directory=str(data_dir)), name="data")
 
 # CORS configuration for deployment
+# Allow requests from all Vercel deployments, Railway, and localhost
 origins = [
-    "https://safepath-zamboanga-city.vercel.app",  # Your actual Vercel URL
+    "https://safepath-zamboanga-city.vercel.app",  # Original Vercel URL
     "https://safepath-zc.vercel.app",             # Alternative Vercel URL
     "https://safepathzc-production.up.railway.app",  # Railway backend URL
     "https://safepath-zc-production.up.railway.app", # Alternative Railway URL
@@ -369,10 +370,16 @@ origins = [
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=[
+        "https://*.vercel.app",  # All Vercel deployments
+        "https://safepath-zc-production.up.railway.app",
+        "http://localhost",
+        "http://127.0.0.1",
+    ] if not os.getenv("CORS_ALLOW_ALL") else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_origin_regex=r"https://.*\.vercel\.app|http://localhost.*",
 )
 
 # Include admin routes
