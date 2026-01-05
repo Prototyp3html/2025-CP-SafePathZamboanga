@@ -86,7 +86,10 @@ export const NavigationBar = () => {
       {/* Desktop & Tablet Navigation */}
       <nav className="fixed top-0 left-0 right-0 bg-gradient-to-r from-blue-400 to-blue-600 text-white h-12 flex items-center px-4 md:px-6 shadow-lg w-full rounded-b-3xl pointer-events-auto z-50">
         {/* Logo - Clickable to go home */}
-        <Link to="/" className="flex items-center space-x-2 md:space-x-3 hover:opacity-80 transition-opacity duration-200 cursor-pointer pointer-events-auto">
+        <Link
+          to="/"
+          className="flex items-center space-x-2 md:space-x-3 hover:opacity-80 transition-opacity duration-200 cursor-pointer pointer-events-auto"
+        >
           <div className="flex items-center">
             <img
               src="/logo.png"

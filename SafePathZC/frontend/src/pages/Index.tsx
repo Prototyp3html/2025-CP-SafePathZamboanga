@@ -107,8 +107,16 @@ const Index = () => {
       console.log("  Start:", scenario.start_lat, scenario.start_lng);
       console.log("  End:", scenario.end_lat, scenario.end_lng);
       console.log("  Rainfall:", scenario.customRainfall, "mm/hr");
-      console.log("  Flood Zones:", scenario.floodZones.length, scenario.floodZones);
-      console.log("  Incidents:", scenario.incidents.length, scenario.incidents);
+      console.log(
+        "  Flood Zones:",
+        scenario.floodZones.length,
+        scenario.floodZones
+      );
+      console.log(
+        "  Incidents:",
+        scenario.incidents.length,
+        scenario.incidents
+      );
 
       const response = await fetch(floodRoutesUrl, {
         method: "POST",
