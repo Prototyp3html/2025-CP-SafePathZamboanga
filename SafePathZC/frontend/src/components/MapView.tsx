@@ -19,7 +19,6 @@ import { RouteModal } from "./RouteModal";
 import { AlertBanner } from "./AlertBanner";
 import { WeatherDashboard } from "./WeatherDashboard";
 import { FloodHotspotPins } from "./FloodHotspotPins";
-import { FloodForecastPins } from "./FloodForecastPins";
 import { FloodHistoryModal } from "./FloodHistoryModal";
 import {
   TransportationSelector,
@@ -1316,9 +1315,6 @@ export const MapView = ({
     null
   );
   const [showFloodHistoryModal, setShowFloodHistoryModal] = useState(false);
-
-  // 🆕 Flood Forecast States (Predicted floods)
-  const [showFloodForecast, setShowFloodForecast] = useState(false);
 
   // New states for route planner modal
   const [showRoutePlannerModal, setShowRoutePlannerModal] = useState(false);
@@ -8813,6 +8809,47 @@ export const MapView = ({
     });
     map.addControl(zoomControl);
 
+    // 3. THIRD: Add What-If Analysis button (icon-only)
+    const WhatIfBtn = L.Control.extend({
+      options: { position: "topleft" },
+      onAdd: function () {
+        const btn = L.DomUtil.create("button", "leaflet-control-custom");
+        btn.style.background = "#8b5cf6";
+        btn.style.border = "2px solid #7c3aed";
+        btn.style.width = "40px";
+        btn.style.height = "40px";
+        btn.style.cursor = "pointer";
+        btn.style.borderRadius = "4px";
+        btn.style.display = "flex";
+        btn.style.alignItems = "center";
+        btn.style.justifyContent = "center";
+        btn.style.marginTop = "5px";
+        btn.style.boxShadow = "0 2px 4px rgba(139, 92, 246, 0.3)";
+        btn.style.fontSize = "18px";
+        btn.style.color = "white";
+        btn.style.padding = "0";
+        btn.title = "What-If Analysis";
+
+        const icon = document.createElement("span");
+        icon.innerHTML = "⚡";
+        icon.style.display = "flex";
+        icon.style.alignItems = "center";
+        icon.style.justifyContent = "center";
+        btn.appendChild(icon);
+
+        btn.onclick = (e: Event) => {
+          e.stopPropagation();
+          if (onModalOpen) {
+            onModalOpen("whatif");
+          }
+        };
+
+        return btn;
+      },
+    });
+    const whatIfBtn = new WhatIfBtn();
+    map.addControl(whatIfBtn);
+
     // 4. FOURTH: Add collapsible menu button (same as before but removed routing-related parts)
     const CollapsibleMenuBtn = L.Control.extend({
       options: { position: "topleft" },
@@ -8937,21 +8974,6 @@ export const MapView = ({
         floodHotspotBtn.appendChild(floodHotspotIcon);
         floodHotspotBtn.title = "Toggle Flood Hotspots";
 
-        // 4. Flood forecast toggle button (New!)
-        const floodForecastBtn = L.DomUtil.create(
-          "button",
-          "leaflet-control-custom",
-          menuContainer
-        );
-        styleSubBtn(floodForecastBtn);
-        const floodForecastIcon = document.createElement("span");
-        floodForecastIcon.innerText = "⚠️";
-        floodForecastIcon.style.cssText = `
-            font-size: 20px;
-          `;
-        floodForecastBtn.appendChild(floodForecastIcon);
-        floodForecastBtn.title = "Toggle Flood Forecast (Next 7 days)";
-
         // Toggle menu function
         const toggleMenu = () => {
           isMenuOpen = !isMenuOpen;
@@ -9024,17 +9046,6 @@ export const MapView = ({
               ? "#06b6d4"
               : "#451ae0ff";
             floodHotspotIcon.style.opacity = newState ? "1" : "0.6";
-            return newState;
-          });
-        };
-
-        // Flood forecast toggle functionality (New!)
-        floodForecastBtn.onclick = (e: Event) => {
-          e.stopPropagation();
-          setShowFloodForecast((prev) => {
-            const newState = !prev;
-            floodForecastBtn.style.background = newState ? "#FF8C00" : "#451ae0ff";
-            floodForecastIcon.style.opacity = newState ? "1" : "0.6";
             return newState;
           });
         };
@@ -10108,7 +10119,6 @@ export const MapView = ({
           font-size: 14px;
           font-weight: 500;
           cursor: pointer;
-          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
           border-radius: 8px 0 0 8px;
           box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
           writing-mode: vertical-rl;
@@ -10366,13 +10376,6 @@ export const MapView = ({
               className="action-button report-button"
             >
               Report Issue
-            </button>
-
-            <button
-              onClick={() => onModalOpen("whatif")}
-              className="action-button whatif-button"
-            >
-              What-If Analysis
             </button>
 
             <button
@@ -11367,12 +11370,6 @@ export const MapView = ({
           setSelectedFloodHotspot(hotspot);
           setShowFloodHistoryModal(true);
         }}
-      />
-
-      {/* 🆕 Flood Forecast Pins (Predicted floods based on weather forecast) */}
-      <FloodForecastPins
-        map={mapRef.current}
-        isVisible={showFloodForecast}
       />
 
       {/* 🆕 Flood History Modal */}

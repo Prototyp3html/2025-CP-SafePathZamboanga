@@ -691,27 +691,59 @@ class LocalRoutingService:
         
         # ADD SIMULATED FLOOD ZONES to the flood cache
         if simulated_flood_zones:
-            logger.info(f"\nAdding {len(simulated_flood_zones)} simulated flood zones to routing calculation...")
-            for zone in simulated_flood_zones:
+            logger.info(f"\n🌊 Adding {len(simulated_flood_zones)} simulated flood zones to routing calculation...")
+            
+            # For each zone, mark ALL road points within the radius as flooded
+            for zone_idx, zone in enumerate(simulated_flood_zones):
                 zone_lat = zone.get('lat')
                 zone_lng = zone.get('lng')
                 zone_radius = zone.get('radius', 300)  # meters
                 zone_severity = zone.get('severity', 'moderate')
                 
+                if not zone_lat or not zone_lng:
+                    logger.warning(f"  ⚠️ Zone {zone_idx+1}: Missing lat/lng, skipping")
+                    continue
+                
                 # Add penalty factor based on severity
                 severity_factor = {'low': 1.2, 'moderate': 1.8, 'high': 2.5}.get(zone_severity, 1.5)
                 
-                logger.info(f"  Zone: ({zone_lat:.4f}, {zone_lng:.4f}) r={zone_radius}m severity={zone_severity} factor={severity_factor}x")
+                logger.info(f"  🎯 Zone {zone_idx+1}: ({zone_lat:.5f}, {zone_lng:.5f}) radius={zone_radius}m severity={zone_severity} factor={severity_factor}x")
                 
-                # Mark all coordinates within this radius as flooded
-                # We add them to flood_cache with adjusted keys to represent the zone
-                for lat_offset in [-0.0045, 0, 0.0045]:  # ~500m coverage
-                    for lng_offset in [-0.0045, 0, 0.0045]:
-                        coord_key = (round(zone_lat + lat_offset, 4), round(zone_lng + lng_offset, 4))
-                        if coord_key not in flood_cache:
-                            flood_cache[coord_key] = True
+                # Calculate grid coverage needed to fully cover the radius
+                # 0.0001 degrees ≈ 11 meters at equator
+                lat_range = zone_radius / 111000  # Convert meters to degrees latitude
+                lng_range = zone_radius / (111000 * math.cos(math.radians(zone_lat)))  # Adjust for longitude
+                
+                # Create a dense grid to ensure full coverage
+                grid_resolution = 0.0005  # ~55 meters per step
+                lat_steps = int(math.ceil(lat_range / grid_resolution)) + 1
+                lng_steps = int(math.ceil(lng_range / grid_resolution)) + 1
+                
+                flooded_count = 0
+                # Mark all coordinates within the circular radius as flooded
+                for lat_step in range(-lat_steps, lat_steps + 1):
+                    for lng_step in range(-lng_steps, lng_steps + 1):
+                        test_lat = zone_lat + (lat_step * grid_resolution)
+                        test_lng = zone_lng + (lng_step * grid_resolution)
+                        
+                        # Check if this point is actually within the circular radius
+                        # Using Haversine distance formula
+                        dlat = test_lat - zone_lat
+                        dlng = test_lng - zone_lng
+                        a = math.sin(math.radians(dlat)/2)**2 + math.cos(math.radians(zone_lat)) * math.cos(math.radians(test_lat)) * math.sin(math.radians(dlng)/2)**2
+                        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+                        distance = 6371000 * c  # Earth radius in meters
+                        
+                        if distance <= zone_radius:
+                            # Add to flood cache with 4-decimal precision (~ 11m resolution)
+                            coord_key = (round(test_lat, 4), round(test_lng, 4))
+                            if coord_key not in flood_cache:
+                                flood_cache[coord_key] = True
+                                flooded_count += 1
+                
+                logger.info(f"    ✅ Marked {flooded_count} grid points as flooded within {zone_radius}m radius")
             
-            logger.info(f"Flood cache now includes {len(flood_cache)} total flooded coordinate entries\n")
+            logger.info(f"🌊 Flood cache now has {len(flood_cache)} total flooded coordinate entries\n")
         
         open_set = [(0, start)]  # (f_score, coordinate)
         came_from = {}

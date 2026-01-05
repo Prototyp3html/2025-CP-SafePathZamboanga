@@ -84,9 +84,9 @@ export const NavigationBar = () => {
   return (
     <>
       {/* Desktop & Tablet Navigation */}
-      <nav className="bg-gradient-to-r from-blue-400 to-blue-600 text-white h-12 flex items-center px-4 md:px-6 shadow-lg w-full rounded-b-3xl">
+      <nav className="fixed top-0 left-0 right-0 bg-gradient-to-r from-blue-400 to-blue-600 text-white h-12 flex items-center px-4 md:px-6 shadow-lg w-full rounded-b-3xl pointer-events-auto z-50">
         {/* Logo - Clickable to go home */}
-        <Link to="/" className="flex items-center space-x-2 md:space-x-3 hover:opacity-80 transition-opacity duration-200 cursor-pointer">
+        <Link to="/" className="flex items-center space-x-2 md:space-x-3 hover:opacity-80 transition-opacity duration-200 cursor-pointer pointer-events-auto">
           <div className="flex items-center">
             <img
               src="/logo.png"
@@ -109,7 +109,7 @@ export const NavigationBar = () => {
               <Link
                 key={link.to}
                 to={link.to}
-                className={`px-3 xl:px-4 py-1 text-sm font-medium rounded transition-all duration-200 ${
+                className={`px-3 xl:px-4 py-1 text-sm font-medium rounded transition-all duration-200 pointer-events-auto ${
                   isActive(link.to)
                     ? "bg-blue-700 text-white shadow-sm"
                     : "text-white hover:bg-blue-500 hover:bg-opacity-40"
@@ -128,7 +128,7 @@ export const NavigationBar = () => {
               <Link
                 key={link.to}
                 to={link.to}
-                className={`px-2 py-1 text-xs font-medium rounded transition-all duration-200 ${
+                className={`px-2 py-1 text-xs font-medium rounded transition-all duration-200 pointer-events-auto ${
                   isActive(link.to)
                     ? "bg-blue-700 text-white shadow-sm"
                     : "text-white hover:bg-blue-500 hover:bg-opacity-40"
