@@ -136,20 +136,21 @@ export function FloodForecastPins({ map, isVisible }: FloodForecastPinsProps) {
       return;
     }
 
-    // Filter major roads only and sort by confidence
-    const majorRoads = selectedForecast.predicted_flooded_roads
-      .filter(road => road.is_major_road)
+    // Show top 10 MOST CONFIDENT roads (highest risk), then highlight major roads among them
+    const topRoads = selectedForecast.predicted_flooded_roads
       .sort((a, b) => b.confidence - a.confidence)
-      .slice(0, 10); // Show top 10 major roads by confidence
+      .slice(0, 10); // Show top 10 by confidence
     
-    const otherRoads = selectedForecast.predicted_flooded_roads.filter(road => !road.is_major_road);
+    // Separate major roads from all top roads
+    const majorRoads = topRoads.filter(road => road.is_major_road);
+    const allTopRoads = topRoads;
+    
+    console.log(`📍 Top 10 roads by confidence: ${allTopRoads.length}, Major roads among them: ${majorRoads.length}`);
 
-    console.log(`📍 Major roads (top 10): ${majorRoads.length}, Other roads: ${otherRoads.length}`);
-
-    // Get center point (average of all roads)
-    const center = majorRoads.length > 0 ? {
-      lat: majorRoads.reduce((sum, r) => sum + r.location.lat, 0) / majorRoads.length,
-      lon: majorRoads.reduce((sum, r) => sum + r.location.lon, 0) / majorRoads.length
+    // Get center point (average of top 10 roads)
+    const center = allTopRoads.length > 0 ? {
+      lat: allTopRoads.reduce((sum, r) => sum + r.location.lat, 0) / allTopRoads.length,
+      lon: allTopRoads.reduce((sum, r) => sum + r.location.lon, 0) / allTopRoads.length
     } : {
       lat: selectedForecast.predicted_flooded_roads[0].location.lat,
       lon: selectedForecast.predicted_flooded_roads[0].location.lon
@@ -221,22 +222,24 @@ export function FloodForecastPins({ map, isVisible }: FloodForecastPinsProps) {
     centerMarker.addTo(map);
     markersRef.current.push(centerMarker);
 
-    // Add markers for MAJOR ROADS only
-    console.log(`📍 Adding ${majorRoads.length} major road markers to map`);
-    majorRoads.forEach((pin, index) => {
-      console.log(`📍 Creating major road marker ${index + 1}: ${pin.road_name} (${pin.confidence}% confidence)`);
+    // Add markers for TOP 10 MOST CONFIDENT ROADS
+    console.log(`📍 Adding ${allTopRoads.length} road markers to map`);
+    allTopRoads.forEach((pin, index) => {
+      console.log(`📍 Creating marker ${index + 1}: ${pin.road_name} (${pin.confidence}% confidence) - Type: ${pin.highway_type}`);
 
-      // Create custom icon - Red for major roads
+      // Use different colors: Red for major roads, Orange for others
+      const isMajor = pin.is_major_road;
+      const bgColor = isMajor ? '#DC143C' : '#FF8C00';
       const icon = L.divIcon({
         html: `
-          <div class="flood-forecast-pin major-road-pin" style="background-color: #DC143C">
+          <div class="flood-forecast-pin" style="background-color: ${bgColor}">
             <div class="forecast-pin-content">
-              <span class="forecast-pin-icon">🛣️</span>
+              <span class="forecast-pin-icon">${isMajor ? '🛣️' : '⚠️'}</span>
               <span class="confidence-badge">${pin.confidence}%</span>
             </div>
           </div>
         `,
-        className: 'flood-forecast-icon major-road-icon',
+        className: 'flood-forecast-icon',
         iconSize: [50, 50],
         iconAnchor: [25, 50],
         popupAnchor: [0, -50]
@@ -251,9 +254,9 @@ export function FloodForecastPins({ map, isVisible }: FloodForecastPinsProps) {
       // Create popup content
       const popupContent = `
         <div class="flood-forecast-popup">
-          <h3>🛣️ Major Road</h3>
+          <h3>${isMajor ? '🛣️ Major Road' : '⚠️ High Risk Road'}</h3>
           <div class="road-name">${pin.road_name}</div>
-          <div class="forecast-badge major-road">
+          <div class="forecast-badge ${isMajor ? 'major-road' : ''}">
             <strong>⚠️ Will Flood</strong>
           </div>
           <div class="forecast-details">
@@ -275,7 +278,7 @@ export function FloodForecastPins({ map, isVisible }: FloodForecastPinsProps) {
             </div>
           </div>
           <div class="popup-warning">
-            ⚠️ CRITICAL: Major road closure likely - use alternative routes
+            ⚠️ High risk area - use alternative routes
           </div>
         </div>
       `;
@@ -342,13 +345,13 @@ export function FloodForecastPins({ map, isVisible }: FloodForecastPinsProps) {
                   <p className="selector-label">Select day to view impact zone:</p>
                   <div className="day-buttons">
                     {daysWithForecasts.map((forecast) => {
-                      const majorRoadCount = forecast.predicted_flooded_roads.filter(r => r.is_major_road).length;
+                      const totalRoads = forecast.predicted_flooded_roads.length;
                       return (
                         <button
                           key={forecast.date}
                           className={`day-btn ${selectedDay === forecast.date ? 'active' : ''}`}
                           onClick={() => setSelectedDay(forecast.date)}
-                          title={`${forecast.rainfall_mm}mm expected - ${majorRoadCount} major roads`}
+                          title={`${forecast.rainfall_mm}mm expected - ${totalRoads} affected roads (top 10 shown)`}
                         >
                           <span className="date">
                             {new Date(forecast.date).toLocaleDateString('en-US', {
@@ -358,7 +361,7 @@ export function FloodForecastPins({ map, isVisible }: FloodForecastPinsProps) {
                           </span>
                           <span className="rainfall">{forecast.rainfall_mm}mm</span>
                           <span className="count">
-                            {majorRoadCount > 0 ? `${majorRoadCount} major` : 'No major roads'}
+                            {forecast.predicted_flooded_roads.length > 0 ? `${Math.min(forecast.predicted_flooded_roads.length, 10)} roads` : 'No flooding'}
                           </span>
                         </button>
                       );
@@ -369,11 +372,10 @@ export function FloodForecastPins({ map, isVisible }: FloodForecastPinsProps) {
                 {selectedDay && (
                   <div className="forecast-summary">
                     <div className="summary-stat">
-                      <span className="stat-label">Top Major Roads:</span>
+                      <span className="stat-label">Highest Risk Roads:</span>
                       <span className="stat-value">
                         {Math.min(
-                          (forecasts.find(f => f.date === selectedDay)?.predicted_flooded_roads || [])
-                            .filter(r => r.is_major_road).length,
+                          (forecasts.find(f => f.date === selectedDay)?.predicted_flooded_roads || []).length,
                           10
                         )}/10 shown
                       </span>
@@ -395,15 +397,21 @@ export function FloodForecastPins({ map, isVisible }: FloodForecastPinsProps) {
 
                 <div className="forecast-legend">
                   <div className="legend-item">
-                    <div className="legend-color" style={{ backgroundColor: '#DC143C' }}></div>
-                    <span>Major Road (Highway/Trunk)</span>
+                    <span style={{ fontSize: '18px', marginRight: '8px' }}>🛣️</span>
+                    <span>Major Road (High Priority)</span>
                   </div>
                   <div className="legend-item">
-                    <div className="legend-color" style={{ backgroundColor: '#FF8C00' }}></div>
-                    <span>Flood Impact Zone</span>
+                    <span style={{ fontSize: '18px', marginRight: '8px' }}>⚠️</span>
+                    <span>High Risk Road</span>
+                  </div>
+                  <div className="legend-item">
+                    <div className="legend-color" style={{ backgroundColor: '#FFA500', opacity: '0.4' }}></div>
+                    <span>Flood Impact Radius</span>
                   </div>
                   <div className="legend-tip">
-                    💡 Hover in radius zone to see distance-based flood %
+                    💡 Orange markers = 95%+ confidence roads will flood
+                    <br />
+                    Hover in zone = See flooding severity by distance from center
                   </div>
                 </div>
               </>
@@ -431,17 +439,27 @@ export function FloodForecastPins({ map, isVisible }: FloodForecastPinsProps) {
             top: `${hoverInfo.position.y - 60}px`
           }}
         >
-          <div className="tooltip-title">Flood Analysis</div>
+          <div className="tooltip-title">📍 Zone Analysis</div>
           <div className="tooltip-row">
-            <span className="tooltip-label">Distance:</span>
+            <span className="tooltip-label">Distance from center:</span>
             <span className="tooltip-value">{(hoverInfo.distance / 1000).toFixed(2)}km</span>
           </div>
           <div className="tooltip-row">
-            <span className="tooltip-label">Flood Risk:</span>
+            <span className="tooltip-label">Zone severity:</span>
             <span className="tooltip-value" style={{
               color: hoverInfo.floodPercent > 70 ? '#DC143C' : hoverInfo.floodPercent > 40 ? '#FF8C00' : '#90EE90'
             }}>
-              {hoverInfo.floodPercent}%
+              {hoverInfo.floodPercent}%</span>
+          </div>
+          <div style={{
+            fontSize: '10px',
+            color: '#aaa',
+            marginTop: '6px',
+            borderTop: '1px solid #444',
+            paddingTop: '4px'
+          }}>
+            (Road markers show 95%+ confidence they will flood)
+          </div>
             </span>
           </div>
         </div>
