@@ -136,11 +136,15 @@ export function FloodForecastPins({ map, isVisible }: FloodForecastPinsProps) {
       return;
     }
 
-    // Filter major roads only
-    const majorRoads = selectedForecast.predicted_flooded_roads.filter(road => road.is_major_road);
+    // Filter major roads only and sort by confidence
+    const majorRoads = selectedForecast.predicted_flooded_roads
+      .filter(road => road.is_major_road)
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, 10); // Show top 10 major roads by confidence
+    
     const otherRoads = selectedForecast.predicted_flooded_roads.filter(road => !road.is_major_road);
 
-    console.log(`📍 Major roads: ${majorRoads.length}, Other roads: ${otherRoads.length}`);
+    console.log(`📍 Major roads (top 10): ${majorRoads.length}, Other roads: ${otherRoads.length}`);
 
     // Get center point (average of all roads)
     const center = majorRoads.length > 0 ? {
@@ -365,9 +369,13 @@ export function FloodForecastPins({ map, isVisible }: FloodForecastPinsProps) {
                 {selectedDay && (
                   <div className="forecast-summary">
                     <div className="summary-stat">
-                      <span className="stat-label">Major Roads:</span>
+                      <span className="stat-label">Top Major Roads:</span>
                       <span className="stat-value">
-                        {forecasts.find(f => f.date === selectedDay)?.predicted_flooded_roads.filter(r => r.is_major_road).length || 0}
+                        {Math.min(
+                          (forecasts.find(f => f.date === selectedDay)?.predicted_flooded_roads || [])
+                            .filter(r => r.is_major_road).length,
+                          10
+                        )}/10 shown
                       </span>
                     </div>
                     <div className="summary-stat">

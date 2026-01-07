@@ -281,8 +281,12 @@ class FloodForecastService:
                             road_name = props.get('name') or f"Road {props.get('osm_id', 'Unknown')}"
                             highway_type = props.get('highway_type', 'residential').lower()
                             
-                            # Determine if this is a major road (highway, trunk, primary)
-                            is_major = highway_type in ['motorway', 'trunk', 'primary', 'secondary', 'expressway', 'highway']
+                            # Determine if this is a major road (expanded criteria for Zamboanga)
+                            # Includes: highways, trunks, primary, secondary, tertiary, and named significant roads
+                            is_major = highway_type in [
+                                'motorway', 'trunk', 'primary', 'secondary', 'tertiary',
+                                'expressway', 'highway', 'arterial', 'main'
+                            ] or (road_name and road_name not in [f"Road {props.get('osm_id', 'Unknown')}"])
                             
                             forecast_day['predicted_flooded_roads'].append({
                                 'road_id': props.get('road_id') or props.get('osm_id') or 'unknown',
