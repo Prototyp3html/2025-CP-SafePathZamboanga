@@ -10345,10 +10345,9 @@ export const MapView = ({
 
       <div style={{ position: "relative" }}>
         {/* Alert Banner */}
-        {/* AlertBanner with proper styling */}
-        <AlertBanner />
+        {/* AlertBanner with proper styling - removed from here to be rendered at top level */}
 
-        <div style={{ position: "relative", marginTop: "60px" }}>
+        <div style={{ position: "relative" }}>
           <div
             id="map"
             style={{

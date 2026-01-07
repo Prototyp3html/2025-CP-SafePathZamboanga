@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { MapView } from "../components/MapView"; // Your new MapView component
 import { NavigationBar } from "../components/NavigationBar";
+import { AlertBanner } from "../components/AlertBanner";
 import { ReportModal } from "../components/ReportModal";
 import { EmergencyModal } from "../components/EmergencyModal";
 import { WelcomeModal } from "../components/WelcomeModal";
@@ -170,6 +171,7 @@ const Index = () => {
   return (
     <div className="h-screen bg-gray-50 font-sans overflow-hidden">
       <NavigationBar />
+      <AlertBanner />
 
       <main className="pt-12 md:pt-14 lg:pt-16 h-[calc(100vh-48px)] md:h-[calc(100vh-56px)] lg:h-[calc(100vh-64px)]">
         {/* Main Content Grid */}

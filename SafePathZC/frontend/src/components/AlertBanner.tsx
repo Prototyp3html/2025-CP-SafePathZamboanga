@@ -420,7 +420,7 @@ export const AlertBanner = () => {
         <div
           className={`${getSeverityColor(
             alert.severity
-          )} alert-banner-responsive alert-banner-enhanced relative z-40 shadow-lg transition-all duration-500 ease-in-out animate-slide-in`}
+          )} alert-banner-responsive alert-banner-enhanced fixed top-0 left-0 right-0 z-[9999] shadow-lg transition-all duration-500 ease-in-out animate-slide-in`}
         >
           <div className="absolute inset-0 bg-gradient-to-r from-black/10 to-transparent"></div>
           <div className="alert-banner-content relative py-4 px-4 sm:px-6 lg:px-8">
@@ -710,7 +710,7 @@ export const AlertBanner = () => {
             weatherStatus === "safe"
               ? "bg-gradient-to-r from-green-500 to-green-600"
               : "bg-gradient-to-r from-orange-500 to-red-500"
-          } alert-banner-responsive alert-banner-enhanced relative z-40 shadow-lg transition-all duration-500 ease-in-out animate-slide-in`}
+          } alert-banner-responsive alert-banner-enhanced fixed top-0 left-0 right-0 z-[9999] shadow-lg transition-all duration-500 ease-in-out animate-slide-in`}
         >
           <div className="absolute inset-0 bg-gradient-to-r from-black/10 to-transparent"></div>
           <div className="alert-banner-content relative py-4 px-4 sm:px-6 lg:px-8">
