@@ -20,6 +20,7 @@ import { AlertBanner } from "./AlertBanner";
 import { WeatherDashboard } from "./WeatherDashboard";
 import { FloodHotspotPins } from "./FloodHotspotPins";
 import { FloodHistoryModal } from "./FloodHistoryModal";
+import { FloodForecastPins } from "./FloodForecastPins";
 import {
   TransportationSelector,
   TransportationMode,
@@ -1315,6 +1316,7 @@ export const MapView = ({
     null
   );
   const [showFloodHistoryModal, setShowFloodHistoryModal] = useState(false);
+  const [showFloodForecast, setShowFloodForecast] = useState(false);
 
   // New states for route planner modal
   const [showRoutePlannerModal, setShowRoutePlannerModal] = useState(false);
@@ -9050,6 +9052,34 @@ export const MapView = ({
           });
         };
 
+        // 4. Flood forecast button (7-day predictions)
+        const floodForecastBtn = L.DomUtil.create(
+          "button",
+          "leaflet-control-custom",
+          menuContainer
+        );
+        styleSubBtn(floodForecastBtn);
+        const floodForecastIcon = document.createElement("span");
+        floodForecastIcon.innerText = "⚠️";
+        floodForecastIcon.style.cssText = `
+            font-size: 20px;
+          `;
+        floodForecastBtn.appendChild(floodForecastIcon);
+        floodForecastBtn.title = "7-Day Flood Forecast";
+
+        // Flood forecast toggle functionality
+        floodForecastBtn.onclick = (e: Event) => {
+          e.stopPropagation();
+          setShowFloodForecast((prev) => {
+            const newState = !prev;
+            floodForecastBtn.style.background = newState
+              ? "#FF8C00"
+              : "#451ae0ff";
+            floodForecastIcon.style.opacity = newState ? "1" : "0.6";
+            return newState;
+          });
+        };
+
         return container;
       },
     });
@@ -11379,6 +11409,12 @@ export const MapView = ({
           setShowFloodHistoryModal(false);
           setSelectedFloodHotspot(null);
         }}
+      />
+
+      {/* 🆕 Flood Forecast Pins - 7-Day Predictions */}
+      <FloodForecastPins
+        map={mapRef.current}
+        isVisible={showFloodForecast}
       />
 
       {/* 🆕 GPS Tracking Status Indicator - Draggable */}
