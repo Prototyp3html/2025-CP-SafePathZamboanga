@@ -449,7 +449,8 @@ export function FloodForecastPins({ map, isVisible }: FloodForecastPinsProps) {
             <span className="tooltip-value" style={{
               color: hoverInfo.floodPercent > 70 ? '#DC143C' : hoverInfo.floodPercent > 40 ? '#FF8C00' : '#90EE90'
             }}>
-              {hoverInfo.floodPercent}%</span>
+              {hoverInfo.floodPercent}%
+            </span>
           </div>
           <div style={{
             fontSize: '10px',
@@ -459,8 +460,6 @@ export function FloodForecastPins({ map, isVisible }: FloodForecastPinsProps) {
             paddingTop: '4px'
           }}>
             (Road markers show 95%+ confidence they will flood)
-          </div>
-            </span>
           </div>
         </div>
       )}
