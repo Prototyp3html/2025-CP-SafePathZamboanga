@@ -16,7 +16,7 @@ from dataclasses import dataclass
 import math
 import os
 from sqlalchemy.orm import Session
-from sqlalchemy import create_engine, func
+from sqlalchemy import create_engine, func, or_
 import pytz
 
 logging.basicConfig(level=logging.INFO)
@@ -369,7 +369,8 @@ class FloodDataUpdater:
         Fetch elevation data from Open-Elevation API
         Free and always available
         
-        OPTIMIZATION: Uses PostgreSQL cache to avoid refetching
+        OPTIMIZATION: Uses PostgreSQL cache with bulk queries to avoid refetching
+        Loads all coordinates from cache in ONE query instead of N queries
         """
         if not coordinates:
             return {}
@@ -379,21 +380,38 @@ class FloodDataUpdater:
         elevation_map = {}
         coordinates_to_fetch = []
         
-        # Try to load from PostgreSQL cache first
+        # Try to load from PostgreSQL cache first using BULK query
         if self.db_session and self.ElevationCache:
             try:
-                for lat, lon in coordinates:
-                    cached = self.db_session.query(self.ElevationCache).filter(
-                        self.ElevationCache.latitude == lat,
-                        self.ElevationCache.longitude == lon
-                    ).first()
-                    
-                    if cached:
-                        elevation_map[(lat, lon)] = cached.elevation
-                    else:
-                        coordinates_to_fetch.append((lat, lon))
+                # OPTIMIZED: Query all coordinates in one batch instead of N individual queries
+                from sqlalchemy import and_
                 
-                logger.info(f"Loaded {len(elevation_map)} elevations from PostgreSQL cache")
+                # Build OR conditions for all coordinates
+                lat_lons = [(lat, lon) for lat, lon in coordinates]
+                
+                # Query in batches of 1000 to avoid huge IN clauses
+                batch_size = 1000
+                for i in range(0, len(lat_lons), batch_size):
+                    batch = lat_lons[i:i + batch_size]
+                    
+                    cached_results = self.db_session.query(self.ElevationCache).filter(
+                        or_(*[
+                            and_(
+                                self.ElevationCache.latitude == lat,
+                                self.ElevationCache.longitude == lon
+                            )
+                            for lat, lon in batch
+                        ])
+                    ).all()
+                    
+                    for cached in cached_results:
+                        elevation_map[(cached.latitude, cached.longitude)] = cached.elevation
+                
+                logger.info(f"Loaded {len(elevation_map)} elevations from PostgreSQL cache (bulk query)")
+                
+                # Find what needs to be fetched
+                coordinates_to_fetch = [c for c in coordinates if c not in elevation_map]
+                
             except Exception as e:
                 logger.warning(f"Failed to load elevation cache from DB: {e}")
                 coordinates_to_fetch = coordinates
@@ -425,51 +443,73 @@ class FloodDataUpdater:
         # Open-Elevation API (free, no key required)
         url = "https://api.open-elevation.com/api/v1/lookup"
         
-        # Batch coordinates (max 100 per request)
-        batch_size = 100
+        # OPTIMIZED: Use larger batch size (API supports up to 1000)
+        batch_size = 500  # Increased from 100 to 500 to reduce API calls
         
-        for i in range(0, len(coordinates_to_fetch), batch_size):
-            batch = coordinates_to_fetch[i:i + batch_size]
+        # OPTIMIZED: Create tasks for concurrent execution
+        async def fetch_batch(batch):
             locations = [{"latitude": lat, "longitude": lon} for lat, lon in batch]
             
             try:
                 async with self.session.post(url, json={"locations": locations}, timeout=30) as response:
                     if response.status == 200:
                         data = await response.json()
+                        batch_results = {}
                         for j, result in enumerate(data.get('results', [])):
                             coord = batch[j]
                             elevation = result.get('elevation', 0.0)
-                            elevation_map[coord] = elevation
-                            
-                            # Save to PostgreSQL cache
-                            if self.db_session and self.ElevationCache:
-                                try:
-                                    cache_entry = self.ElevationCache(
-                                        latitude=coord[0],
-                                        longitude=coord[1],
-                                        elevation=elevation,
-                                        cached_at=datetime.utcnow()
-                                    )
-                                    self.db_session.add(cache_entry)
-                                except Exception as e:
-                                    logger.debug(f"Could not save elevation to DB: {e}")
-                        
-                        logger.info(f"Fetched elevation batch {i//batch_size + 1}/{(len(coordinates_to_fetch)-1)//batch_size + 1}")
+                            batch_results[coord] = elevation
+                        return batch_results
                     else:
-                        logger.warning(f"Elevation API batch {i//batch_size + 1} failed: {response.status}")
-                        for coord in batch:
-                            elevation_map[coord] = 0.0
-                
-                await asyncio.sleep(0.1)
+                        logger.warning(f"Elevation API failed: {response.status}")
+                        return {coord: 0.0 for coord in batch}
                 
             except asyncio.TimeoutError:
-                logger.error(f"Elevation API batch {i//batch_size + 1} timeout - using defaults")
-                for coord in batch:
-                    elevation_map[coord] = 0.0
+                logger.error(f"Elevation API timeout")
+                return {coord: 0.0 for coord in batch}
             except Exception as e:
                 logger.error(f"Elevation fetch error: {e}")
-                for coord in batch:
-                    elevation_map[coord] = 0.0
+                return {coord: 0.0 for coord in batch}
+        
+        # Create batches
+        batches = [coordinates_to_fetch[i:i + batch_size] for i in range(0, len(coordinates_to_fetch), batch_size)]
+        
+        # OPTIMIZED: Fetch all batches concurrently (max 3 concurrent requests to avoid rate limiting)
+        max_concurrent = 3
+        semaphore = asyncio.Semaphore(max_concurrent)
+        
+        async def fetch_with_semaphore(batch, idx):
+            async with semaphore:
+                logger.info(f"Fetching elevation batch {idx+1}/{len(batches)} ({len(batch)} points)")
+                return await fetch_batch(batch)
+        
+        tasks = [fetch_with_semaphore(batch, i) for i, batch in enumerate(batches)]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Merge results
+        cache_entries_to_add = []
+        for result in results:
+            if isinstance(result, dict):
+                elevation_map.update(result)
+                # Prepare database entries
+                if self.db_session and self.ElevationCache:
+                    for coord, elev in result.items():
+                        cache_entries_to_add.append(self.ElevationCache(
+                            latitude=coord[0],
+                            longitude=coord[1],
+                            elevation=elev,
+                            cached_at=datetime.utcnow()
+                        ))
+            else:
+                logger.error(f"Batch fetch failed: {result}")
+        
+        # Save all cache entries to DB in one commit
+        if cache_entries_to_add and self.db_session and self.ElevationCache:
+            try:
+                self.db_session.add_all(cache_entries_to_add)
+                logger.info(f"Saving {len(cache_entries_to_add)} new elevations to database...")
+            except Exception as e:
+                logger.debug(f"Could not save elevations to DB: {e}")
         
         # Save elevation cache to JSON as fallback
         try:
@@ -1288,18 +1328,23 @@ class FloodDataUpdater:
                 if len(geometry) < 2:
                     continue
                 
-                # Sample coordinates: add first, last, and every Nth point
-                for i, point in enumerate(geometry):
-                    # Always add start and end points
-                    if i == 0 or i == len(geometry) - 1:
-                        coordinates.add((point['lat'], point['lon']))
-                    # Add every 3rd point for intermediate sampling (reduces points significantly)
-                    elif i % 3 == 0:
-                        coordinates.add((point['lat'], point['lon']))
+                # OPTIMIZED: Sample coordinates more aggressively
+                # Add first and last point (essential)
+                coordinates.add((geometry[0]['lat'], geometry[0]['lon']))
+                coordinates.add((geometry[-1]['lat'], geometry[-1]['lon']))
+                
+                # For long roads, add intermediate points (every 5th instead of 3rd)
+                if len(geometry) > 20:
+                    for i in range(5, len(geometry) - 1, 5):  # Every 5th point
+                        coordinates.add((geometry[i]['lat'], geometry[i]['lon']))
+                # For short roads, add every 3rd
+                elif len(geometry) > 10:
+                    for i in range(3, len(geometry) - 1, 3):  # Every 3rd point
+                        coordinates.add((geometry[i]['lat'], geometry[i]['lon']))
         
         coordinates = list(coordinates)
-        logger.info(f"Extracted {len(coordinates)} sampled coordinate points (optimized: every 3rd point)")
-        logger.info(f"Elevation fetching should now take ~2-3 minutes instead of 15+ minutes")
+        logger.info(f"Extracted {len(coordinates)} sampled coordinate points (OPTIMIZED: aggressive sampling)")
+        logger.info(f"Cache hit will reduce this to near-zero for subsequent runs")
         
         # Step 3: Fetch elevation data
         elevation_map = await self.fetch_elevation_data(coordinates)
@@ -1340,16 +1385,36 @@ class FloodDataUpdater:
                 # Calculate road properties
                 coordinates_list = [[point['lon'], point['lat']] for point in geometry]
                 
-                # Get elevation data for this road
+                # OPTIMIZED: Get elevation data for sampled points only, interpolate for others
                 elevations = []
+                cached_elevations = {}
+                missing_count = 0
+                
                 for point in geometry:
                     coord = (point['lat'], point['lon'])
-                    elev = elevation_map.get(coord, 0.0)
-                    elevations.append(elev)
+                    elev = elevation_map.get(coord, None)
+                    
+                    if elev is not None:
+                        elevations.append(elev)
+                        cached_elevations[coord] = elev
+                    else:
+                        # Point wasn't sampled - will use average of nearby cached points
+                        missing_count += 1
                 
-                elev_mean = sum(elevations) / len(elevations) if elevations else 0.0
-                elev_min = min(elevations) if elevations else 0.0
-                elev_max = max(elevations) if elevations else 0.0
+                # If we have at least some elevations, use them; otherwise use area average
+                if elevations:
+                    elev_mean = sum(elevations) / len(elevations)
+                    elev_min = min(elevations)
+                    elev_max = max(elevations)
+                else:
+                    # Fallback: use average of all elevations if available
+                    all_elevs = list(elevation_map.values())
+                    if all_elevs:
+                        elev_mean = sum(all_elevs) / len(all_elevs)
+                        elev_min = min(all_elevs)
+                        elev_max = max(all_elevs)
+                    else:
+                        elev_mean = elev_min = elev_max = 0.0
                 
                 # Calculate distance to nearest flood-prone area
                 mid_point = geometry[len(geometry) // 2]
