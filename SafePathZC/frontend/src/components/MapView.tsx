@@ -201,7 +201,7 @@ interface MapViewProps {
     start: { lat: number; lng: number; address: string } | null,
     end: { lat: number; lng: number; address: string } | null
   ) => void;
-  activeModal?: "route" | "report" | "emergency" | "whatif" | null;
+  activeModal?: "route" | "report" | "emergency" | "simulation" | null;
 }
 
 type LatLngBounds = {
@@ -1561,12 +1561,12 @@ export const MapView = ({
       whatIfIncidentLayersRef.current = [];
     };
 
-    window.addEventListener("whatif-scenario-changed", onChanged);
-    window.addEventListener("whatif-scenario-clear", onClear);
+    window.addEventListener("simulation-scenario-changed", onChanged);
+    window.addEventListener("simulation-scenario-clear", onClear);
 
     return () => {
-      window.removeEventListener("whatif-scenario-changed", onChanged);
-      window.removeEventListener("whatif-scenario-clear", onClear);
+      window.removeEventListener("simulation-scenario-changed", onChanged);
+      window.removeEventListener("simulation-scenario-clear", onClear);
       onClear();
     };
   }, [mapRef.current]);
@@ -8811,14 +8811,14 @@ export const MapView = ({
     });
     map.addControl(zoomControl);
 
-    // 3. THIRD: Add What-If Analysis button beside zoom controls (icon-only)
-    const WhatIfBtn = L.Control.extend({
+    // 3. THIRD: Add Simulation button beside zoom controls (icon-only)
+    const SimulationBtn = L.Control.extend({
       options: { position: "topleft" },
       onAdd: function () {
         const btn = L.DomUtil.create("button", "leaflet-control-custom leaflet-bar");
         btn.style.cssText = `
-          background: #8b5cf6;
-          border: 2px solid #7c3aed;
+          background: #3b82f6;
+          border: 2px solid #1e40af;
           width: 40px;
           height: 40px;
           cursor: pointer;
@@ -8826,17 +8826,18 @@ export const MapView = ({
           display: flex;
           align-items: center;
           justify-content: center;
-          box-shadow: 0 2px 4px rgba(139, 92, 246, 0.3);
+          box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
           font-size: 18px;
           color: white;
           padding: 0;
           margin-left: 60px;
           margin-top: -64px;
+          transition: all 0.2s ease;
         `;
-        btn.title = "What-If Analysis";
+        btn.title = "Test Route Scenario";
 
         const icon = document.createElement("span");
-        icon.innerHTML = "⚡";
+        icon.innerHTML = "🧪";
         icon.style.display = "flex";
         icon.style.alignItems = "center";
         icon.style.justifyContent = "center";
@@ -8845,15 +8846,15 @@ export const MapView = ({
         btn.onclick = (e: Event) => {
           e.stopPropagation();
           if (onModalOpen) {
-            onModalOpen("whatif");
+            onModalOpen("simulation");
           }
         };
 
         return btn;
       },
     });
-    const whatIfBtn = new WhatIfBtn();
-    map.addControl(whatIfBtn);
+    const simulationBtn = new SimulationBtn();
+    map.addControl(simulationBtn);
 
     // 4. FOURTH: Add collapsible menu button (same as before but removed routing-related parts)
     const CollapsibleMenuBtn = L.Control.extend({
@@ -9651,10 +9652,10 @@ export const MapView = ({
     map.on("moveend", updateVisibility);
 
     const handleMapClick = async (event: L.LeafletMouseEvent) => {
-      // Forward clicks to What-If panel when it is open so users can drop flood zones/incidents
-      if (activeModal === "whatif") {
+      // Forward clicks to Simulation panel when it is open so users can drop flood zones/incidents
+      if (activeModal === "simulation") {
         window.dispatchEvent(
-          new CustomEvent("whatif-map-click", {
+          new CustomEvent("simulation-map-click", {
             detail: { lat: event.latlng.lat, lng: event.latlng.lng },
           })
         );

@@ -214,7 +214,7 @@ export const WhatIfSimulation = ({
     );
   };
 
-  // Listen for map clicks when What-If panel is open to pick a location for zones/incidents
+  // Listen for map clicks when Simulation panel is open to pick a location for zones/incidents
   useEffect(() => {
     const handleMapClickEvent = (event: Event) => {
       const customEvent = event as CustomEvent<{ lat: number; lng: number }>;
@@ -229,15 +229,15 @@ export const WhatIfSimulation = ({
       );
     };
 
-    window.addEventListener("whatif-map-click", handleMapClickEvent);
+    window.addEventListener("simulation-map-click", handleMapClickEvent);
     return () =>
-      window.removeEventListener("whatif-map-click", handleMapClickEvent);
+      window.removeEventListener("simulation-map-click", handleMapClickEvent);
   }, []);
 
   // Preview: notify MapView about current zones/incidents to draw overlays
   useEffect(() => {
     window.dispatchEvent(
-      new CustomEvent("whatif-scenario-changed", {
+      new CustomEvent("simulation-scenario-changed", {
         detail: {
           floodZones: scenario.floodZones,
           incidents: scenario.incidents,
@@ -249,7 +249,7 @@ export const WhatIfSimulation = ({
   // Clear overlays when panel closes/unmounts
   useEffect(() => {
     return () => {
-      window.dispatchEvent(new CustomEvent("whatif-scenario-clear"));
+      window.dispatchEvent(new CustomEvent("simulation-scenario-clear"));
     };
   }, []);
 

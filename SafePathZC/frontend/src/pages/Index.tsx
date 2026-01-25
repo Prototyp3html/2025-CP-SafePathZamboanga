@@ -14,7 +14,7 @@ import { notification } from "@/utils/notifications";
 
 const Index = () => {
   const [activeModal, setActiveModal] = useState<
-    "route" | "report" | "emergency" | "whatif" | null
+    "route" | "report" | "emergency" | "simulation" | null
   >(null);
   const [selectedRoute, setSelectedRoute] = useState<string>("");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -211,7 +211,7 @@ const Index = () => {
       {activeModal === "emergency" && (
         <EmergencyModal onClose={() => setActiveModal(null)} />
       )}
-      {activeModal === "whatif" && (
+      {activeModal === "simulation" && (
         <WhatIfSimulation
           onClose={() => setActiveModal(null)}
           onRunSimulation={handleRunSimulation}
