@@ -8815,7 +8815,13 @@ export const MapView = ({
     const WhatIfBtn = L.Control.extend({
       options: { position: "topleft" },
       onAdd: function () {
-        const btn = L.DomUtil.create("button", "leaflet-control-custom");
+        const container = L.DomUtil.create("div", "leaflet-bar leaflet-control");
+        container.style.position = "absolute";
+        container.style.left = "50px";
+        container.style.top = "10px";
+        container.style.zIndex = "1000";
+        
+        const btn = L.DomUtil.create("button", "leaflet-control-custom", container);
         btn.style.background = "#8b5cf6";
         btn.style.border = "2px solid #7c3aed";
         btn.style.width = "40px";
@@ -8825,13 +8831,10 @@ export const MapView = ({
         btn.style.display = "flex";
         btn.style.alignItems = "center";
         btn.style.justifyContent = "center";
-        btn.style.marginLeft = "5px";
-        btn.style.marginTop = "31px";
         btn.style.boxShadow = "0 2px 4px rgba(139, 92, 246, 0.3)";
         btn.style.fontSize = "18px";
         btn.style.color = "white";
         btn.style.padding = "0";
-        btn.style.zIndex = "1000";
         btn.title = "What-If Analysis";
 
         const icon = document.createElement("span");
@@ -8848,7 +8851,7 @@ export const MapView = ({
           }
         };
 
-        return btn;
+        return container;
       },
     });
     const whatIfBtn = new WhatIfBtn();
