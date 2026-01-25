@@ -195,7 +195,7 @@ interface Waypoint {
 }
 
 interface MapViewProps {
-  onModalOpen?: (modal: "report" | "emergency" | "whatif") => void;
+  onModalOpen?: (modal: "report" | "emergency" | "simulation") => void;
   simulationScenario?: any;
   onLocationUpdate?: (
     start: { lat: number; lng: number; address: string } | null,
