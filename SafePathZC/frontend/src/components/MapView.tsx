@@ -8826,14 +8826,12 @@ export const MapView = ({
         btn.style.alignItems = "center";
         btn.style.justifyContent = "center";
         btn.style.marginLeft = "5px";
-        btn.style.marginTop = "0px";
+        btn.style.marginTop = "31px";
         btn.style.boxShadow = "0 2px 4px rgba(139, 92, 246, 0.3)";
         btn.style.fontSize = "18px";
         btn.style.color = "white";
         btn.style.padding = "0";
-        btn.style.position = "absolute";
-        btn.style.left = "50px";
-        btn.style.top = "10px";
+        btn.style.zIndex = "1000";
         btn.title = "What-If Analysis";
 
         const icon = document.createElement("span");

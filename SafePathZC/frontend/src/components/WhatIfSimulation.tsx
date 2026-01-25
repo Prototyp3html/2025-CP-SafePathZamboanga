@@ -1,5 +1,15 @@
 import { useState, useEffect } from "react";
 import { notification } from "@/utils/notifications";
+import { searchZamboCityLocations } from "@/utils/zamboCityLocations";
+
+interface LocationSuggestion {
+  display_name: string;
+  lat: string;
+  lon: string;
+  place_id?: string;
+  type?: string;
+  isLocal?: boolean;
+}
 
 // Add animation styles
 const slideInLeftAnimation = `
@@ -70,6 +80,40 @@ export const WhatIfSimulation = ({
     description: "",
   });
 
+  // Location selection states
+  const [startLocationInput, setStartLocationInput] = useState<string>(
+    startLocation?.address || ""
+  );
+  const [endLocationInput, setEndLocationInput] = useState<string>(
+    endLocation?.address || ""
+  );
+  const [selectedStartLocation, setSelectedStartLocation] =
+    useState<LocationSuggestion | null>(
+      startLocation
+        ? {
+            display_name: startLocation.address,
+            lat: startLocation.lat.toString(),
+            lon: startLocation.lng.toString(),
+          }
+        : null
+    );
+  const [selectedEndLocation, setSelectedEndLocation] =
+    useState<LocationSuggestion | null>(
+      endLocation
+        ? {
+            display_name: endLocation.address,
+            lat: endLocation.lat.toString(),
+            lon: endLocation.lng.toString(),
+          }
+        : null
+    );
+  const [startSuggestions, setStartSuggestions] = useState<LocationSuggestion[]>(
+    []
+  );
+  const [endSuggestions, setEndSuggestions] = useState<LocationSuggestion[]>([]);
+  const [showStartSuggestions, setShowStartSuggestions] = useState(false);
+  const [showEndSuggestions, setShowEndSuggestions] = useState(false);
+
   const [selectedLocation, setSelectedLocation] = useState<{
     lat: number;
     lng: number;
@@ -80,6 +124,95 @@ export const WhatIfSimulation = ({
   const [floodZoneSeverity, setFloodZoneSeverity] = useState("moderate");
   const [incidentType, setIncidentType] = useState("damage");
   const [incidentSeverity, setIncidentSeverity] = useState("moderate");
+
+  // Search locations function
+  const searchLocations = async (
+    query: string
+  ): Promise<LocationSuggestion[]> => {
+    if (query.length < 2) return [];
+    try {
+      const results = await searchZamboCityLocations(query, 8);
+      return results.map((location: any, index: number) => ({
+        display_name: location.displayName,
+        lat: location.lat.toString(),
+        lon: location.lng.toString(),
+        place_id: `zambo_${location.name
+          .toLowerCase()
+          .replace(/\s+/g, "_")}_${index}`,
+        type: location.type,
+        isLocal: true,
+      }));
+    } catch (error) {
+      console.error("Error searching locations:", error);
+      return [];
+    }
+  };
+
+  // Handle start location input change
+  const handleStartLocationInputChange = async (value: string) => {
+    setStartLocationInput(value);
+    if (selectedStartLocation && value !== selectedStartLocation.display_name) {
+      setSelectedStartLocation(null);
+    }
+
+    if (value.length >= 3) {
+      const suggestions = await searchLocations(value);
+      setStartSuggestions(suggestions);
+      setShowStartSuggestions(true);
+    } else {
+      setStartSuggestions([]);
+      setShowStartSuggestions(false);
+    }
+  };
+
+  // Handle end location input change
+  const handleEndLocationInputChange = async (value: string) => {
+    setEndLocationInput(value);
+    if (selectedEndLocation && value !== selectedEndLocation.display_name) {
+      setSelectedEndLocation(null);
+    }
+
+    if (value.length >= 3) {
+      const suggestions = await searchLocations(value);
+      setEndSuggestions(suggestions);
+      setShowEndSuggestions(true);
+    } else {
+      setEndSuggestions([]);
+      setShowEndSuggestions(false);
+    }
+  };
+
+  // Handle selecting start location
+  const handleSelectStartLocation = (location: LocationSuggestion) => {
+    setSelectedStartLocation(location);
+    setStartLocationInput(location.display_name);
+    setStartSuggestions([]);
+    setShowStartSuggestions(false);
+    setScenario((prev) => ({
+      ...prev,
+      start_lat: parseFloat(location.lat),
+      start_lng: parseFloat(location.lon),
+    }));
+    notification.success(
+      `Start location set to ${location.display_name.split(",")[0]}`
+    );
+  };
+
+  // Handle selecting end location
+  const handleSelectEndLocation = (location: LocationSuggestion) => {
+    setSelectedEndLocation(location);
+    setEndLocationInput(location.display_name);
+    setEndSuggestions([]);
+    setShowEndSuggestions(false);
+    setScenario((prev) => ({
+      ...prev,
+      end_lat: parseFloat(location.lat),
+      end_lng: parseFloat(location.lon),
+    }));
+    notification.success(
+      `End location set to ${location.display_name.split(",")[0]}`
+    );
+  };
 
   // Listen for map clicks when What-If panel is open to pick a location for zones/incidents
   useEffect(() => {
@@ -121,7 +254,7 @@ export const WhatIfSimulation = ({
   }, []);
 
   useEffect(() => {
-    // Update scenario when start/end locations change
+    // Update scenario when start/end locations change from props
     if (startLocation && endLocation) {
       setScenario((prev) => ({
         ...prev,
@@ -324,6 +457,103 @@ export const WhatIfSimulation = ({
           className="flex-1 overflow-y-auto p-4 space-y-4"
           style={{ maxHeight: "calc(100vh - 180px)" }}
         >
+          {/* Route Destination Selection */}
+          <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-lg p-3 border border-indigo-200">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+              <i className="fas fa-map-marker-alt text-indigo-600 mr-2 text-sm"></i>
+              Select Route
+            </h3>
+
+            {/* Start Location Input */}
+            <div className="mb-3" data-location-input>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                📍 Start Location
+              </label>
+              <input
+                type="text"
+                value={startLocationInput}
+                onChange={(e) => handleStartLocationInputChange(e.target.value)}
+                placeholder="Search start location..."
+                className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                autoComplete="off"
+              />
+              {showStartSuggestions && startSuggestions.length > 0 && (
+                <div
+                  className="absolute bg-white border border-gray-300 rounded-lg mt-1 w-80 shadow-lg z-50 max-h-48 overflow-y-auto"
+                  data-suggestions-dropdown
+                >
+                  {startSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion.place_id}
+                      onClick={() => handleSelectStartLocation(suggestion)}
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-indigo-100 border-b border-gray-200 last:border-b-0 transition-colors"
+                    >
+                      <p className="font-medium text-gray-900">
+                        {suggestion.display_name.split(",")[0]}
+                      </p>
+                      <p className="text-gray-500 text-xs">
+                        {suggestion.display_name.split(",").slice(1).join(",")}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {selectedStartLocation && (
+                <p className="text-xs text-green-600 mt-1">
+                  ✓ {selectedStartLocation.display_name.split(",")[0]}
+                </p>
+              )}
+            </div>
+
+            {/* End Location Input */}
+            <div className="mb-3" data-location-input>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                🎯 End Location
+              </label>
+              <input
+                type="text"
+                value={endLocationInput}
+                onChange={(e) => handleEndLocationInputChange(e.target.value)}
+                placeholder="Search end location..."
+                className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                autoComplete="off"
+              />
+              {showEndSuggestions && endSuggestions.length > 0 && (
+                <div
+                  className="absolute bg-white border border-gray-300 rounded-lg mt-1 w-80 shadow-lg z-50 max-h-48 overflow-y-auto"
+                  data-suggestions-dropdown
+                >
+                  {endSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion.place_id}
+                      onClick={() => handleSelectEndLocation(suggestion)}
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-indigo-100 border-b border-gray-200 last:border-b-0 transition-colors"
+                    >
+                      <p className="font-medium text-gray-900">
+                        {suggestion.display_name.split(",")[0]}
+                      </p>
+                      <p className="text-gray-500 text-xs">
+                        {suggestion.display_name.split(",").slice(1).join(",")}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {selectedEndLocation && (
+                <p className="text-xs text-green-600 mt-1">
+                  ✓ {selectedEndLocation.display_name.split(",")[0]}
+                </p>
+              )}
+            </div>
+
+            {selectedStartLocation && selectedEndLocation && (
+              <div className="bg-green-50 border border-green-200 rounded p-2 text-green-800 text-xs">
+                <i className="fas fa-check-circle mr-1"></i>
+                Both locations selected
+              </div>
+            )}
+          </div>
+
           {/* Route Information */}
           <div
             className={`rounded-lg p-3 border ${
@@ -338,25 +568,27 @@ export const WhatIfSimulation = ({
                   hasValidRoute ? "text-green-600" : "text-yellow-600"
                 }`}
               ></i>
-              Your Route
+              Route Summary
             </h3>
             <div className="space-y-2 text-xs">
               <div>
                 <p className="text-gray-600 font-medium">📍 Start:</p>
                 <p className="text-gray-900 font-semibold">
-                  {startLocation?.address || "Not selected"}
+                  {selectedStartLocation?.display_name.split(",")[0] ||
+                    "Not selected"}
                 </p>
               </div>
               <div>
                 <p className="text-gray-600 font-medium">🎯 End:</p>
                 <p className="text-gray-900 font-semibold">
-                  {endLocation?.address || "Not selected"}
+                  {selectedEndLocation?.display_name.split(",")[0] ||
+                    "Not selected"}
                 </p>
               </div>
               {!hasValidRoute && (
                 <div className="bg-yellow-100 border border-yellow-300 rounded p-2 text-yellow-800 text-xs font-medium">
                   <i className="fas fa-exclamation-circle mr-1"></i>
-                  Select start & end locations on the map
+                  Select both start & end locations
                 </div>
               )}
             </div>
