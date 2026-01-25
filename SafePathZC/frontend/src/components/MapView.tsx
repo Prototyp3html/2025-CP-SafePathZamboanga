@@ -8815,26 +8815,26 @@ export const MapView = ({
     const WhatIfBtn = L.Control.extend({
       options: { position: "topleft" },
       onAdd: function () {
-        const container = L.DomUtil.create("div", "leaflet-bar leaflet-control");
-        container.style.position = "absolute";
-        container.style.left = "50px";
-        container.style.top = "10px";
-        container.style.zIndex = "1000";
-        
-        const btn = L.DomUtil.create("button", "leaflet-control-custom", container);
-        btn.style.background = "#8b5cf6";
-        btn.style.border = "2px solid #7c3aed";
-        btn.style.width = "40px";
-        btn.style.height = "40px";
-        btn.style.cursor = "pointer";
-        btn.style.borderRadius = "4px";
-        btn.style.display = "flex";
-        btn.style.alignItems = "center";
-        btn.style.justifyContent = "center";
-        btn.style.boxShadow = "0 2px 4px rgba(139, 92, 246, 0.3)";
-        btn.style.fontSize = "18px";
-        btn.style.color = "white";
-        btn.style.padding = "0";
+        const btn = L.DomUtil.create("button", "leaflet-control-custom leaflet-bar");
+        btn.style.cssText = `
+          background: #8b5cf6;
+          border: 2px solid #7c3aed;
+          width: 40px;
+          height: 40px;
+          cursor: pointer;
+          border-radius: 4px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 2px 4px rgba(139, 92, 246, 0.3);
+          font-size: 18px;
+          color: white;
+          padding: 0;
+          position: fixed;
+          left: 50px;
+          top: 10px;
+          z-index: 1000;
+        `;
         btn.title = "What-If Analysis";
 
         const icon = document.createElement("span");
@@ -8851,7 +8851,7 @@ export const MapView = ({
           }
         };
 
-        return container;
+        return btn;
       },
     });
     const whatIfBtn = new WhatIfBtn();
