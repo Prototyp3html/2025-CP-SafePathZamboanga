@@ -8811,7 +8811,7 @@ export const MapView = ({
     });
     map.addControl(zoomControl);
 
-    // 3. THIRD: Add What-If Analysis button (icon-only)
+    // 3. THIRD: Add What-If Analysis button beside zoom controls (icon-only)
     const WhatIfBtn = L.Control.extend({
       options: { position: "topleft" },
       onAdd: function () {
@@ -8825,11 +8825,15 @@ export const MapView = ({
         btn.style.display = "flex";
         btn.style.alignItems = "center";
         btn.style.justifyContent = "center";
-        btn.style.marginTop = "5px";
+        btn.style.marginLeft = "5px";
+        btn.style.marginTop = "0px";
         btn.style.boxShadow = "0 2px 4px rgba(139, 92, 246, 0.3)";
         btn.style.fontSize = "18px";
         btn.style.color = "white";
         btn.style.padding = "0";
+        btn.style.position = "absolute";
+        btn.style.left = "50px";
+        btn.style.top = "10px";
         btn.title = "What-If Analysis";
 
         const icon = document.createElement("span");
