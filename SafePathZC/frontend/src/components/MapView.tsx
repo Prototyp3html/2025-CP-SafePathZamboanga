@@ -8830,10 +8830,8 @@ export const MapView = ({
           font-size: 18px;
           color: white;
           padding: 0;
-          position: fixed;
-          left: 50px;
-          top: 10px;
-          z-index: 1000;
+          margin-left: 50px;
+          margin-top: -80px;
         `;
         btn.title = "What-If Analysis";
 
