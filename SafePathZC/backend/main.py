@@ -390,7 +390,7 @@ app.include_router(forum_router)
 app.include_router(flood_routing_router)  # Flood-aware routing with 3 distinct routes
 app.include_router(geocoding_router, prefix="/api/geocoding", tags=["geocoding"])
 app.include_router(terrain_router)  # Terrain data and elevation heatmap
-app.include_router(cron_router)  # Scheduled jobs (flood data updates every 6 hours)
+app.include_router(cron_router)  # Scheduled jobs (flood data updates every 3 hours)
 app.include_router(flood_history_router)  # Flood history and hotspot tracking
 app.include_router(flood_forecast_router)  # Flood predictions based on weather forecast
 
@@ -3102,17 +3102,17 @@ global_last_traffic_cache_time = None
 background_tasks_running = False
 
 async def flood_data_update_loop():
-    """Background task that updates flood data every 60 minutes"""
+    """Background task that updates flood data every 180 minutes (3 hours)"""
     from services.flood_data_updater import update_flood_data
     
     logger.info("ðŸ”„ Flood data auto-update scheduler started")
-    logger.info("Will update every 60 minutes (1 hour)")
+    logger.info("Will update every 180 minutes (3 hours)")
     
     first_run = True
     
     while background_tasks_running:
         try:
-            update_interval_seconds = 60 * 60  # 60 minutes in seconds
+            update_interval_seconds = 180 * 60  # 180 minutes (3 hours) in seconds
             
             # Run immediately on startup, then wait between updates
             if first_run:
