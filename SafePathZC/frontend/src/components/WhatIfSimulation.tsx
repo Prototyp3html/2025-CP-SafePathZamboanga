@@ -426,11 +426,11 @@ export const WhatIfSimulation = ({
 
   return (
     <div className="fixed inset-0 z-50 pointer-events-none">
-      {/* Semi-transparent backdrop - clickable to pass through to map */}
-      <div className="absolute inset-0 bg-black bg-opacity-20 pointer-events-auto" onClick={onClose}></div>
+      {/* Semi-transparent backdrop */}
+      <div className="absolute inset-0 bg-black bg-opacity-30 pointer-events-none"></div>
 
       {/* Side Panel */}
-      <div className="absolute left-0 top-0 bottom-0 w-[85%] sm:w-[90%] md:w-[500px] lg:max-w-md bg-white shadow-2xl overflow-hidden flex flex-col pointer-events-auto animate-slide-in-left">
+      <div className="absolute left-0 top-0 bottom-0 w-full sm:w-[90%] md:w-[500px] lg:max-w-md bg-white shadow-2xl overflow-hidden flex flex-col pointer-events-auto animate-slide-in-left">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-3 sm:p-4 flex-shrink-0">
           <div className="flex items-center justify-between">
@@ -440,7 +440,7 @@ export const WhatIfSimulation = ({
                 Route Simulation
               </h2>
               <p className="text-blue-100 text-xs mt-1">
-                🧪 Tap map to add zones/incidents
+                🧪 Test your route with different weather & conditions
               </p>
             </div>
             <button
@@ -673,9 +673,42 @@ export const WhatIfSimulation = ({
             {isAddingFloodZone && (
               <div className="bg-orange-100 border border-orange-300 rounded-lg p-3 mb-3">
                 <p className="text-xs text-orange-800 mb-2 font-medium">
-                  <i className="fas fa-hand-pointer mr-1"></i>
-                  Click on the map → Configure below
+                  <i className="fas fa-map-marked-alt mr-1"></i>
+                  Click on the mini-map below to select location
                 </p>
+                
+                {/* Mini Map Preview */}
+                <div 
+                  className="w-full h-48 bg-gray-200 rounded-lg mb-3 border-2 border-orange-400 overflow-hidden relative cursor-crosshair"
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    
+                    // Zamboanga bounds: lat 6.8-7.2, lng 122.0-122.3
+                    const lat = 7.2 - (y / rect.height) * 0.4;
+                    const lng = 122.0 + (x / rect.width) * 0.3;
+                    
+                    setSelectedLocation({ lat, lng });
+                    notification.info(`Location selected: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+                  }}
+                >
+                  {/* Iframe showing the actual map */}
+                  <iframe
+                    src={`https://www.openstreetmap.org/export/embed.html?bbox=122.0,6.8,122.3,7.2&layer=mapnik&marker=${selectedLocation ? `${selectedLocation.lat},${selectedLocation.lng}` : '6.9,122.07'}`}
+                    style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }}
+                    title="Mini Map"
+                  />
+                  <div className="absolute top-2 left-2 bg-white px-2 py-1 rounded shadow text-xs font-medium">
+                    📍 Tap to select
+                  </div>
+                  {selectedLocation && (
+                    <div className="absolute bottom-2 left-2 bg-green-500 text-white px-2 py-1 rounded shadow text-xs font-medium">
+                      ✓ Location selected
+                    </div>
+                  )}
+                </div>
+
                 {selectedLocation && (
                   <div className="space-y-2">
                     <div>
@@ -779,9 +812,42 @@ export const WhatIfSimulation = ({
             {isAddingIncident && (
               <div className="bg-yellow-100 border border-yellow-300 rounded-lg p-3 mb-3">
                 <p className="text-xs text-yellow-800 mb-2 font-medium">
-                  <i className="fas fa-hand-pointer mr-1"></i>
-                  Click on the map → Configure below
+                  <i className="fas fa-map-marked-alt mr-1"></i>
+                  Click on the mini-map below to select location
                 </p>
+                
+                {/* Mini Map Preview */}
+                <div 
+                  className="w-full h-48 bg-gray-200 rounded-lg mb-3 border-2 border-yellow-400 overflow-hidden relative cursor-crosshair"
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    
+                    // Zamboanga bounds: lat 6.8-7.2, lng 122.0-122.3
+                    const lat = 7.2 - (y / rect.height) * 0.4;
+                    const lng = 122.0 + (x / rect.width) * 0.3;
+                    
+                    setSelectedLocation({ lat, lng });
+                    notification.info(`Location selected: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+                  }}
+                >
+                  {/* Iframe showing the actual map */}
+                  <iframe
+                    src={`https://www.openstreetmap.org/export/embed.html?bbox=122.0,6.8,122.3,7.2&layer=mapnik&marker=${selectedLocation ? `${selectedLocation.lat},${selectedLocation.lng}` : '6.9,122.07'}`}
+                    style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }}
+                    title="Mini Map"
+                  />
+                  <div className="absolute top-2 left-2 bg-white px-2 py-1 rounded shadow text-xs font-medium">
+                    📍 Tap to select
+                  </div>
+                  {selectedLocation && (
+                    <div className="absolute bottom-2 left-2 bg-green-500 text-white px-2 py-1 rounded shadow text-xs font-medium">
+                      ✓ Location selected
+                    </div>
+                  )}
+                </div>
+
                 {selectedLocation && (
                   <div className="space-y-2">
                     <div>
