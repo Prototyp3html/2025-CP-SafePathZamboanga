@@ -426,11 +426,11 @@ export const WhatIfSimulation = ({
 
   return (
     <div className="fixed inset-0 z-50 pointer-events-none">
-      {/* Semi-transparent backdrop */}
-      <div className="absolute inset-0 bg-black bg-opacity-30 pointer-events-none"></div>
+      {/* Semi-transparent backdrop - clickable to pass through to map */}
+      <div className="absolute inset-0 bg-black bg-opacity-20 pointer-events-auto" onClick={onClose}></div>
 
       {/* Side Panel */}
-      <div className="absolute left-0 top-0 bottom-0 w-full sm:w-[90%] md:w-[500px] lg:max-w-md bg-white shadow-2xl overflow-hidden flex flex-col pointer-events-auto animate-slide-in-left">
+      <div className="absolute left-0 top-0 bottom-0 w-[85%] sm:w-[90%] md:w-[500px] lg:max-w-md bg-white shadow-2xl overflow-hidden flex flex-col pointer-events-auto animate-slide-in-left">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-3 sm:p-4 flex-shrink-0">
           <div className="flex items-center justify-between">
@@ -440,7 +440,7 @@ export const WhatIfSimulation = ({
                 Route Simulation
               </h2>
               <p className="text-blue-100 text-xs mt-1">
-                🧪 Test your route with different weather & conditions
+                🧪 Tap map to add zones/incidents
               </p>
             </div>
             <button
