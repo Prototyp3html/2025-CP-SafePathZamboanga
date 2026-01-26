@@ -672,15 +672,22 @@ export const WhatIfSimulation = ({
 
             {isAddingFloodZone && (
               <div className="bg-orange-100 border border-orange-300 rounded-lg p-3 mb-3">
-                <p className="text-xs text-orange-800 mb-2 font-medium">
+                <p className="text-xs text-orange-800 mb-2 font-medium lg:hidden">
                   <i className="fas fa-map-marked-alt mr-1"></i>
                   Click on the mini-map below to select location
                 </p>
+                <p className="text-xs text-blue-800 mb-2 font-medium hidden lg:block">
+                  <i className="fas fa-map-marked-alt mr-1"></i>
+                  Click on the main map to select location
+                </p>
                 
-                {/* Mini Map Preview */}
+                {/* Mini Map Preview - Mobile/Tablet Only */}
                 <div 
-                  className="w-full h-48 bg-gray-200 rounded-lg mb-3 border-2 border-orange-400 overflow-hidden relative cursor-crosshair"
+                  className="w-full h-48 lg:h-24 bg-gray-200 rounded-lg mb-3 border-2 border-orange-400 overflow-hidden relative cursor-crosshair lg:cursor-default"
                   onClick={(e) => {
+                    // Only allow clicking on mobile/tablet
+                    if (window.innerWidth >= 1024) return;
+                    
                     const rect = e.currentTarget.getBoundingClientRect();
                     const x = e.clientX - rect.left;
                     const y = e.clientY - rect.top;
@@ -695,15 +702,27 @@ export const WhatIfSimulation = ({
                 >
                   {/* Iframe showing the actual map */}
                   <iframe
-                    src={`https://www.openstreetmap.org/export/embed.html?bbox=122.0,6.8,122.3,7.2&layer=mapnik&marker=${selectedLocation ? `${selectedLocation.lat},${selectedLocation.lng}` : '6.9,122.07'}`}
+                    src={
+                      selectedLocation
+                        ? `https://www.openstreetmap.org/export/embed.html?bbox=${selectedLocation.lng - 0.01},${selectedLocation.lat - 0.008},${selectedLocation.lng + 0.01},${selectedLocation.lat + 0.008}&layer=mapnik&marker=${selectedLocation.lat},${selectedLocation.lng}`
+                        : `https://www.openstreetmap.org/export/embed.html?bbox=122.0,6.8,122.3,7.2&layer=mapnik&marker=6.9,122.07`
+                    }
                     style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }}
                     title="Mini Map"
                   />
-                  <div className="absolute top-2 left-2 bg-white px-2 py-1 rounded shadow text-xs font-medium">
+                  {/* Mobile/Tablet Instructions */}
+                  <div className="absolute top-2 left-2 bg-white px-2 py-1 rounded shadow text-xs font-medium lg:hidden">
                     📍 Tap to select
                   </div>
+                  {/* Desktop Instructions */}
+                  <div className="hidden lg:flex absolute inset-0 bg-blue-900 bg-opacity-60 items-center justify-center">
+                    <div className="bg-white px-4 py-2 rounded-lg shadow-lg text-center">
+                      <p className="text-sm font-semibold text-gray-900">🖱️ Click on the main map</p>
+                      <p className="text-xs text-gray-600 mt-1">to select flood zone location</p>
+                    </div>
+                  </div>
                   {selectedLocation && (
-                    <div className="absolute bottom-2 left-2 bg-green-500 text-white px-2 py-1 rounded shadow text-xs font-medium">
+                    <div className="absolute bottom-2 left-2 bg-green-500 text-white px-2 py-1 rounded shadow text-xs font-medium lg:hidden">
                       ✓ Location selected
                     </div>
                   )}
@@ -811,15 +830,22 @@ export const WhatIfSimulation = ({
 
             {isAddingIncident && (
               <div className="bg-yellow-100 border border-yellow-300 rounded-lg p-3 mb-3">
-                <p className="text-xs text-yellow-800 mb-2 font-medium">
+                <p className="text-xs text-yellow-800 mb-2 font-medium lg:hidden">
                   <i className="fas fa-map-marked-alt mr-1"></i>
                   Click on the mini-map below to select location
                 </p>
+                <p className="text-xs text-blue-800 mb-2 font-medium hidden lg:block">
+                  <i className="fas fa-map-marked-alt mr-1"></i>
+                  Click on the main map to select location
+                </p>
                 
-                {/* Mini Map Preview */}
+                {/* Mini Map Preview - Mobile/Tablet Only */}
                 <div 
-                  className="w-full h-48 bg-gray-200 rounded-lg mb-3 border-2 border-yellow-400 overflow-hidden relative cursor-crosshair"
+                  className="w-full h-48 lg:h-24 bg-gray-200 rounded-lg mb-3 border-2 border-yellow-400 overflow-hidden relative cursor-crosshair lg:cursor-default"
                   onClick={(e) => {
+                    // Only allow clicking on mobile/tablet
+                    if (window.innerWidth >= 1024) return;
+                    
                     const rect = e.currentTarget.getBoundingClientRect();
                     const x = e.clientX - rect.left;
                     const y = e.clientY - rect.top;
@@ -834,15 +860,27 @@ export const WhatIfSimulation = ({
                 >
                   {/* Iframe showing the actual map */}
                   <iframe
-                    src={`https://www.openstreetmap.org/export/embed.html?bbox=122.0,6.8,122.3,7.2&layer=mapnik&marker=${selectedLocation ? `${selectedLocation.lat},${selectedLocation.lng}` : '6.9,122.07'}`}
+                    src={
+                      selectedLocation
+                        ? `https://www.openstreetmap.org/export/embed.html?bbox=${selectedLocation.lng - 0.01},${selectedLocation.lat - 0.008},${selectedLocation.lng + 0.01},${selectedLocation.lat + 0.008}&layer=mapnik&marker=${selectedLocation.lat},${selectedLocation.lng}`
+                        : `https://www.openstreetmap.org/export/embed.html?bbox=122.0,6.8,122.3,7.2&layer=mapnik&marker=6.9,122.07`
+                    }
                     style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }}
                     title="Mini Map"
                   />
-                  <div className="absolute top-2 left-2 bg-white px-2 py-1 rounded shadow text-xs font-medium">
+                  {/* Mobile/Tablet Instructions */}
+                  <div className="absolute top-2 left-2 bg-white px-2 py-1 rounded shadow text-xs font-medium lg:hidden">
                     📍 Tap to select
                   </div>
+                  {/* Desktop Instructions */}
+                  <div className="hidden lg:flex absolute inset-0 bg-blue-900 bg-opacity-60 items-center justify-center">
+                    <div className="bg-white px-4 py-2 rounded-lg shadow-lg text-center">
+                      <p className="text-sm font-semibold text-gray-900">🖱️ Click on the main map</p>
+                      <p className="text-xs text-gray-600 mt-1">to select incident location</p>
+                    </div>
+                  </div>
                   {selectedLocation && (
-                    <div className="absolute bottom-2 left-2 bg-green-500 text-white px-2 py-1 rounded shadow text-xs font-medium">
+                    <div className="absolute bottom-2 left-2 bg-green-500 text-white px-2 py-1 rounded shadow text-xs font-medium lg:hidden">
                       ✓ Location selected
                     </div>
                   )}
