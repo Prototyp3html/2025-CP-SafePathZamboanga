@@ -313,8 +313,13 @@ class FloodHotspot(Base):
     days_since_last_flood = Column(Integer, nullable=True)  # Days since last flood
     
     # Risk assessment
-    flood_risk_score = Column(Float, default=0)  # 0-100 score based on history
+    flood_risk_score = Column(Float, default=0)  # 0-100 score based on history and terrain
     frequency_per_year = Column(Float, default=0)  # How many times per year does it flood
+    
+    # Terrain data (for risk calculation)
+    average_elevation_m = Column(Float, nullable=True)  # Average elevation of road
+    average_slope = Column(Float, nullable=True)  # Average slope percentage
+    distance_to_water_m = Column(Float, nullable=True)  # Average distance to water bodies
     
     # Seasonal patterns
     flood_months = Column(String, nullable=True)  # JSON list of months when flooding occurs

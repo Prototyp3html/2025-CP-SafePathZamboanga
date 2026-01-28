@@ -11,10 +11,9 @@ import './FloodHotspotPins.css';
 interface FloodHotspotPinsProps {
   map: L.Map | null;
   isVisible: boolean;
-  onHotspotClick?: (hotspot: FloodHotspot) => void;
 }
 
-export function FloodHotspotPins({ map, isVisible, onHotspotClick }: FloodHotspotPinsProps) {
+export function FloodHotspotPins({ map, isVisible }: FloodHotspotPinsProps) {
   const [hotspots, setHotspots] = useState<FloodHotspot[]>([]);
   const [loading, setLoading] = useState(false);
   const markersRef = React.useRef<L.Marker[]>([]);
@@ -95,41 +94,13 @@ export function FloodHotspotPins({ map, isVisible, onHotspotClick }: FloodHotspo
         { icon }
       );
 
-      // Create popup content
+      // Create popup content showing rainfall count
       const popupContent = `
         <div class="flood-hotspot-popup">
           <h3>${hotspot.road_name}</h3>
-          <div class="risk-badge" style="background-color: ${riskInfo.bgColor}; border-left: 4px solid ${riskInfo.color}">
-            <strong>Risk Level:</strong> ${riskInfo.level} (${hotspot.risk_score}/100)
-          </div>
-          <div class="flood-details">
-            <div class="detail-row">
-              <span class="label">Total Floods:</span>
-              <span class="value">${hotspot.flood_history.total_events}</span>
-            </div>
-            <div class="detail-row">
-              <span class="label">Total Hours Flooded:</span>
-              <span class="value">${hotspot.flood_history.total_flooded_hours.toFixed(1)}h</span>
-            </div>
-            <div class="detail-row">
-              <span class="label">Avg Duration:</span>
-              <span class="value">${hotspot.flood_history.average_duration_hours.toFixed(1)}h</span>
-            </div>
-            <div class="detail-row">
-              <span class="label">Frequency/Year:</span>
-              <span class="value">${hotspot.flood_history.frequency_per_year.toFixed(1)} times</span>
-            </div>
-            <div class="detail-row">
-              <span class="label">Last Flooded:</span>
-              <span class="value">${getDaysAgoText(hotspot.last_flood.days_since)}</span>
-            </div>
-            <div class="detail-row">
-              <span class="label">First Recorded:</span>
-              <span class="value">${new Date(hotspot.first_recorded || '').toLocaleDateString()}</span>
-            </div>
-          </div>
-          <div class="popup-actions">
-            <button class="btn-view-history">View Detailed History</button>
+          <div class="rainfall-count">
+            <span class="rainfall-icon">🌧️</span>
+            <strong>It rained ${hotspot.flood_history.total_events} time(s) on this road</strong>
           </div>
         </div>
       `;
@@ -137,13 +108,6 @@ export function FloodHotspotPins({ map, isVisible, onHotspotClick }: FloodHotspo
       marker.bindPopup(popupContent, {
         maxWidth: 300,
         className: 'flood-hotspot-popup-container'
-      });
-
-      // Click handler
-      marker.on('click', () => {
-        if (onHotspotClick) {
-          onHotspotClick(hotspot);
-        }
       });
 
       marker.addTo(map);

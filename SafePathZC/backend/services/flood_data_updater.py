@@ -920,10 +920,13 @@ class FloodDataUpdater:
     def _calculate_risk_score(self, total_flood_events: int, total_flooded_hours: float) -> float:
         """Calculate flood risk score for a hotspot (0-100)"""
         # Base score: frequency (how many times has it flooded)
-        frequency_score = min(50, total_flood_events * 5)  # Max 50 points for frequency
+        # Use logarithmic scale so 1 event = ~20pts, 5 events = ~40pts, 10+ events = ~60+pts
+        # Prevents all high-event roads from maxing out at 100
+        frequency_score = min(50, (total_flood_events ** 0.7) * 12)  # Logarithmic: max 50 points
         
         # Duration score: total hours flooded
-        duration_score = min(50, total_flooded_hours * 0.5)  # Max 50 points for duration
+        # Use logarithmic scale: 10hrs = ~16pts, 50hrs = ~37pts, 100+ hrs = ~45+pts
+        duration_score = min(50, (total_flooded_hours ** 0.6) * 2.5)  # Logarithmic: max 50 points
         
         total_score = frequency_score + duration_score
         return min(100, max(0, total_score))
@@ -1227,16 +1230,47 @@ class FloodDataUpdater:
                     # Calculate average duration
                     average_duration = total_flooded_hours / max(total_flood_events, 1)
                     
-                    # IMPROVED RISK SCORING - More nuanced and differentiated
-                    # Score components (total max 100):
-                    frequency_score = min(35, (frequency_per_year / 10) * 35)  # Max 35 points (10 floods/year = max)
-                    hours_score = min(35, (total_flooded_hours / 50) * 35)     # Max 35 points (50+ hours = max)
+                    # Get terrain data from events (elevation and distance to water)
+                    elevations = [e.elevation_m for e in events if e.elevation_m]
+                    distances_to_water = [e.distance_to_water_m for e in events if e.distance_to_water_m]
                     
-                    # Recency bonus (up to 30 points, decays with time)
+                    avg_elevation = sum(elevations) / len(elevations) if elevations else None
+                    avg_distance_to_water = sum(distances_to_water) / len(distances_to_water) if distances_to_water else None
+                    
+                    # IMPROVED RISK SCORING - Uses both flood history AND terrain
+                    # Flood frequency component (0-40 points)
+                    frequency_score = min(40, (frequency_per_year ** 0.7) * 15)
+                    
+                    # Flood hours component (0-30 points)
+                    hours_score = min(30, (total_flooded_hours ** 0.6) * 2.2)
+                    
+                    # Terrain component (0-20 points) - Lower elevation = higher risk
+                    terrain_score = 0
+                    if avg_elevation is not None:
+                        if avg_elevation < 3:
+                            terrain_score = 20  # Very low elevation = max risk
+                        elif avg_elevation < 5:
+                            terrain_score = 15
+                        elif avg_elevation < 10:
+                            terrain_score = 10
+                        elif avg_elevation < 20:
+                            terrain_score = 5
+                    
+                    # Proximity to water component (0-10 points)
+                    proximity_score = 0
+                    if avg_distance_to_water is not None:
+                        if avg_distance_to_water < 50:
+                            proximity_score = 10
+                        elif avg_distance_to_water < 100:
+                            proximity_score = 7
+                        elif avg_distance_to_water < 200:
+                            proximity_score = 4
+                    
+                    # Recency bonus (up to 10 points, decays with time)
                     days_since_last = (datetime.utcnow() - last_event.event_time).days
-                    recency_score = max(0, 30 * (1 - min(days_since_last / 30, 1)))  # Fully decays after 30 days
+                    recency_score = max(0, 10 * (1 - min(days_since_last / 30, 1)))
                     
-                    risk_score = min(100, frequency_score + hours_score + recency_score)
+                    risk_score = min(100, frequency_score + hours_score + terrain_score + proximity_score + recency_score)
                     
                     # Get road info from latest event
                     road_name = last_event.road_name
@@ -1255,6 +1289,8 @@ class FloodDataUpdater:
                         hotspot.average_flood_duration_hours = round(average_duration, 2)
                         hotspot.frequency_per_year = round(frequency_per_year, 2)
                         hotspot.flood_risk_score = round(risk_score, 2)
+                        hotspot.average_elevation_m = avg_elevation
+                        hotspot.distance_to_water_m = avg_distance_to_water
                         hotspot.last_updated = datetime.utcnow()
                         if last_event.event_type == 'flood_end':
                             hotspot.last_flood_end = last_event.event_time
@@ -1272,6 +1308,8 @@ class FloodDataUpdater:
                             average_flood_duration_hours=round(average_duration, 2),
                             frequency_per_year=round(frequency_per_year, 2),
                             flood_risk_score=round(risk_score, 2),
+                            average_elevation_m=avg_elevation,
+                            distance_to_water_m=avg_distance_to_water,
                             first_flood_recorded=first_event.event_time,
                             last_flood_start=first_event.event_time if first_event.event_type == 'flood_start' else last_event.event_time,
                             last_flood_end=last_event.event_time if last_event.event_type == 'flood_end' else first_event.event_time,

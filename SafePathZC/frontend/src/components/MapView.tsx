@@ -19,7 +19,6 @@ import { RouteModal } from "./RouteModal";
 import { AlertBanner } from "./AlertBanner";
 import { WeatherDashboard } from "./WeatherDashboard";
 import { FloodHotspotPins } from "./FloodHotspotPins";
-import { FloodHistoryModal } from "./FloodHistoryModal";
 import { FloodForecastPins } from "./FloodForecastPins";
 import {
   TransportationSelector,
@@ -1312,10 +1311,6 @@ export const MapView = ({
 
   // 🆕 Flood Hotspot States
   const [showFloodHotspots, setShowFloodHotspots] = useState(false);
-  const [selectedFloodHotspot, setSelectedFloodHotspot] = useState<any | null>(
-    null
-  );
-  const [showFloodHistoryModal, setShowFloodHistoryModal] = useState(false);
   const [showFloodForecast, setShowFloodForecast] = useState(false);
 
   // New states for route planner modal
@@ -11399,20 +11394,6 @@ export const MapView = ({
       <FloodHotspotPins
         map={mapRef.current}
         isVisible={showFloodHotspots}
-        onHotspotClick={(hotspot) => {
-          setSelectedFloodHotspot(hotspot);
-          setShowFloodHistoryModal(true);
-        }}
-      />
-
-      {/* 🆕 Flood History Modal */}
-      <FloodHistoryModal
-        isOpen={showFloodHistoryModal}
-        hotspot={selectedFloodHotspot}
-        onClose={() => {
-          setShowFloodHistoryModal(false);
-          setSelectedFloodHotspot(null);
-        }}
       />
 
       {/* 🆕 Flood Forecast Pins - 7-Day Predictions */}
