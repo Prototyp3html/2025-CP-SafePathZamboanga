@@ -417,7 +417,7 @@ export function FloodForecastPins({ map, isVisible }: FloodForecastPinsProps) {
               </>
             ) : (
               <div className="no-forecasts">
-                <p>✅ No major roads predicted to flood</p>
+                <p>✅ Safe weather forecast</p>
                 <p className="sub-text">
                   {forecasts.length === 0 
                     ? '⏳ Loading forecast data...' 

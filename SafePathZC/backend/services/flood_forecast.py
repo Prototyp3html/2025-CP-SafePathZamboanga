@@ -130,12 +130,8 @@ class FloodForecastService:
             flood_score += 40   # Light-moderate
         elif rainfall_mm > 7:
             flood_score += 30   # Light
-        elif rainfall_mm > 5:
-            flood_score += 20   # Very light
-        elif rainfall_mm > 3:
-            flood_score += 12   # Minimal
-        elif rainfall_mm > 1:
-            flood_score += 5    # Trace
+        elif rainfall_mm >= 5:
+            flood_score += 20   # Very light (minimum threshold)
         
         # Distance to water (proximity amplifier)
         if distance_to_water < 50:
@@ -147,8 +143,8 @@ class FloodForecastService:
         elif distance_to_water < 1000:
             flood_score += 5
         
-        # Determine flood likelihood
-        if rainfall_mm > 0:
+        # Determine flood likelihood (minimum 5mm rainfall required)
+        if rainfall_mm >= 5:
             if flood_score >= 50:
                 will_flood = True
                 confidence = min(100, int((flood_score / 100) * 100))
