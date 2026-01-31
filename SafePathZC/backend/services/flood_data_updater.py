@@ -1398,6 +1398,19 @@ class FloodDataUpdater:
         
         logger.info(f"Current rainfall: {current_rainfall}mm")
         
+        # OPTIMIZATION: Skip heavy processing when rainfall < 1mm
+        # With minimal rainfall, almost no roads will flood, but processing takes 50+ minutes
+        # Instead, reuse previous data and just update timestamps
+        if current_rainfall < 1:
+            logger.warning(f"⚠️  FAST MODE: Rainfall {current_rainfall}mm < 1mm threshold - skipping heavy analysis")
+            logger.info("   → Using cached flood status from previous runs")
+            # Load existing GeoJSON if available instead of reprocessing
+            geojson_path = Path(__file__).parent.parent / "data" / "terrain_roads.geojson"
+            if geojson_path.exists():
+                logger.info(f"   → Returning cached GeoJSON from {geojson_path}")
+                return str(geojson_path)
+            # If no cache, still proceed with processing but know it will be fast due to minimal actual flooding
+        
         # Step 4b: Load previous flood history
         flooded_history = self.load_flooded_history()
         

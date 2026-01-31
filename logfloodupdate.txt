@@ -1,0 +1,125 @@
+INFO:     100.64.0.4:42052 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:42054 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:51752 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:51762 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:51774 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:51784 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:51790 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:27218 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:27224 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:27232 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:27238 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:27246 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:routes.cron:======================================================================
+INFO:routes.cron:🚀 FLOOD DATA UPDATE CRON JOB TRIGGERED - 2026-01-31 09:55:18.867973+08:00
+INFO:routes.cron:======================================================================
+INFO:services.flood_data_updater:============================================================
+INFO:services.flood_data_updater:Starting real-time flood analysis data generation...
+INFO:services.flood_data_updater:============================================================
+INFO:services.flood_data_updater:Loading roads from zcroadmap.geojson...
+INFO:services.flood_data_updater:✅ Loaded 11982 roads from zcroadmap.geojson
+INFO:services.flood_data_updater:   Filtered out 730 roads outside Zamboanga City bounds
+INFO:services.flood_data_updater:   Processing 11252 Zamboanga City roads only
+INFO:services.flood_data_updater:Extracted 33062 sampled coordinate points (OPTIMIZED: aggressive sampling)
+INFO:services.flood_data_updater:Cache hit will reduce this to near-zero for subsequent runs
+INFO:services.flood_data_updater:Fetching elevation for 33062 points...
+INFO:services.flood_data_updater:Loaded 33062 elevations from PostgreSQL cache (bulk query)
+INFO:services.flood_data_updater:All elevation data available in cache!
+INFO:services.flood_data_updater:Fetching weather data for Zamboanga...
+INFO:     100.64.0.4:61506 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61514 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61524 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61528 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61530 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61540 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61542 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61548 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61550 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61564 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61572 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61584 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61592 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61602 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61614 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61626 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61628 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61644 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61656 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61664 - "OPTIONS /auth/update-activity HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61670 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61684 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61694 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61698 - "OPTIONS /auth/update-activity HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61712 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61726 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61734 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61746 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61738 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61758 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61762 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61764 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61778 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61788 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61804 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61808 - "OPTIONS /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:routes.admin:Verifying admin token, token length: 139
+INFO:routes.admin:Token verified successfully for user_id: 1
+INFO:     100.64.0.4:61824 - "GET /admin/flood/update-status HTTP/1.1" 200 OK
+INFO:     100.64.0.4:61832 - "POST /auth/update-activity HTTP/1.1" 500 Internal Server Error
+INFO:services.flood_data_updater:Weather data fetched - Current: 0.0mm, Last 6h max: 0.0mm, Using: 0.0mm
+INFO:services.flood_data_updater:Current rainfall: 0.0mm
+INFO:services.flood_data_updater:Loaded flooded history from PostgreSQL: 21985 roads
+INFO:services.flood_data_updater:🌊 FLOODED: Road 5 | Lat: 6.9050, Lon: 122.0743 | Level: medium | Rainfall: 0mm
+INFO:services.flood_data_updater:🌊 FLOODED: Road 30 | Lat: 6.9056, Lon: 122.0737 | Level: medium | Rainfall: 0mm
+INFO:services.flood_data_updater:🌊 FLOODED: Road 91 | Lat: 6.9113, Lon: 122.0792 | Level: medium | Rainfall: 0mm
+2026-01-31 01:55:50.788 UTC [27] LOG:  checkpoint starting: time
+INFO:services.flood_data_updater:Progress: 500/11252 roads processed - BATCH COMMIT
+INFO:services.flood_data_updater:✅ Batch commit successful at 500 roads
+INFO:services.flood_data_updater:Progress: 1000/11252 roads processed - BATCH COMMIT
+INFO:services.flood_data_updater:✅ Batch commit successful at 1000 roads
+INFO:services.flood_data_updater:🌊 FLOODED: Road 1262 | Lat: 6.9054, Lon: 122.0742 | Level: medium | Rainfall: 0mm
+INFO:services.flood_data_updater:🌊 FLOODED: Road 1264 | Lat: 6.9042, Lon: 122.0737 | Level: medium | Rainfall: 0mm
+INFO:services.flood_data_updater:🌊 FLOODED: Road 1266 | Lat: 6.9043, Lon: 122.0740 | Level: medium | Rainfall: 0mm
+INFO:services.flood_data_updater:🌊 FLOODED: Road 1268 | Lat: 6.9043, Lon: 122.0743 | Level: medium | Rainfall: 0mm
+INFO:services.flood_data_updater:🌊 FLOODED: Road 1270 | Lat: 6.9047, Lon: 122.0738 | Level: medium | Rainfall: 0mm
+INFO:services.flood_data_updater:🌊 FLOODED: Road 1274 | Lat: 6.9043, Lon: 122.0743 | Level: medium | Rainfall: 0mm
+INFO:services.flood_data_updater:Progress: 1500/11252 roads processed - BATCH COMMIT
+INFO:services.flood_data_updater:✅ Batch commit successful at 1500 roads
+INFO:services.flood_data_updater:🌊 FLOODED: Road 1689 | Lat: 6.9056, Lon: 122.0804 | Level: medium | Rainfall: 0mm
+INFO:services.flood_data_updater:🌊 FLOODED: Road 1690 | Lat: 6.9061, Lon: 122.0800 | Level: medium | Rainfall: 0mm
+INFO:services.flood_data_updater:Progress: 2000/11252 roads processed - BATCH COMMIT
+INFO:services.flood_data_updater:✅ Batch commit successful at 2000 roads
+2026-01-31 01:58:29.903 UTC [27] LOG:  checkpoint complete: wrote 1593 buffers (9.7%); 0 WAL file(s) added, 0 removed, 0 recycled; write=159.065 s, sync=0.009 s, total=159.115 s; sync files=30, longest=0.008 s, average=0.001 s; distance=10239 kB, estimate=10239 kB; lsn=7/12EEA900, redo lsn=7/12DF5418
+INFO:services.flood_data_updater:Progress: 2500/11252 roads processed - BATCH COMMIT
+INFO:services.flood_data_updater:✅ Batch commit successful at 2500 roads
+INFO:services.flood_data_updater:Progress: 3000/11252 roads processed - BATCH COMMIT
+INFO:services.flood_data_updater:✅ Batch commit successful at 3000 roads
+INFO:services.flood_data_updater:Progress: 3500/11252 roads processed - BATCH COMMIT
+INFO:services.flood_data_updater:✅ Batch commit successful at 3500 roads
+INFO:services.flood_data_updater:🌊 FLOODED: Road 3547 | Lat: 6.9208, Lon: 122.0789 | Level: medium | Rainfall: 0mm
+INFO:services.flood_data_updater:🌊 FLOODED: Road 3548 | Lat: 6.9203, Lon: 122.0789 | Level: medium | Rainfall: 0mm
+INFO:services.flood_data_updater:🌊 FLOODED: Road 3550 | Lat: 6.9206, Lon: 122.0789 | Level: medium | Rainfall: 0mm
+INFO:services.flood_data_updater:🌊 FLOODED: Road 3552 | Lat: 6.9206, Lon: 122.0789 | Level: medium | Rainfall: 0mm
+INFO:services.flood_data_updater:🌊 FLOODED: Road 3671 | Lat: 6.9050, Lon: 122.0733 | Level: medium | Rainfall: 0mm
+INFO:services.flood_data_updater:Progress: 4000/11252 roads processed - BATCH COMMIT
+INFO:services.flood_data_updater:✅ Batch commit successful at 4000 roads
+INFO:services.flood_data_updater:🌊 FLOODED: Road 4062 | Lat: 6.9065, Lon: 122.0801 | Level: medium | Rainfall: 0mm
+INFO:services.flood_data_updater:🌊 FLOODED: Road 4064 | Lat: 6.9062, Lon: 122.0794 | Level: medium | Rainfall: 0mm
+2026-01-31 02:00:51.000 UTC [27] LOG:  checkpoint starting: time
+INFO:services.flood_data_updater:🌊 FLOODED: Road 4223 | Lat: 6.9052, Lon: 122.0738 | Level: medium | Rainfall: 0mm
+2026-01-31 02:01:05.367 UTC [27] LOG:  checkpoint complete: wrote 140 buffers (0.9%); 0 WAL file(s) added, 0 removed, 0 recycled; write=13.887 s, sync=0.045 s, total=14.368 s; sync files=11, longest=0.045 s, average=0.005 s; distance=1724 kB, estimate=9387 kB; lsn=7/12FD18D8, redo lsn=7/12FA45F0
+INFO:services.flood_data_updater:Progress: 4500/11252 roads processed - BATCH COMMIT
+INFO:services.flood_data_updater:✅ Batch commit successful at 4500 roads
+INFO:services.flood_data_updater:Progress: 5000/11252 roads processed - BATCH COMMIT
+INFO:services.flood_data_updater:✅ Batch commit successful at 5000 roads
+INFO:services.flood_data_updater:🌊 FLOODED: Road 5347 | Lat: 6.9051, Lon: 122.0734 | Level: medium | Rainfall: 0mm
+INFO:services.flood_data_updater:🌊 FLOODED: Road 5349 | Lat: 6.9055, Lon: 122.0746 | Level: medium | Rainfall: 0mm
+INFO:services.flood_data_updater:Progress: 5500/11252 roads processed - BATCH COMMIT
+INFO:services.flood_data_updater:✅ Batch commit successful at 5500 roads
+INFO:services.flood_data_updater:Progress: 6000/11252 roads processed - BATCH COMMIT
+INFO:services.flood_data_updater:✅ Batch commit successful at 6000 roads
+INFO:services.flood_data_updater:🌊 FLOODED: Road 6171 | Lat: 6.9063, Lon: 122.0805 | Level: medium | Rainfall: 0mm
+INFO:services.flood_data_updater:Progress: 6500/11252 roads processed - BATCH COMMIT
+INFO:services.flood_data_updater:✅ Batch commit successful at 6500 roads
+INFO:services.flood_data_updater:Progress: 7000/11252 roads processed - BATCH COMMIT
+INFO:services.flood_data_updater:✅ Batch commit successful at 7000 roads
