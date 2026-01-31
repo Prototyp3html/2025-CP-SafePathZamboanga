@@ -94,13 +94,28 @@ export function FloodHotspotPins({ map, isVisible }: FloodHotspotPinsProps) {
         { icon }
       );
 
-      // Create popup content showing rainfall count
+      // Determine flood risk description based on risk score
+      const getRiskDescription = (riskScore: number): string => {
+        if (riskScore >= 90) return "Extremely flood-prone area";
+        if (riskScore >= 70) return "Highly flood-prone area";
+        if (riskScore >= 50) return "Frequently floods during heavy rain";
+        if (riskScore >= 30) return "Moderately flood-prone area";
+        if (riskScore >= 15) return "Occasionally experiences flooding";
+        return "Rarely floods";
+      };
+
+      // Create popup content showing flood risk description
+      const riskDescription = getRiskDescription(hotspot.risk_score);
       const popupContent = `
         <div class="flood-hotspot-popup">
           <h3>${hotspot.road_name}</h3>
-          <div class="rainfall-count">
-            <span class="rainfall-icon">🌧️</span>
-            <strong>It rained ${hotspot.flood_history.total_events} time(s) on this road</strong>
+          <div class="flood-risk-description">
+            <span class="risk-icon">⚠️</span>
+            <strong>${riskDescription}</strong>
+          </div>
+          <div class="flood-stats">
+            <small>Risk Level: ${hotspot.risk_score.toFixed(0)}/100</small><br>
+            <small>Flood History: ${hotspot.flood_history.total_events} events</small>
           </div>
         </div>
       `;
