@@ -807,11 +807,33 @@ class LocalRoutingService:
                             continue
                         
                         base_distance = current.distance_to(neighbor)
+                        
+                        # HARD BLOCK: For "safe" routes, completely reject nodes in simulated zones
+                        if simulated_flood_zones and risk_profile == "safe":
+                            neighbor_in_simulated_zone = False
+                            for zone in simulated_flood_zones:
+                                zone_lat = zone.get("lat")
+                                zone_lng = zone.get("lng")
+                                zone_radius = zone.get("radius", 300)
+                                
+                                if zone_lat and zone_lng:
+                                    zone_center = Coordinate(lat=zone_lat, lng=zone_lng)
+                                    dist_to_zone = neighbor.distance_to(zone_center)
+                                    
+                                    # If neighbor is inside simulated zone, SKIP IT ENTIRELY for safe routes
+                                    if dist_to_zone < zone_radius:
+                                        neighbor_in_simulated_zone = True
+                                        logger.debug(f"BLOCKING neighbor ({neighbor.lat:.4f}, {neighbor.lng:.4f}) - inside safe zone radius")
+                                        break
+                            
+                            # Skip this neighbor completely if in zone
+                            if neighbor_in_simulated_zone:
+                                continue
+                        
                         routing_cost = segment.get_routing_cost(mode, risk_profile, flood_cache)
                         
-                        # Check if this segment is in a simulated flood zone
-                        if simulated_flood_zones and risk_profile in ["safe", "manageable"]:
-                            neighbor_in_simulated_zone = False
+                        # For manageable/prone routes, apply penalties to simulated zones
+                        if simulated_flood_zones and risk_profile in ["manageable", "prone"]:
                             for zone in simulated_flood_zones:
                                 zone_lat = zone.get("lat")
                                 zone_lng = zone.get("lng")
@@ -824,18 +846,13 @@ class LocalRoutingService:
                                     
                                     # If neighbor is inside simulated zone, apply penalty
                                     if dist_to_zone < zone_radius:
-                                        neighbor_in_simulated_zone = True
-                                        # Severe penalty for entering simulated zone
+                                        # Penalty for manageable/prone routes
                                         if zone_severity == "high":
-                                            routing_cost *= 10.0  # Very high penalty
+                                            routing_cost *= 8.0
                                         elif zone_severity == "moderate":
-                                            routing_cost *= 5.0
+                                            routing_cost *= 4.0
                                         else:  # low
-                                            routing_cost *= 2.0
-                                        
-                                        if risk_profile == "safe":
-                                            # For "safe" profile, avoid simulated zones entirely
-                                            routing_cost *= 5.0  # Extra penalty for safe routes
+                                            routing_cost *= 1.5
                                         
                                         logger.debug(f"Neighbor ({neighbor.lat:.4f}, {neighbor.lng:.4f}) in simulated {zone_severity} zone - penalty: {routing_cost:.1f}x")
                                         break
@@ -1354,18 +1371,35 @@ def analyze_route_flood_risk(
                 
                 if zone_lat and zone_lng:
                     zone_center = Coordinate(lat=zone_lat, lng=zone_lng)
-                    # Check both start and end of segment
+                    # Check if EITHER endpoint is in zone
                     dist1 = coord1.distance_to(zone_center)
                     dist2 = coord2.distance_to(zone_center)
                     
-                    if dist1 < zone_radius or dist2 < zone_radius:
+                    # Also check closest point on segment to zone center (for segments passing near/through zone)
+                    # Using point-to-line distance calculation
+                    segment_vector_x = lng2 - lng1
+                    segment_vector_y = lat2 - lat1
+                    segment_length_sq = segment_vector_x**2 + segment_vector_y**2
+                    
+                    if segment_length_sq > 0:
+                        # Project zone center onto the segment line
+                        t = max(0, min(1, ((zone_lng - lng1) * segment_vector_x + (zone_lat - lat1) * segment_vector_y) / segment_length_sq))
+                        closest_lng = lng1 + t * segment_vector_x
+                        closest_lat = lat1 + t * segment_vector_y
+                        closest_point = Coordinate(lat=closest_lat, lng=closest_lng)
+                        dist_to_closest = closest_point.distance_to(zone_center)
+                    else:
+                        dist_to_closest = dist1
+                    
+                    # If ANY part of segment is in zone, mark as flooded
+                    if dist1 < zone_radius or dist2 < zone_radius or dist_to_closest < zone_radius:
                         segment_flooded = True
                         simulated_zone_segments += 1
                         # Apply weather multiplier to simulated zone segments
                         flooded_distance += segment_distance * weather_multiplier
                         
                         if simulated_zone_segments <= 3:
-                            logger.debug(f"Segment {i} in simulated flood zone ({zone.get('severity')}) at ({lat1:.6f}, {lng1:.6f})")
+                            logger.debug(f"Segment {i} in simulated flood zone ({zone.get('severity')}) - endpoints: {dist1:.1f}m, {dist2:.1f}m, closest: {dist_to_closest:.1f}m at ({lat1:.6f}, {lng1:.6f})")
                         break
         
         # If not in simulated zone, check real flood data
