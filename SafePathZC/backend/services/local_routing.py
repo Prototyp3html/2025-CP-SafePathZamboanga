@@ -45,30 +45,16 @@ def get_system_config():
 
 # Helper utilities
 def _parse_flood_flag(value: Any) -> bool:
-    """Convert various truthy/falsey representations into a boolean.
-
-    The terrain GeoJSON stores flood flags as strings ("0"/"1"). Relying on
-    Python's ``bool`` conversion treats any non-empty string as ``True``, which
-    incorrectly marks roads tagged with "0" as flooded. This helper normalises
-    the value before converting it into a boolean so routing costs reflect the
-    actual dataset."""
-
+    """Parse flood flags from various formats (strings, ints, bools)"""
     if isinstance(value, bool):
         return value
-
     if value is None:
         return False
-
     if isinstance(value, (int, float)):
         return value != 0
-
     if isinstance(value, str):
         normalised = value.strip().lower()
-        if normalised in {"1", "true", "t", "yes", "y"}:
-            return True
-        if normalised in {"0", "false", "f", "no", "n", ""}:
-            return False
-
+        return normalised in {"1", "true", "t", "yes", "y"}
     return False
 
 
@@ -89,18 +75,15 @@ class Coordinate:
     
     def distance_to(self, other: 'Coordinate') -> float:
         """Calculate distance in meters using Haversine formula"""
-        R = 6371000  # Earth's radius in meters
-        
+        R = 6371000
         lat1_rad = math.radians(self.lat)
         lat2_rad = math.radians(other.lat)
         delta_lat = math.radians(other.lat - self.lat)
         delta_lng = math.radians(other.lng - self.lng)
-        
         a = (math.sin(delta_lat / 2) ** 2 + 
              math.cos(lat1_rad) * math.cos(lat2_rad) * 
              math.sin(delta_lng / 2) ** 2)
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        
         return R * c
 
 @dataclass
@@ -130,7 +113,7 @@ class RoadSegment:
     
     def get_flood_risk_factor(self) -> float:
         """Get flood risk multiplier for routing cost"""
-        return 2.5 if self.flooded else 1.0  # Flooded roads cost 2.5x more
+        return 2.5 if self.flooded else 1.0
     
     def get_terrain_difficulty(self) -> float:
         """Calculate terrain difficulty based on elevation"""
@@ -139,20 +122,11 @@ class RoadSegment:
         return elevation_factor * slope_factor
     
     def get_routing_cost(self, transportation_mode: str = "car", risk_profile: str = "safe", flood_lookup_cache: Optional[Dict[str, bool]] = None) -> float:
-        """Calculate routing cost based on transportation mode AND flood risk profile
+        """Calculate routing cost based on transportation mode and flood risk profile
         
-        Args:
-            transportation_mode: Type of transport (car/motorcycle/walking) - affects speed/roads
-            risk_profile: Flood risk tolerance (safe/manageable/prone) - PRIMARY route differentiator
-                - "safe": Heavily avoids flooded roads (50x penalty) - forces significant detours
-                - "manageable": Moderate avoidance (5x penalty) - balanced approach
-                - "prone": Minimal avoidance (1.1x penalty) - shortest path, ignores floods
-            flood_lookup_cache: Optional pre-built dict mapping osm_id -> is_flooded (fast O(1) lookup)
+        Risk profiles: safe (50x penalty), manageable (5x), prone (1.1x)
         """
         base_cost = self.length_m
-        
-        # FLOOD RISK FACTOR - Primary differentiator based on risk profile
-        # Check flood status from this segment OR from flood lookup cache
         is_flooded = self.flooded
         
         # If this segment has no flood data but we have a flood lookup cache, check it (O(1) lookup!)
@@ -171,57 +145,49 @@ class RoadSegment:
                         break
         
         if risk_profile == "safe":
-            # SAFE ROUTE: VERY aggressive penalty for flooded roads - forces alternate paths
             flood_factor = 50.0 if is_flooded else 1.0 
         elif risk_profile == "manageable":
-            # MANAGEABLE ROUTE: Moderate penalty for flooded roads
             flood_factor = 5.0 if is_flooded else 1.0  
         else:  
-            # FLOOD-PRONE ROUTE: Minimal penalty - takes shortest path
             flood_factor = 1.1 if is_flooded else 1.0 
         
         # Apply terrain difficulty (elevation, surface)
         terrain_factor = self.get_terrain_difficulty()
         
-        # ROAD HIERARCHY PENALTY - Prefer major roads over side streets
-        # CRITICAL FIX: GeoJSON has NO highway field! Infer from road name patterns
         road_type = (self.highway_type or "unclassified").lower()
         road_name = (self.name or "").lower()
-        
-        # Infer major roads from common name patterns in Zamboanga
         if road_type in ["motorway", "trunk", "primary"] or any(keyword in road_name for keyword in [
             "national", "highway", "governor", "airport", "avenue", "boulevard", "n-", "r-"
         ]):
-            # Major roads - preference depends on vehicle type
             if transportation_mode in ["motorcycle", "bicycle"]:
-                hierarchy_penalty = 0.7  # Motorcycles/bicycles prefer major roads for speed BUT can use shortcuts
+                hierarchy_penalty = 0.7
             elif transportation_mode == "walking":
-                hierarchy_penalty = 1.5  # Pedestrians AVOID major roads (no sidewalks, dangerous)
+                hierarchy_penalty = 1.5
             elif transportation_mode == "public_transport":
-                hierarchy_penalty = 0.4  # Jeepneys STRONGLY prefer major roads (fixed routes on main streets)
-            else:  # car, truck
-                hierarchy_penalty = 0.5  # Cars/trucks STRONGLY prefer major roads
+                hierarchy_penalty = 0.4
+            else:
+                hierarchy_penalty = 0.5
         elif road_type in ["secondary", "tertiary"] or any(keyword in road_name for keyword in [
             "road", "street", "drive"
         ]):
             if transportation_mode == "walking":
-                hierarchy_penalty = 0.9  # Pedestrians prefer normal streets (safer, has sidewalks)
+                hierarchy_penalty = 0.9
             elif transportation_mode == "public_transport":
-                hierarchy_penalty = 0.8  # Jeepneys use secondary roads but prefer major routes
+                hierarchy_penalty = 0.8
             else:
-                hierarchy_penalty = 1.0  # Normal roads - neutral for all other modes
-        else:  # residential, service, unclassified, unnamed - SHORTCUTS!
+                hierarchy_penalty = 1.0
+        else:
             if transportation_mode in ["motorcycle", "bicycle"]:
-                hierarchy_penalty = 1.1  # Motorcycles/bicycles CAN use shortcuts but slightly longer (balance directness vs shortcuts)
+                hierarchy_penalty = 1.1
             elif transportation_mode == "walking":
-                hierarchy_penalty = 0.7  # Pedestrians LOVE shortcuts (footpaths, alleys, residential streets)
+                hierarchy_penalty = 0.7
             elif transportation_mode == "public_transport":
-                hierarchy_penalty = 5.0  # Jeepneys NEVER use small roads (too large, fixed routes only)
-            else:  # car, truck
-                hierarchy_penalty = 3.0  # Cars/trucks HEAVILY discouraged from small roads
+                hierarchy_penalty = 5.0
+            else:
+                hierarchy_penalty = 3.0
         
         # TRAFFIC CONGESTION FACTOR - NEW 4th routing factor
-        traffic_factor = 1.0  # Default: no traffic impact
+        traffic_factor = 1.0
         
         # Get traffic data for this segment (if available)
         try:
@@ -262,26 +228,21 @@ class RoadSegment:
         # Transportation mode adjustments
         mode_factors = {
             "car": 1.0,
-            "motorcycle": 0.9,  # Motorcycles slightly faster
-            "walking": 2.0      # Walking is slower
+            "motorcycle": 0.9,
+            "walking": 2.0
         }
         mode_factor = mode_factors.get(transportation_mode, 1.0)
         
-        # FINAL COST CALCULATION - Now includes traffic as 4th factor
         return base_cost * flood_factor * terrain_factor * mode_factor * hierarchy_penalty * traffic_factor
     
     def get_speed_limit(self) -> int:
         """Get speed limit with terrain adjustments"""
         base_speed = self.maxspeed
-        
-        # Reduce speed on steep or flooded roads
         if self.flooded:
-            base_speed = min(base_speed, 25)  # Max 25 km/h on flooded roads
-        
-        if self.get_elevation_gain() > 20:  # Steep roads
+            base_speed = min(base_speed, 25)
+        if self.get_elevation_gain() > 20:
             base_speed = min(base_speed, 35)
-            
-        return max(10, base_speed)  # Minimum 10 km/h
+        return max(10, base_speed)
     
     def get_terrain_adjusted_speed(self, mode: str = "car") -> int:
         """Get speed adjusted for terrain and transportation mode"""
@@ -632,6 +593,8 @@ class LocalRoutingService:
             return None
         
         logger.info(f"Calculating {risk_profile} route from ({start.lat}, {start.lng}) to ({end.lat}, {end.lng}) using {mode} mode")
+        if simulated_flood_zones:
+            logger.info(f"Simulated flood zones: {len(simulated_flood_zones)} zones")
         
         # Find nearest road points
         start_road = self.find_nearest_road_point(start, 5000)  # Increased search radius
@@ -644,7 +607,7 @@ class LocalRoutingService:
         logger.info(f"Using road points: start=({start_road.lat}, {start_road.lng}), end=({end_road.lat}, {end_road.lng})")
         
         # Use A* algorithm with terrain awareness and risk profile
-        route = self._a_star_search(start_road, end_road, mode, risk_profile)
+        route = self._a_star_search(start_road, end_road, mode, risk_profile, simulated_flood_zones)
         
         if route:
             # Add original start/end points if different
@@ -662,8 +625,12 @@ class LocalRoutingService:
         
         return None
     
-    def _a_star_search(self, start: Coordinate, end: Coordinate, mode: str = "car", risk_profile: str = "safe") -> Optional[List[Coordinate]]:
-        """A* pathfinding algorithm with terrain-aware routing costs and flood risk profiles"""
+    def _a_star_search(self, start: Coordinate, end: Coordinate, mode: str = "car", risk_profile: str = "safe", simulated_flood_zones: Optional[List[Dict[str, Any]]] = None) -> Optional[List[Coordinate]]:
+        """A* pathfinding algorithm with terrain-aware routing costs and flood risk profiles
+        
+        Args:
+            simulated_flood_zones: List of simulated flood zones [{lat, lng, radius, severity}, ...]
+        """
         
         # Build flood lookup cache ONCE at the start (O(n) build time, then O(1) lookups!)
         flood_cache = {}
@@ -839,34 +806,53 @@ class LocalRoutingService:
                             neighbors_already_visited += 1
                             continue
                         
-                        # Calculate terrain-aware movement cost WITH RISK PROFILE AND FLOOD DATA
                         base_distance = current.distance_to(neighbor)
-                        
-                        # Use pre-built flood cache (passed from parent function, built once)
                         routing_cost = segment.get_routing_cost(mode, risk_profile, flood_cache)
                         
-                        # Use TIME as the cost metric (seconds), not distance
-                        # This properly penalizes slow roads and rewards fast main roads
-                        speed_kph = segment.get_terrain_adjusted_speed(mode)
-                        time_cost = (base_distance / 1000) / speed_kph * 3600  # Convert to seconds
+                        # Check if this segment is in a simulated flood zone
+                        if simulated_flood_zones and risk_profile in ["safe", "manageable"]:
+                            neighbor_in_simulated_zone = False
+                            for zone in simulated_flood_zones:
+                                zone_lat = zone.get("lat")
+                                zone_lng = zone.get("lng")
+                                zone_radius = zone.get("radius", 300)
+                                zone_severity = zone.get("severity", "moderate")
+                                
+                                if zone_lat and zone_lng:
+                                    zone_center = Coordinate(lat=zone_lat, lng=zone_lng)
+                                    dist_to_zone = neighbor.distance_to(zone_center)
+                                    
+                                    # If neighbor is inside simulated zone, apply penalty
+                                    if dist_to_zone < zone_radius:
+                                        neighbor_in_simulated_zone = True
+                                        # Severe penalty for entering simulated zone
+                                        if zone_severity == "high":
+                                            routing_cost *= 10.0  # Very high penalty
+                                        elif zone_severity == "moderate":
+                                            routing_cost *= 5.0
+                                        else:  # low
+                                            routing_cost *= 2.0
+                                        
+                                        if risk_profile == "safe":
+                                            # For "safe" profile, avoid simulated zones entirely
+                                            routing_cost *= 5.0  # Extra penalty for safe routes
+                                        
+                                        logger.debug(f"Neighbor ({neighbor.lat:.4f}, {neighbor.lng:.4f}) in simulated {zone_severity} zone - penalty: {routing_cost:.1f}x")
+                                        break
                         
-                        # Apply routing cost multiplier (flood risk, terrain, hierarchy)
+                        speed_kph = segment.get_terrain_adjusted_speed(mode)
+                        time_cost = (base_distance / 1000) / speed_kph * 3600
                         tentative_g = g_score[current] + (time_cost * routing_cost)
                         
                         if neighbor not in g_score or tentative_g < g_score[neighbor]:
                             came_from[neighbor] = current
                             g_score[neighbor] = tentative_g
                             
-                            # Balanced heuristic weight - encourage exploration toward goal
-                            # but don't skip important areas
-                            HEURISTIC_WEIGHT = 2.0  # Balanced - allows proper exploration
-                            AVERAGE_HEURISTIC_SPEED_KPH = 35  # Realistic average speed
-                            
+                            HEURISTIC_WEIGHT = 2.0
+                            AVERAGE_HEURISTIC_SPEED_KPH = 35
                             heuristic_distance = neighbor.distance_to(end)
-                            heuristic_time = (heuristic_distance / 1000) / AVERAGE_HEURISTIC_SPEED_KPH * 3600  # seconds
-                            
+                            heuristic_time = (heuristic_distance / 1000) / AVERAGE_HEURISTIC_SPEED_KPH * 3600
                             f_score[neighbor] = tentative_g + (heuristic_time * HEURISTIC_WEIGHT)
-                            
                             heapq.heappush(open_set, (f_score[neighbor], neighbor))
                             neighbors_added_to_open_set += 1
                 
@@ -1291,19 +1277,10 @@ def calculate_local_route(start_lat: float, start_lng: float,
 def analyze_route_flood_risk(
     route_coordinates: List[Tuple[float, float]], 
     buffer_meters: float = 50.0,
-    weather_data: dict = None
+    weather_data: dict = None,
+    simulated_flood_zones: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
-    """
-    Analyze a route (from OSRM) against GeoJSON flood data with real-time weather impact.
     
-    Args:
-        route_coordinates: List of (lng, lat) tuples
-        buffer_meters: Distance to search for nearby road segments
-        weather_data: Current weather conditions (precipitation, wind, etc.)
-        
-    Returns:
-        Dict with flood analysis: flood_score, flooded_percentage, risk_level, etc.
-    """
     # Use flood service (terrain_roads.geojson) for flood data analysis
     service = get_flood_service()
     
@@ -1355,6 +1332,7 @@ def analyze_route_flood_risk(
     safe_distance = 0.0
     segments_checked = 0
     flooded_segments_found = 0
+    simulated_zone_segments = 0
     
     # Analyze each segment of the route
     for i in range(len(route_coordinates) - 1):
@@ -1365,31 +1343,57 @@ def analyze_route_flood_risk(
         coord2 = Coordinate(lat=lat2, lng=lng2)
         
         segment_distance = coord1.distance_to(coord2)
+        segment_flooded = False
         
-        # Find nearby road segments using FAST spatial index
-        midpoint = Coordinate(lat=(lat1 + lat2) / 2, lng=(lng1 + lng2) / 2)
-        nearby_segments = service._get_nearby_roads_fast(midpoint, buffer_meters)
-        
-        # Determine if flooded
-        if nearby_segments:
-            flooded_count = sum(1 for seg in nearby_segments if seg.flooded)
-            is_flooded = flooded_count > len(nearby_segments) / 2
-            
-            if is_flooded:
-                flooded_segments_found += 1
-                # Apply weather multiplier to flooded segments
-                flooded_distance += segment_distance * weather_multiplier
+        # First, check if segment is in simulated flood zone
+        if simulated_flood_zones:
+            for zone in simulated_flood_zones:
+                zone_lat = zone.get("lat")
+                zone_lng = zone.get("lng")
+                zone_radius = zone.get("radius", 300)
                 
-                # Debug: Log first few flooded segments
-                if flooded_segments_found <= 3:
-                    logger.debug(f"Flooded segment {i}: {flooded_count}/{len(nearby_segments)} roads flooded at ({lat1:.6f}, {lng1:.6f})")
+                if zone_lat and zone_lng:
+                    zone_center = Coordinate(lat=zone_lat, lng=zone_lng)
+                    # Check both start and end of segment
+                    dist1 = coord1.distance_to(zone_center)
+                    dist2 = coord2.distance_to(zone_center)
+                    
+                    if dist1 < zone_radius or dist2 < zone_radius:
+                        segment_flooded = True
+                        simulated_zone_segments += 1
+                        # Apply weather multiplier to simulated zone segments
+                        flooded_distance += segment_distance * weather_multiplier
+                        
+                        if simulated_zone_segments <= 3:
+                            logger.debug(f"Segment {i} in simulated flood zone ({zone.get('severity')}) at ({lat1:.6f}, {lng1:.6f})")
+                        break
+        
+        # If not in simulated zone, check real flood data
+        if not segment_flooded:
+            # Find nearby road segments using FAST spatial index
+            midpoint = Coordinate(lat=(lat1 + lat2) / 2, lng=(lng1 + lng2) / 2)
+            nearby_segments = service._get_nearby_roads_fast(midpoint, buffer_meters)
+            
+            # Determine if flooded
+            if nearby_segments:
+                flooded_count = sum(1 for seg in nearby_segments if seg.flooded)
+                is_flooded = flooded_count > len(nearby_segments) / 2
+                
+                if is_flooded:
+                    flooded_segments_found += 1
+                    # Apply weather multiplier to flooded segments
+                    flooded_distance += segment_distance * weather_multiplier
+                    
+                    # Debug: Log first few flooded segments
+                    if flooded_segments_found <= 3:
+                        logger.debug(f"Flooded segment {i}: {flooded_count}/{len(nearby_segments)} roads flooded at ({lat1:.6f}, {lng1:.6f})")
+                else:
+                    safe_distance += segment_distance
             else:
                 safe_distance += segment_distance
-        else:
-            safe_distance += segment_distance
-            # Debug: Log if no nearby roads found
-            if i < 3:
-                logger.debug(f"No nearby roads at segment {i}: ({lat1:.6f}, {lng1:.6f})")
+                # Debug: Log if no nearby roads found
+                if i < 3:
+                    logger.debug(f"No nearby roads at segment {i}: ({lat1:.6f}, {lng1:.6f})")
         
         segments_checked += 1
     

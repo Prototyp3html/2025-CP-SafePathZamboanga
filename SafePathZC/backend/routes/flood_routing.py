@@ -431,11 +431,12 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                     logger.info(f"Skipping OSRM route: contains dead-end segment (route backtracks on itself)")
                                     continue
                                 
-                                # Analyze flood risk
+                                # Analyze flood risk (including simulated zones)
                                 flood_analysis = analyze_route_flood_risk(
                                     coordinates,
                                     buffer_meters=50.0,
-                                    weather_data=request.weather_data
+                                    weather_data=request.weather_data,
+                                    simulated_flood_zones=request.simulated_flood_zones
                                 )
                                 
                                 # Get terrain data for route
