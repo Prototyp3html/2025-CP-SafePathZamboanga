@@ -380,6 +380,80 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
             waypoint_coords.extend(traffic_avoidance_waypoints)
             logger.info(f"Total waypoints for routing: {len(waypoint_coords)} (user + traffic avoidance)\n")
         
+        # **PRIORITY STRATEGY: Use A* routing with simulated zones if they exist**
+        if request.simulated_flood_zones and len(request.simulated_flood_zones) > 0:
+            logger.info(f"\n🚨 PRIORITY STRATEGY: A* routing with {len(request.simulated_flood_zones)} simulated flood zones")
+            logger.info("Simulated zones take priority - using local A* algorithm for accurate avoidance")
+            
+            try:
+                start_coord = Coordinate(lat=request.start_lat, lng=request.start_lng)
+                end_coord = Coordinate(lat=request.end_lat, lng=request.end_lng)
+                mode = request.transport_mode.lower()
+                
+                # Generate routes with different risk profiles using A* with zone constraints
+                risk_profiles = ['safe', 'manageable', 'prone']
+                for risk_profile in risk_profiles:
+                    if len(all_routes) >= 3:  # Get 3 distinct routes
+                        break
+                    
+                    try:
+                        logger.info(f"  Generating {risk_profile} route with A* algorithm (zones={len(request.simulated_flood_zones)})...")
+                        
+                        # Use A* routing with simulated zone constraints
+                        segment_coords = routing_service.calculate_route(
+                            start_coord,
+                            end_coord,
+                            mode=mode,
+                            risk_profile=risk_profile,
+                            simulated_flood_zones=request.simulated_flood_zones  # Hard zone blocking for safe routes!
+                        )
+                        
+                        if segment_coords and len(segment_coords) >= 2:
+                            # Convert to [lng, lat] format
+                            coordinates = [[coord.lng, coord.lat] for coord in segment_coords]
+                            
+                            # Analyze flood risk with simulated zones
+                            flood_analysis = analyze_route_flood_risk(
+                                coordinates,
+                                buffer_meters=50.0,
+                                weather_data=request.weather_data,
+                                simulated_flood_zones=request.simulated_flood_zones
+                            )
+                            
+                            # Get route info
+                            segment_info = routing_service.get_route_info(segment_coords, mode)
+                            
+                            # Create route info
+                            route_info = {
+                                "geometry": {
+                                    "type": "LineString",
+                                    "coordinates": coordinates
+                                },
+                                "distance": segment_info["distance"],
+                                "duration": segment_info["duration"],
+                                "flood_percentage": flood_analysis["flooded_percentage"],
+                                "flooded_distance": flood_analysis["flooded_distance_m"],
+                                "risk_level": flood_analysis["risk_level"],
+                                "weather_impact": flood_analysis.get("weather_impact", "none"),
+                                "source": f"a_star_{risk_profile}_zones"
+                            }
+                            
+                            # Adjust for transportation mode
+                            route_info = adjust_route_for_transportation_mode(route_info, request.transport_mode)
+                            
+                            all_routes.append(route_info)
+                            logger.info(f"  ✅ A* {risk_profile} route: {segment_info['distance']:.0f}m, {flood_analysis['flooded_percentage']:.1f}% flooded")
+                        else:
+                            logger.warning(f"  A* {risk_profile} route failed to generate coordinates")
+                            
+                    except Exception as e:
+                        logger.warning(f"  A* {risk_profile} route error: {str(e)}")
+                        
+                logger.info(f"✅ Generated {len(all_routes)} A* routes with simulated zone constraints\n")
+                
+            except Exception as e:
+                logger.warning(f"Priority A* strategy failed, falling back to OSRM: {e}")
+        
         # Strategy 1: Try to get OSRM alternatives (or route through waypoints)
         logger.info("Strategy 1: Requesting OSRM routing...")
         try:
