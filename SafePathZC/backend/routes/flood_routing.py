@@ -386,6 +386,9 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
             logger.info("Simulated zones take priority - using local A* algorithm for accurate avoidance")
             
             try:
+                # Initialize routing service
+                routing_service = get_routing_service()
+                
                 start_coord = Coordinate(lat=request.start_lat, lng=request.start_lng)
                 end_coord = Coordinate(lat=request.end_lat, lng=request.end_lng)
                 mode = request.transport_mode.lower()
