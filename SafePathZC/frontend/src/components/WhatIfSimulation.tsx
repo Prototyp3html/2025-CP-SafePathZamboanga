@@ -31,6 +31,7 @@ const slideInLeftAnimation = `
 interface WhatIfSimulationProps {
   onClose: () => void;
   onRunSimulation: (scenario: SimulationScenario) => void;
+  isSimulating?: boolean;
   startLocation?: { lat: number; lng: number; address: string } | null;
   endLocation?: { lat: number; lng: number; address: string } | null;
 }
@@ -65,6 +66,7 @@ export interface SimulationScenario {
 export const WhatIfSimulation = ({
   onClose,
   onRunSimulation,
+  isSimulating = false,
   startLocation,
   endLocation,
 }: WhatIfSimulationProps) => {
@@ -1020,15 +1022,24 @@ export const WhatIfSimulation = ({
             </button>
             <button
               onClick={handleRunSimulation}
-              disabled={!hasValidRoute}
+              disabled={!hasValidRoute || isSimulating}
               className={`flex-1 py-2 text-xs sm:text-sm font-medium rounded-lg transition-all ${
-                hasValidRoute
+                hasValidRoute && !isSimulating
                   ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 shadow-lg"
                   : "bg-gray-300 text-gray-500 cursor-not-allowed"
               }`}
             >
-              <i className="fas fa-play mr-1 sm:mr-2"></i>
-              Simulate Route
+              {isSimulating ? (
+                <span className="flex items-center justify-center">
+                  <i className="fas fa-spinner fa-spin mr-2"></i>
+                  Simulating...
+                </span>
+              ) : (
+                <span className="flex items-center justify-center">
+                  <i className="fas fa-play mr-1 sm:mr-2"></i>
+                  Simulate Route
+                </span>
+              )}
             </button>
           </div>
         </div>

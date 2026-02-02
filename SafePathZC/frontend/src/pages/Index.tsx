@@ -80,9 +80,12 @@ const Index = () => {
     console.log("Route selected:", route);
   };
 
+  const [isSimulating, setIsSimulating] = useState(false);
+
   const handleRunSimulation = async (scenario: SimulationScenario) => {
     console.log("🔬 [What-If] Running simulation:", scenario);
     notification.info("🔬 Running What-If simulation...");
+    setIsSimulating(true);
 
     try {
       const BACKEND_URL =
@@ -165,6 +168,8 @@ const Index = () => {
         "❌ Error: " + (error instanceof Error ? error.message : "Unknown"),
         "Error"
       );
+    } finally {
+      setIsSimulating(false);
     }
   };
 
@@ -215,6 +220,7 @@ const Index = () => {
         <WhatIfSimulation
           onClose={() => setActiveModal(null)}
           onRunSimulation={handleRunSimulation}
+          isSimulating={isSimulating}
           startLocation={currentStartLocation}
           endLocation={currentEndLocation}
         />
