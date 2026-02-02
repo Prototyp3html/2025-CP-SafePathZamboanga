@@ -50,55 +50,6 @@ interface OverpassResponse {
   elements: OverpassElement[];
 }
 
-const OVERPASS_MIN_INTERVAL_MS = 1500;
-const OVERPASS_COOLDOWN_MS = 60000;
-let overpassCooldownUntil = 0;
-let lastOverpassRequestAt = 0;
-
-function escapeOverpassRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-async function fetchOverpass(query: string): Promise<Response | null> {
-  const now = Date.now();
-
-  if (now < overpassCooldownUntil) {
-    console.warn(
-      `⏳ Overpass cooldown active for ${Math.ceil(
-        (overpassCooldownUntil - now) / 1000
-      )}s - skipping request`
-    );
-    return null;
-  }
-
-  if (now - lastOverpassRequestAt < OVERPASS_MIN_INTERVAL_MS) {
-    console.warn("⏱️ Overpass request throttled - skipping to avoid 429");
-    return null;
-  }
-
-  lastOverpassRequestAt = now;
-
-  const response = await fetch("https://overpass-api.de/api/interpreter", {
-    method: "POST",
-    body: query,
-    headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-    },
-  });
-
-  if (response.status === 429) {
-    overpassCooldownUntil = Date.now() + OVERPASS_COOLDOWN_MS;
-    console.warn(
-      `🚫 Overpass rate limited (429). Cooling down for ${
-        OVERPASS_COOLDOWN_MS / 1000
-      }s`
-    );
-    return null;
-  }
-
-  return response;
-}
-
 // Search locations using both Nominatim and Overpass APIs
 export async function searchZamboCityLocations(
   query: string,
@@ -220,16 +171,13 @@ async function searchOverpassAPI(
   limit: number
 ): Promise<ZamboCityLocation[]> {
   try {
-    const searchTerm = query.trim();
-    if (searchTerm.length < 3) {
-      return [];
-    }
-
     // Zamboanga City bounding box (south, west, north, east)
     const south = 6.85;
     const west = 121.95;
     const north = 7.15;
     const east = 122.30;
+
+    const searchTerm = query.trim();
 
     // Build exact tag match query (this works reliably)
     const exactTagQuery = `[out:json];
@@ -247,11 +195,17 @@ out body center;`;
 
     try {
       // Try exact tag match first
-      const exactResponse = await fetchOverpass(exactTagQuery);
+      const exactResponse = await fetch("https://overpass-api.de/api/interpreter", {
+        method: "POST",
+        body: exactTagQuery,
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+        },
+      });
 
       let results: ZamboCityLocation[] = [];
 
-      if (exactResponse && exactResponse.ok) {
+      if (exactResponse.ok) {
         const exactData: OverpassResponse = await exactResponse.json();
         results = convertOverpassElements(exactData.elements || []);
         console.log(
@@ -313,41 +267,48 @@ out body center;`;
 
       return results.slice(0, limit);
     } catch (error) {
-      console.error("Overpass search error:", error);
+      console.error("Error searching Overpass API:", error);
       return [];
     }
   } catch (error) {
-    console.error("Error searching Overpass API:", error);
+    console.error("Error in searchOverpassAPI:", error);
     return [];
   }
 }
 
-// Convert Overpass elements to ZamboCityLocation format
+// Helper function to convert Overpass elements to ZamboCityLocation
 function convertOverpassElements(elements: OverpassElement[]): ZamboCityLocation[] {
   return elements
+    .filter((element) => {
+      const tags = element.tags || {};
+      return tags.name; // Only include elements with names
+    })
     .map((element) => {
-      const lat = element.lat || element.center?.lat;
-      const lon = element.lon || element.center?.lon;
-      
-      if (!lat || !lon) return null;
-      
-      const name = element.tags?.name || "Unnamed Location";
-      const type = element.tags?.amenity || element.tags?.shop || element.tags?.tourism || "place";
-      
+      const tags = element.tags || {};
+      const lat = element.lat || element.center?.lat || 0;
+      const lon = element.lon || element.center?.lon || 0;
+
+      // Determine type from tags
+      let type = element.type;
+      if (tags.amenity) type = tags.amenity;
+      else if (tags.shop) type = tags.shop;
+      else if (tags.tourism) type = tags.tourism;
+      else if (tags.leisure) type = tags.leisure;
+      else if (tags.historic) type = tags.historic;
+
       return {
-        name: name.toUpperCase(),
-        displayName: name,
-        lat: lat,
+        name: (tags.name || "Unknown Place").toUpperCase(),
+        displayName: tags.name || "Unknown Place",
+        lat,
         lng: lon,
-        type: type,
+        type,
         osm_type: element.type,
         osm_id: element.id.toString(),
       };
-    })
-    .filter((loc): loc is ZamboCityLocation => loc !== null);
+    });
 }
 
-// Get basic Zamboanga City locations (fallback)
+// Basic fallback locations for when OpenStreetMap is unavailable
 function getBasicZamboCityLocations(
   query: string,
   limit: number
