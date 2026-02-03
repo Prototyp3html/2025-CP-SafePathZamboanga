@@ -329,6 +329,7 @@ class FloodHotspot(Base):
     # Metadata
     first_flood_recorded = Column(DateTime, nullable=True)  # When was first flood recorded
     last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_decay_date = Column(DateTime, nullable=True)  # Last date risk decay was applied (once per day)
 
 class SystemConfig(Base):
     __tablename__ = "system_config"

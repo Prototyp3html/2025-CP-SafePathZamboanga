@@ -917,19 +917,44 @@ class FloodDataUpdater:
             logger.warning(f"Failed to update hotspot data: {e}")
             self.db_session.rollback()
     
-    def _calculate_risk_score(self, total_flood_events: int, total_flooded_hours: float) -> float:
-        """Calculate flood risk score for a hotspot (0-100)"""
+    def _calculate_risk_score(self, total_flood_events: int, total_flooded_hours: float, 
+                            last_flood_start=None) -> float:
+        """
+        Calculate flood risk score for a hotspot (0-100) with TIME DECAY
+        Risk decreases gradually if no recent flooding
+        
+        Args:
+            total_flood_events: Total number of flood events (lifetime)
+            total_flooded_hours: Total hours flooded (lifetime)
+            last_flood_start: When was the last flood? (datetime or None)
+        
+        Returns:
+            Risk score 0-100, decayed based on time since last flood
+        """
         # Base score: frequency (how many times has it flooded)
         # Use logarithmic scale so 1 event = ~20pts, 5 events = ~40pts, 10+ events = ~60+pts
-        # Prevents all high-event roads from maxing out at 100
         frequency_score = min(50, (total_flood_events ** 0.7) * 12)  # Logarithmic: max 50 points
         
         # Duration score: total hours flooded
         # Use logarithmic scale: 10hrs = ~16pts, 50hrs = ~37pts, 100+ hrs = ~45+pts
         duration_score = min(50, (total_flooded_hours ** 0.6) * 2.5)  # Logarithmic: max 50 points
         
-        total_score = frequency_score + duration_score
-        return min(100, max(0, total_score))
+        base_score = frequency_score + duration_score
+        
+        # TIME DECAY: Risk decreases 1% per day without recent flooding
+        # This prevents all roads from turning dark red during rainy season
+        if last_flood_start:
+            days_since_flood = (datetime.utcnow() - last_flood_start).days
+            # 1% decay per day: 0.99 ^ days_since_flood
+            # After 7 days: 0.99^7 = 0.93 (7% reduction)
+            # After 14 days: 0.99^14 = 0.87 (13% reduction)
+            # After 30 days: 0.99^30 = 0.74 (26% reduction)
+            decay_factor = 0.99 ** min(days_since_flood, 60)  # Cap at 60 days (0.55 = 45% reduction)
+            adjusted_score = base_score * decay_factor
+        else:
+            adjusted_score = base_score
+        
+        return min(100, max(0, adjusted_score))
     
     def calculate_flood_duration_hours(self, road_id: str, currently_flooded: bool, 
                                        flooded_history: Dict[str, Any]) -> Dict[str, Any]:
@@ -1272,6 +1297,30 @@ class FloodDataUpdater:
                     
                     risk_score = min(100, frequency_score + hours_score + terrain_score + proximity_score + recency_score)
                     
+                    # APPLY DAILY DECAY: Only once per day
+                    # Check if last_decay_date is different from today
+                    today = datetime.utcnow().date()
+                    needs_decay = False
+                    
+                    if hotspot and hotspot.last_decay_date:
+                        last_decay_day = hotspot.last_decay_date.date()
+                        if last_decay_day < today:
+                            needs_decay = True
+                    elif hotspot:
+                        # First time decay is being applied
+                        needs_decay = True
+                    
+                    # Only apply decay if NO floods in last 2 days (let it cool down)
+                    if needs_decay and days_since_last >= 2:
+                        # Apply 2% daily decay for each day without floods
+                        # But only once per day (not multiple times per update)
+                        decay_factor = 0.98 ** days_since_last
+                        risk_score = risk_score * decay_factor
+                        logger.info(f"  {road_id}: Decay applied (days since: {days_since_last}, factor: {decay_factor:.3f}, new risk: {risk_score:.2f})")
+                    elif needs_decay and days_since_last < 2:
+                        # Just flooded recently, don't decay yet
+                        logger.info(f"  {road_id}: NO decay - flooded recently ({days_since_last} days ago)")
+                    
                     # Get road info from latest event
                     road_name = last_event.road_name
                     location_lat = last_event.location_lat
@@ -1292,6 +1341,12 @@ class FloodDataUpdater:
                         hotspot.average_elevation_m = avg_elevation
                         hotspot.distance_to_water_m = avg_distance_to_water
                         hotspot.last_updated = datetime.utcnow()
+                        # Only update decay date if decay was actually applied (not within 2 days of flood)
+                        if needs_decay and days_since_last >= 2:
+                            hotspot.last_decay_date = datetime.utcnow()
+                        # Reset decay date if just flooded (within last 2 days)
+                        if days_since_last < 2:
+                            hotspot.last_decay_date = None  # Reset, so decay won't apply immediately after flood
                         if last_event.event_type == 'flood_end':
                             hotspot.last_flood_end = last_event.event_time
                         if first_event.event_type == 'flood_start':
