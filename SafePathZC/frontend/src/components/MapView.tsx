@@ -1572,7 +1572,16 @@ export const MapView = ({
       "[What-If Effect] simulationScenario prop:",
       !!simulationScenario
     );
-    if (!simulationScenario) return;
+    if (!simulationScenario) {
+      // Clear simulated routes when scenario is cleared
+      routeLayersRef.current.forEach((layer) => {
+        if (mapRef.current && mapRef.current.hasLayer(layer)) {
+          mapRef.current.removeLayer(layer);
+        }
+      });
+      routeLayersRef.current = [];
+      return;
+    }
     console.log(
       "[What-If Effect] _simulationResult:",
       !!simulationScenario._simulationResult

@@ -173,6 +173,12 @@ const Index = () => {
     }
   };
 
+  const handleClearSimulation = () => {
+    setSimulationScenario(null);
+    window.dispatchEvent(new CustomEvent("simulation-scenario-clear"));
+    notification.info("🧹 Simulation cleared");
+  };
+
   return (
     <div className="h-screen bg-gray-50 font-sans overflow-hidden">
       <NavigationBar />
@@ -200,6 +206,15 @@ const Index = () => {
           </div>
         </div>
       </main>
+
+      {simulationScenario && (
+        <button
+          onClick={handleClearSimulation}
+          className="fixed bottom-5 right-5 z-50 px-4 py-2 text-xs sm:text-sm bg-red-600 text-white rounded-lg shadow-lg hover:bg-red-700"
+        >
+          Clear Simulation
+        </button>
+      )}
 
       {/* Modals */}
       <WelcomeModal

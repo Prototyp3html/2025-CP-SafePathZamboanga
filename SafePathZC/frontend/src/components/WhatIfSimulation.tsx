@@ -120,6 +120,25 @@ export const WhatIfSimulation = ({
     lat: number;
     lng: number;
   } | null>(null);
+  const [floodMiniMapZoom, setFloodMiniMapZoom] = useState(1);
+  const [incidentMiniMapZoom, setIncidentMiniMapZoom] = useState(1);
+
+  const defaultMiniMapCenter = { lat: 6.9, lng: 122.07 };
+
+  const getMiniMapBBox = (
+    center: { lat: number; lng: number },
+    zoom: number
+  ) => {
+    const baseLng = 0.01;
+    const baseLat = 0.008;
+    const factor = 1 / Math.max(zoom, 1);
+    return {
+      west: center.lng - baseLng * factor,
+      south: center.lat - baseLat * factor,
+      east: center.lng + baseLng * factor,
+      north: center.lat + baseLat * factor,
+    };
+  };
   const [isAddingFloodZone, setIsAddingFloodZone] = useState(false);
   const [isAddingIncident, setIsAddingIncident] = useState(false);
   const [floodZoneRadius, setFloodZoneRadius] = useState(500);
@@ -705,13 +724,38 @@ export const WhatIfSimulation = ({
                   {/* Iframe showing the actual map */}
                   <iframe
                     src={
-                      selectedLocation
-                        ? `https://www.openstreetmap.org/export/embed.html?bbox=${selectedLocation.lng - 0.01},${selectedLocation.lat - 0.008},${selectedLocation.lng + 0.01},${selectedLocation.lat + 0.008}&layer=mapnik&marker=${selectedLocation.lat},${selectedLocation.lng}`
-                        : `https://www.openstreetmap.org/export/embed.html?bbox=122.0,6.8,122.3,7.2&layer=mapnik&marker=6.9,122.07`
+                      (() => {
+                        const center = selectedLocation || defaultMiniMapCenter;
+                        const bbox = getMiniMapBBox(center, floodMiniMapZoom);
+                        return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox.west},${bbox.south},${bbox.east},${bbox.north}&layer=mapnik&marker=${center.lat},${center.lng}`;
+                      })()
                     }
                     style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }}
                     title="Mini Map"
                   />
+                  {/* Mobile zoom controls */}
+                  <div className="absolute top-2 right-2 flex flex-col gap-1 lg:hidden">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFloodMiniMapZoom((z) => Math.min(4, z + 0.5));
+                      }}
+                      className="w-7 h-7 rounded bg-white shadow text-sm font-bold"
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFloodMiniMapZoom((z) => Math.max(1, z - 0.5));
+                      }}
+                      className="w-7 h-7 rounded bg-white shadow text-sm font-bold"
+                    >
+                      −
+                    </button>
+                  </div>
                   {/* Mobile/Tablet Instructions */}
                   <div className="absolute top-2 left-2 bg-white px-2 py-1 rounded shadow text-xs font-medium lg:hidden">
                     📍 Tap to select
@@ -863,13 +907,38 @@ export const WhatIfSimulation = ({
                   {/* Iframe showing the actual map */}
                   <iframe
                     src={
-                      selectedLocation
-                        ? `https://www.openstreetmap.org/export/embed.html?bbox=${selectedLocation.lng - 0.01},${selectedLocation.lat - 0.008},${selectedLocation.lng + 0.01},${selectedLocation.lat + 0.008}&layer=mapnik&marker=${selectedLocation.lat},${selectedLocation.lng}`
-                        : `https://www.openstreetmap.org/export/embed.html?bbox=122.0,6.8,122.3,7.2&layer=mapnik&marker=6.9,122.07`
+                      (() => {
+                        const center = selectedLocation || defaultMiniMapCenter;
+                        const bbox = getMiniMapBBox(center, incidentMiniMapZoom);
+                        return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox.west},${bbox.south},${bbox.east},${bbox.north}&layer=mapnik&marker=${center.lat},${center.lng}`;
+                      })()
                     }
                     style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }}
                     title="Mini Map"
                   />
+                  {/* Mobile zoom controls */}
+                  <div className="absolute top-2 right-2 flex flex-col gap-1 lg:hidden">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIncidentMiniMapZoom((z) => Math.min(4, z + 0.5));
+                      }}
+                      className="w-7 h-7 rounded bg-white shadow text-sm font-bold"
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIncidentMiniMapZoom((z) => Math.max(1, z - 0.5));
+                      }}
+                      className="w-7 h-7 rounded bg-white shadow text-sm font-bold"
+                    >
+                      −
+                    </button>
+                  </div>
                   {/* Mobile/Tablet Instructions */}
                   <div className="absolute top-2 left-2 bg-white px-2 py-1 rounded shadow text-xs font-medium lg:hidden">
                     📍 Tap to select

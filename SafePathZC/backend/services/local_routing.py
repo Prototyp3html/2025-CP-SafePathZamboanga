@@ -818,12 +818,33 @@ class LocalRoutingService:
                                 
                                 if zone_lat and zone_lng:
                                     zone_center = Coordinate(lat=zone_lat, lng=zone_lng)
-                                    dist_to_zone = neighbor.distance_to(zone_center)
+                                    dist_current = current.distance_to(zone_center)
+                                    dist_neighbor = neighbor.distance_to(zone_center)
+
+                                    segment_dx = neighbor.lng - current.lng
+                                    segment_dy = neighbor.lat - current.lat
+                                    segment_len_sq = segment_dx ** 2 + segment_dy ** 2
+                                    if segment_len_sq > 0:
+                                        t = max(
+                                            0.0,
+                                            min(
+                                                1.0,
+                                                ((zone_lng - current.lng) * segment_dx + (zone_lat - current.lat) * segment_dy)
+                                                / segment_len_sq,
+                                            ),
+                                        )
+                                        closest_lng = current.lng + t * segment_dx
+                                        closest_lat = current.lat + t * segment_dy
+                                        dist_closest = Coordinate(lat=closest_lat, lng=closest_lng).distance_to(zone_center)
+                                    else:
+                                        dist_closest = dist_current
                                     
-                                    # If neighbor is inside simulated zone, SKIP IT ENTIRELY for safe routes
-                                    if dist_to_zone < zone_radius:
+                                    # If segment intersects simulated zone, SKIP ENTIRELY for safe routes
+                                    if dist_current < zone_radius or dist_neighbor < zone_radius or dist_closest < zone_radius:
                                         neighbor_in_simulated_zone = True
-                                        logger.debug(f"BLOCKING neighbor ({neighbor.lat:.4f}, {neighbor.lng:.4f}) - inside safe zone radius")
+                                        logger.debug(
+                                            f"BLOCKING segment ({current.lat:.4f},{current.lng:.4f})->({neighbor.lat:.4f},{neighbor.lng:.4f}) - intersects safe zone"
+                                        )
                                         break
                             
                             # Skip this neighbor completely if in zone
@@ -842,11 +863,29 @@ class LocalRoutingService:
                                 
                                 if zone_lat and zone_lng:
                                     zone_center = Coordinate(lat=zone_lat, lng=zone_lng)
-                                    dist_to_zone = neighbor.distance_to(zone_center)
+                                    dist_current = current.distance_to(zone_center)
+                                    dist_neighbor = neighbor.distance_to(zone_center)
+
+                                    segment_dx = neighbor.lng - current.lng
+                                    segment_dy = neighbor.lat - current.lat
+                                    segment_len_sq = segment_dx ** 2 + segment_dy ** 2
+                                    if segment_len_sq > 0:
+                                        t = max(
+                                            0.0,
+                                            min(
+                                                1.0,
+                                                ((zone_lng - current.lng) * segment_dx + (zone_lat - current.lat) * segment_dy)
+                                                / segment_len_sq,
+                                            ),
+                                        )
+                                        closest_lng = current.lng + t * segment_dx
+                                        closest_lat = current.lat + t * segment_dy
+                                        dist_closest = Coordinate(lat=closest_lat, lng=closest_lng).distance_to(zone_center)
+                                    else:
+                                        dist_closest = dist_current
                                     
-                                    # If neighbor is inside simulated zone, apply penalty
-                                    if dist_to_zone < zone_radius:
-                                        # Penalty for manageable/prone routes
+                                    # If segment intersects simulated zone, apply penalty
+                                    if dist_current < zone_radius or dist_neighbor < zone_radius or dist_closest < zone_radius:
                                         if zone_severity == "high":
                                             routing_cost *= 8.0
                                         elif zone_severity == "moderate":
@@ -854,7 +893,9 @@ class LocalRoutingService:
                                         else:  # low
                                             routing_cost *= 1.5
                                         
-                                        logger.debug(f"Neighbor ({neighbor.lat:.4f}, {neighbor.lng:.4f}) in simulated {zone_severity} zone - penalty: {routing_cost:.1f}x")
+                                        logger.debug(
+                                            f"Segment intersects simulated {zone_severity} zone - penalty: {routing_cost:.1f}x"
+                                        )
                                         break
                         
                         speed_kph = segment.get_terrain_adjusted_speed(mode)
