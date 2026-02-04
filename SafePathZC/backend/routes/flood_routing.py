@@ -139,6 +139,48 @@ def calculate_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> fl
     return R * c
 
 
+def route_intersects_simulated_zones(
+    coordinates: List[List[float]],
+    simulated_flood_zones: Optional[List[Dict[str, Any]]]
+) -> bool:
+    """Check if any segment in the route intersects a simulated flood zone."""
+    if not simulated_flood_zones or not coordinates or len(coordinates) < 2:
+        return False
+
+    for i in range(len(coordinates) - 1):
+        lng1, lat1 = coordinates[i]
+        lng2, lat2 = coordinates[i + 1]
+
+        for zone in simulated_flood_zones:
+            zone_lat = zone.get("lat")
+            zone_lng = zone.get("lng")
+            zone_radius = zone.get("radius", 300)
+
+            if zone_lat is None or zone_lng is None:
+                continue
+
+            # Endpoint distances
+            dist1 = calculate_distance(lat1, lng1, zone_lat, zone_lng)
+            dist2 = calculate_distance(lat2, lng2, zone_lat, zone_lng)
+
+            # Closest point on segment to zone center (project in lat/lng space)
+            seg_dx = lng2 - lng1
+            seg_dy = lat2 - lat1
+            seg_len_sq = seg_dx ** 2 + seg_dy ** 2
+            if seg_len_sq > 0:
+                t = max(0.0, min(1.0, ((zone_lng - lng1) * seg_dx + (zone_lat - lat1) * seg_dy) / seg_len_sq))
+                closest_lng = lng1 + t * seg_dx
+                closest_lat = lat1 + t * seg_dy
+                dist_closest = calculate_distance(closest_lat, closest_lng, zone_lat, zone_lng)
+            else:
+                dist_closest = dist1
+
+            if dist1 < zone_radius or dist2 < zone_radius or dist_closest < zone_radius:
+                return True
+
+    return False
+
+
 def has_dead_end_segment(coordinates: List[List[float]], threshold_m: float = 100.0) -> bool:
     """
     Detect if a route has dead-end segments (goes out and comes back).
@@ -422,6 +464,16 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                 weather_data=request.weather_data,
                                 simulated_flood_zones=request.simulated_flood_zones
                             )
+
+                            intersects_simulated = route_intersects_simulated_zones(
+                                coordinates,
+                                request.simulated_flood_zones
+                            )
+                            if intersects_simulated:
+                                flood_analysis["flooded_percentage"] = max(
+                                    flood_analysis["flooded_percentage"], 80.0
+                                )
+                                flood_analysis["risk_level"] = "prone"
                             
                             # Get route info
                             segment_info = routing_service.get_route_info(segment_coords, mode)
@@ -438,6 +490,7 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                 "flooded_distance": flood_analysis["flooded_distance_m"],
                                 "risk_level": flood_analysis["risk_level"],
                                 "weather_impact": flood_analysis.get("weather_impact", "none"),
+                                "simulated_zone_intersection": intersects_simulated,
                                 "source": f"a_star_{risk_profile}_zones"
                             }
                             
@@ -515,6 +568,16 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                     weather_data=request.weather_data,
                                     simulated_flood_zones=request.simulated_flood_zones
                                 )
+
+                                intersects_simulated = route_intersects_simulated_zones(
+                                    coordinates,
+                                    request.simulated_flood_zones
+                                )
+                                if intersects_simulated:
+                                    flood_analysis["flooded_percentage"] = max(
+                                        flood_analysis["flooded_percentage"], 80.0
+                                    )
+                                    flood_analysis["risk_level"] = "prone"
                                 
                                 # Get terrain data for route
                                 terrain_data = await get_route_terrain_data(coordinates)
@@ -551,6 +614,7 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                     "flooded_distance": flood_analysis["flooded_distance_m"],
                                     "risk_level": flood_analysis["risk_level"],
                                     "weather_impact": flood_analysis.get("weather_impact", "none"),
+                                    "simulated_zone_intersection": intersects_simulated,
                                     "terrain_data": terrain_data,
                                     "traffic_analysis": traffic_analysis
                                 }
@@ -783,8 +847,19 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                             flood_analysis = analyze_route_flood_risk(
                                 coordinates,
                                 buffer_meters=50.0,
-                                weather_data=request.weather_data
+                                weather_data=request.weather_data,
+                                simulated_flood_zones=request.simulated_flood_zones
                             )
+
+                            intersects_simulated = route_intersects_simulated_zones(
+                                coordinates,
+                                request.simulated_flood_zones
+                            )
+                            if intersects_simulated:
+                                flood_analysis["flooded_percentage"] = max(
+                                    flood_analysis["flooded_percentage"], 80.0
+                                )
+                                flood_analysis["risk_level"] = "prone"
                             
                             # Create route info
                             route_info = {
@@ -798,6 +873,7 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                 "flooded_distance": flood_analysis["flooded_distance_m"],
                                 "risk_level": flood_analysis["risk_level"],
                                 "weather_impact": flood_analysis.get("weather_impact", "none"),
+                                "simulated_zone_intersection": intersects_simulated,
                                 "source": f"a_star_{risk_profile}_waypoints"
                             }
                             
@@ -1056,8 +1132,20 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
         used_indices = set()
         
         # BEST ROUTE (Green): Route with LOWEST combined score (best flood + traffic)
-        safe_idx = 0
-        safe_route = all_routes[safe_idx]
+        if request.simulated_flood_zones and len(request.simulated_flood_zones) > 0:
+            safe_candidates = [
+                (i, r)
+                for i, r in enumerate(all_routes)
+                if not r.get("simulated_zone_intersection")
+            ]
+            if safe_candidates:
+                safe_idx, safe_route = safe_candidates[0]
+            else:
+                safe_idx = 0
+                safe_route = all_routes[safe_idx]
+        else:
+            safe_idx = 0
+            safe_route = all_routes[safe_idx]
         
         # Build description mentioning both flood and traffic
         traffic_info = safe_route.get("traffic_analysis", {})

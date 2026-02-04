@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import L from "leaflet";
 import { notification } from "@/utils/notifications";
 import { searchZamboCityLocations } from "@/utils/zamboCityLocations";
 
@@ -120,25 +121,100 @@ export const WhatIfSimulation = ({
     lat: number;
     lng: number;
   } | null>(null);
-  const [floodMiniMapZoom, setFloodMiniMapZoom] = useState(1);
-  const [incidentMiniMapZoom, setIncidentMiniMapZoom] = useState(1);
-
   const defaultMiniMapCenter = { lat: 6.9, lng: 122.07 };
+  const floodMiniMapRef = useRef<HTMLDivElement | null>(null);
+  const incidentMiniMapRef = useRef<HTMLDivElement | null>(null);
+  const floodMiniMapInstance = useRef<L.Map | null>(null);
+  const incidentMiniMapInstance = useRef<L.Map | null>(null);
+  const floodMarkerRef = useRef<L.Marker | null>(null);
+  const incidentMarkerRef = useRef<L.Marker | null>(null);
 
-  const getMiniMapBBox = (
-    center: { lat: number; lng: number },
-    zoom: number
-  ) => {
-    const baseLng = 0.01;
-    const baseLat = 0.008;
-    const factor = 1 / Math.max(zoom, 1);
-    return {
-      west: center.lng - baseLng * factor,
-      south: center.lat - baseLat * factor,
-      east: center.lng + baseLng * factor,
-      north: center.lat + baseLat * factor,
+  useEffect(() => {
+    if (!isAddingFloodZone || !floodMiniMapRef.current) return;
+
+    if (!floodMiniMapInstance.current) {
+      const map = L.map(floodMiniMapRef.current, {
+        zoomControl: true,
+        scrollWheelZoom: true,
+        dragging: true,
+        doubleClickZoom: true,
+        touchZoom: true,
+      });
+      floodMiniMapInstance.current = map;
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap contributors",
+      }).addTo(map);
+
+      const center = selectedLocation || defaultMiniMapCenter;
+      map.setView([center.lat, center.lng], 14);
+
+      map.on("click", (e: L.LeafletMouseEvent) => {
+        setSelectedLocation({ lat: e.latlng.lat, lng: e.latlng.lng });
+        notification.info(
+          `Location selected: ${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`
+        );
+      });
+    } else {
+      floodMiniMapInstance.current.invalidateSize();
+    }
+  }, [isAddingFloodZone, selectedLocation]);
+
+  useEffect(() => {
+    if (!isAddingIncident || !incidentMiniMapRef.current) return;
+
+    if (!incidentMiniMapInstance.current) {
+      const map = L.map(incidentMiniMapRef.current, {
+        zoomControl: true,
+        scrollWheelZoom: true,
+        dragging: true,
+        doubleClickZoom: true,
+        touchZoom: true,
+      });
+      incidentMiniMapInstance.current = map;
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap contributors",
+      }).addTo(map);
+
+      const center = selectedLocation || defaultMiniMapCenter;
+      map.setView([center.lat, center.lng], 14);
+
+      map.on("click", (e: L.LeafletMouseEvent) => {
+        setSelectedLocation({ lat: e.latlng.lat, lng: e.latlng.lng });
+        notification.info(
+          `Location selected: ${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`
+        );
+      });
+    } else {
+      incidentMiniMapInstance.current.invalidateSize();
+    }
+  }, [isAddingIncident, selectedLocation]);
+
+  useEffect(() => {
+    const updateMarker = (
+      mapRef: React.MutableRefObject<L.Map | null>,
+      markerRef: React.MutableRefObject<L.Marker | null>
+    ) => {
+      if (!mapRef.current) return;
+      const center = selectedLocation || defaultMiniMapCenter;
+      if (!markerRef.current) {
+        markerRef.current = L.marker([center.lat, center.lng]).addTo(
+          mapRef.current
+        );
+      } else {
+        markerRef.current.setLatLng([center.lat, center.lng]);
+      }
+      mapRef.current.setView([center.lat, center.lng], mapRef.current.getZoom());
     };
-  };
+
+    if (isAddingFloodZone) {
+      updateMarker(floodMiniMapInstance, floodMarkerRef);
+    }
+    if (isAddingIncident) {
+      updateMarker(incidentMiniMapInstance, incidentMarkerRef);
+    }
+  }, [selectedLocation, isAddingFloodZone, isAddingIncident]);
   const [isAddingFloodZone, setIsAddingFloodZone] = useState(false);
   const [isAddingIncident, setIsAddingIncident] = useState(false);
   const [floodZoneRadius, setFloodZoneRadius] = useState(500);
@@ -695,7 +771,7 @@ export const WhatIfSimulation = ({
               <div className="bg-orange-100 border border-orange-300 rounded-lg p-3 mb-3">
                 <p className="text-xs text-orange-800 mb-2 font-medium lg:hidden">
                   <i className="fas fa-map-marked-alt mr-1"></i>
-                  Click on the mini-map below to select location
+                  Tap to select · Drag to move · Pinch/scroll to zoom
                 </p>
                 <p className="text-xs text-blue-800 mb-2 font-medium hidden lg:block">
                   <i className="fas fa-map-marked-alt mr-1"></i>
@@ -704,61 +780,12 @@ export const WhatIfSimulation = ({
                 
                 {/* Mini Map Preview - Mobile/Tablet Only */}
                 <div 
-                  className="w-full h-48 lg:h-24 bg-gray-200 rounded-lg mb-3 border-2 border-orange-400 overflow-hidden relative cursor-crosshair lg:cursor-default"
-                  onClick={(e) => {
-                    // Only allow clicking on mobile/tablet
-                    if (window.innerWidth >= 1024) return;
-                    
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const y = e.clientY - rect.top;
-                    
-                    // Zamboanga bounds: lat 6.8-7.2, lng 122.0-122.3
-                    const lat = 7.2 - (y / rect.height) * 0.4;
-                    const lng = 122.0 + (x / rect.width) * 0.3;
-                    
-                    setSelectedLocation({ lat, lng });
-                    notification.info(`Location selected: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-                  }}
+                  className="w-full h-48 lg:h-24 bg-gray-200 rounded-lg mb-3 border-2 border-orange-400 overflow-hidden relative"
                 >
-                  {/* Iframe showing the actual map */}
-                  <iframe
-                    src={
-                      (() => {
-                        const center = selectedLocation || defaultMiniMapCenter;
-                        const bbox = getMiniMapBBox(center, floodMiniMapZoom);
-                        return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox.west},${bbox.south},${bbox.east},${bbox.north}&layer=mapnik&marker=${center.lat},${center.lng}`;
-                      })()
-                    }
-                    style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }}
-                    title="Mini Map"
-                  />
-                  {/* Mobile zoom controls */}
-                  <div className="absolute top-2 right-2 flex flex-col gap-1 lg:hidden">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setFloodMiniMapZoom((z) => Math.min(4, z + 0.5));
-                      }}
-                      className="w-7 h-7 rounded bg-white shadow text-sm font-bold"
-                    >
-                      +
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setFloodMiniMapZoom((z) => Math.max(1, z - 0.5));
-                      }}
-                      className="w-7 h-7 rounded bg-white shadow text-sm font-bold"
-                    >
-                      −
-                    </button>
-                  </div>
+                  <div ref={floodMiniMapRef} className="absolute inset-0"></div>
                   {/* Mobile/Tablet Instructions */}
                   <div className="absolute top-2 left-2 bg-white px-2 py-1 rounded shadow text-xs font-medium lg:hidden">
-                    📍 Tap to select
+                    📍 Tap to select · ✋ Drag · 🔍 Pinch/scroll
                   </div>
                   {/* Desktop Instructions */}
                   <div className="hidden lg:flex absolute inset-0 bg-blue-900 bg-opacity-60 items-center justify-center">
@@ -878,7 +905,7 @@ export const WhatIfSimulation = ({
               <div className="bg-yellow-100 border border-yellow-300 rounded-lg p-3 mb-3">
                 <p className="text-xs text-yellow-800 mb-2 font-medium lg:hidden">
                   <i className="fas fa-map-marked-alt mr-1"></i>
-                  Click on the mini-map below to select location
+                  Tap to select · Drag to move · Pinch/scroll to zoom
                 </p>
                 <p className="text-xs text-blue-800 mb-2 font-medium hidden lg:block">
                   <i className="fas fa-map-marked-alt mr-1"></i>
@@ -887,61 +914,12 @@ export const WhatIfSimulation = ({
                 
                 {/* Mini Map Preview - Mobile/Tablet Only */}
                 <div 
-                  className="w-full h-48 lg:h-24 bg-gray-200 rounded-lg mb-3 border-2 border-yellow-400 overflow-hidden relative cursor-crosshair lg:cursor-default"
-                  onClick={(e) => {
-                    // Only allow clicking on mobile/tablet
-                    if (window.innerWidth >= 1024) return;
-                    
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const y = e.clientY - rect.top;
-                    
-                    // Zamboanga bounds: lat 6.8-7.2, lng 122.0-122.3
-                    const lat = 7.2 - (y / rect.height) * 0.4;
-                    const lng = 122.0 + (x / rect.width) * 0.3;
-                    
-                    setSelectedLocation({ lat, lng });
-                    notification.info(`Location selected: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-                  }}
+                  className="w-full h-48 lg:h-24 bg-gray-200 rounded-lg mb-3 border-2 border-yellow-400 overflow-hidden relative"
                 >
-                  {/* Iframe showing the actual map */}
-                  <iframe
-                    src={
-                      (() => {
-                        const center = selectedLocation || defaultMiniMapCenter;
-                        const bbox = getMiniMapBBox(center, incidentMiniMapZoom);
-                        return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox.west},${bbox.south},${bbox.east},${bbox.north}&layer=mapnik&marker=${center.lat},${center.lng}`;
-                      })()
-                    }
-                    style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }}
-                    title="Mini Map"
-                  />
-                  {/* Mobile zoom controls */}
-                  <div className="absolute top-2 right-2 flex flex-col gap-1 lg:hidden">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIncidentMiniMapZoom((z) => Math.min(4, z + 0.5));
-                      }}
-                      className="w-7 h-7 rounded bg-white shadow text-sm font-bold"
-                    >
-                      +
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIncidentMiniMapZoom((z) => Math.max(1, z - 0.5));
-                      }}
-                      className="w-7 h-7 rounded bg-white shadow text-sm font-bold"
-                    >
-                      −
-                    </button>
-                  </div>
+                  <div ref={incidentMiniMapRef} className="absolute inset-0"></div>
                   {/* Mobile/Tablet Instructions */}
                   <div className="absolute top-2 left-2 bg-white px-2 py-1 rounded shadow text-xs font-medium lg:hidden">
-                    📍 Tap to select
+                    📍 Tap to select · ✋ Drag · 🔍 Pinch/scroll
                   </div>
                   {/* Desktop Instructions */}
                   <div className="hidden lg:flex absolute inset-0 bg-blue-900 bg-opacity-60 items-center justify-center">
