@@ -859,11 +859,12 @@ class LocalRoutingService:
                                                 f"MANAGEABLE: Segment intersects simulated zone - moderate penalty: 6.0x"
                                             )
                                         elif risk_profile == "prone":
-                                            # DISCOUNT for prone routes - makes flooded segments cheaper/faster
-                                            # This actively encourages routing THROUGH the flood zone
-                                            routing_cost *= 0.5
+                                            # STRONG DISCOUNT for prone routes - makes flooded segments much cheaper/faster
+                                            # This aggressively encourages routing THROUGH the flood zone
+                                            # 0.2x means flooded segments are 80% cheaper, strongly preferring direct paths through zone
+                                            routing_cost *= 0.2
                                             logger.debug(
-                                                f"PRONE: Segment in simulated zone - discount applied: 0.5x (preferred)"
+                                                f"PRONE: Segment in simulated zone - strong discount applied: 0.2x (heavily preferred)"
                                             )
                                         break
                         
