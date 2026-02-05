@@ -10,6 +10,7 @@ import {
   Calendar,
   Filter,
   MapPin,
+  TrendingUp,
 } from "lucide-react";
 import { notification } from "@/utils/notifications";
 
