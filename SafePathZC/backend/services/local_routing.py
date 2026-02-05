@@ -808,13 +808,18 @@ class LocalRoutingService:
                         
                         base_distance = current.distance_to(neighbor)
                         
-                        # HARD BLOCK: For "safe" routes, completely reject nodes in simulated zones
+                        # HARD BLOCK: For "safe" routes, reject nodes within an EXPANDED buffer zone around simulated zones
+                        # This creates a "safety corridor" that safe routes must detour around
                         if simulated_flood_zones and risk_profile == "safe":
-                            neighbor_in_simulated_zone = False
+                            neighbor_in_safety_buffer = False
                             for zone in simulated_flood_zones:
                                 zone_lat = zone.get("lat")
                                 zone_lng = zone.get("lng")
                                 zone_radius = zone.get("radius", 300)
+                                
+                                # Expand the exclusion zone by 50% for safe routes to create safety buffer
+                                # This ensures routes have to detour significantly around the flood area
+                                safe_route_buffer = zone_radius * 1.5
                                 
                                 if zone_lat and zone_lng:
                                     zone_center = Coordinate(lat=zone_lat, lng=zone_lng)
@@ -839,16 +844,17 @@ class LocalRoutingService:
                                     else:
                                         dist_closest = dist_current
                                     
-                                    # If segment intersects simulated zone, SKIP ENTIRELY for safe routes
-                                    if dist_current < zone_radius or dist_neighbor < zone_radius or dist_closest < zone_radius:
-                                        neighbor_in_simulated_zone = True
+                                    # If segment intersects the safety buffer zone, SKIP ENTIRELY for safe routes
+                                    # Use safe_route_buffer (1.5x zone radius) instead of just zone_radius
+                                    if dist_current < safe_route_buffer or dist_neighbor < safe_route_buffer or dist_closest < safe_route_buffer:
+                                        neighbor_in_safety_buffer = True
                                         logger.debug(
-                                            f"BLOCKING segment ({current.lat:.4f},{current.lng:.4f})->({neighbor.lat:.4f},{neighbor.lng:.4f}) - intersects safe zone"
+                                            f"BLOCKING segment ({current.lat:.4f},{current.lng:.4f})->({neighbor.lat:.4f},{neighbor.lng:.4f}) - intersects safety buffer"
                                         )
                                         break
                             
-                            # Skip this neighbor completely if in zone
-                            if neighbor_in_simulated_zone:
+                            # Skip this neighbor completely if in safety buffer
+                            if neighbor_in_safety_buffer:
                                 continue
                         
                         routing_cost = segment.get_routing_cost(mode, risk_profile, flood_cache)
