@@ -9,7 +9,7 @@
   z-index: 1000;
   position: fixed;
   left: 10px;
-  top: 60px;
+  top: 180px;
   pointer-events: auto;
   width: auto;
   max-width: calc(100vw - 20px);
@@ -292,7 +292,7 @@
   .flood-forecast-container {
     left: 8px;
     right: auto;
-    top: 55px;
+    top: 180px;
     transform: none;
     width: auto;
   }
@@ -312,7 +312,7 @@
   .flood-forecast-container {
     left: 8px;
     right: 8px;
-    top: 50px;
+    top: 160px;
     transform: none;
   }
 
@@ -905,7 +905,7 @@
   .flood-forecast-container {
     left: 5px;
     right: 5px;
-    top: 45px;
+    top: 150px;
   }
 
   .flood-forecast-panel {
