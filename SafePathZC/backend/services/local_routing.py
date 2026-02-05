@@ -779,9 +779,9 @@ class LocalRoutingService:
                 logger.info(f"A* Progress: Found goal! Completed in {iterations} iterations, visited {len(visited)} nodes")
                 logger.info(f"Successfully calculated route with {len(path)} waypoint nodes")
                 
-                # Simplify the path - keep most detail for accurate flood analysis
-                # Tolerance of 20 meters - preserves route detail for flood analysis
-                simplified_path = self._simplify_path(path, tolerance=20.0)
+                # Simplify the path - keep high detail to ensure routes stay on roads
+                # Tolerance of 5 meters - preserves route accuracy and prevents visual artifacts
+                simplified_path = self._simplify_path(path, tolerance=5.0)
                 
                 logger.info(f"Simplified route to {len(simplified_path)} points")
                 
@@ -842,9 +842,9 @@ class LocalRoutingService:
                                         dist_closest = dist_current
                                     
                                     # Apply penalties based on risk profile
-                                    # Safe: 20x penalty to strongly avoid the zone while allowing paths
-                                    # Manageable: 4x penalty for moderate avoidance
-                                    # Prone: 1.5x penalty for light avoidance
+                                    # Safe: 20x penalty to strongly avoid the zone
+                                    # Manageable: 3x penalty for moderate avoidance
+                                    # Prone: 1.2x penalty (nearly no avoidance - takes direct path)
                                     if dist_current < zone_radius or dist_neighbor < zone_radius or dist_closest < zone_radius:
                                         if risk_profile == "safe":
                                             # Strong penalty for safe routes - avoid zone but allow alternative paths
@@ -853,21 +853,16 @@ class LocalRoutingService:
                                                 f"SAFE: Segment intersects simulated zone - strong penalty: {routing_cost:.1f}x"
                                             )
                                         elif risk_profile == "manageable":
-                                            # Moderate penalty for manageable routes
-                                            if zone_severity == "high":
-                                                routing_cost *= 8.0
-                                            elif zone_severity == "moderate":
-                                                routing_cost *= 4.0
-                                            else:  # low
-                                                routing_cost *= 1.5
+                                            # Moderate penalty for manageable routes - mild avoidance
+                                            routing_cost *= 3.0
                                             logger.debug(
-                                                f"MANAGEABLE: Segment intersects simulated {zone_severity} zone - penalty: {routing_cost:.1f}x"
+                                                f"MANAGEABLE: Segment intersects simulated zone - moderate penalty: {routing_cost:.1f}x"
                                             )
                                         elif risk_profile == "prone":
-                                            # Light penalty for prone routes
-                                            routing_cost *= 1.5
+                                            # Minimal penalty for prone routes - nearly direct path through zone
+                                            routing_cost *= 1.2
                                             logger.debug(
-                                                f"PRONE: Segment intersects simulated zone - light penalty: {routing_cost:.1f}x"
+                                                f"PRONE: Segment intersects simulated zone - minimal penalty: {routing_cost:.1f}x"
                                             )
                                         break
                         
