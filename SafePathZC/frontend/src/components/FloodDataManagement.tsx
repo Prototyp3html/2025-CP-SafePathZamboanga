@@ -6,7 +6,6 @@ import {
   AlertCircle,
   Activity,
   Droplets,
-  TrendingUp,
   BarChart3,
   Calendar,
   Filter,
@@ -564,12 +563,12 @@ export const FloodDataManagement: React.FC = () => {
           </div>
         </div>
       )}
-      <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="mt-8 grid grid-cols-1 gap-6">
         {/* Current Flood Status */}
         <div className="bg-gradient-to-br from-red-50 to-red-100 border border-red-200 rounded-xl p-6">
           <div className="flex items-center gap-3 mb-3">
             <Droplets className="w-5 h-5 text-red-600" />
-            <h4 className="font-semibold text-gray-900">Current Status</h4>
+            <h4 className="font-semibold text-gray-900">Currently Flooded Roads</h4>
           </div>
           <div className="space-y-2">
             {loadingFloodStatus ? (
@@ -577,7 +576,7 @@ export const FloodDataManagement: React.FC = () => {
             ) : currentFloodStatus ? (
               <>
                 <div className="flex justify-between">
-                  <span className="text-gray-700">Flooded Roads</span>
+                  <span className="text-gray-700">Active Floods (Last 2 Days)</span>
                   <span className="font-bold text-red-600">
                     {currentFloodStatus.currently_flooded_roads} / {currentFloodStatus.total_road_segments}
                   </span>
@@ -591,33 +590,12 @@ export const FloodDataManagement: React.FC = () => {
                   ></div>
                 </div>
                 <p className="text-sm text-gray-600 pt-2">
-                  {((currentFloodStatus.currently_flooded_roads / currentFloodStatus.total_road_segments) * 100).toFixed(2)}% of roads affected
+                  {((currentFloodStatus.currently_flooded_roads / currentFloodStatus.total_road_segments) * 100).toFixed(2)}% of roads currently flooded
                 </p>
               </>
             ) : (
               <div className="text-gray-600 text-sm">Unable to load flood status</div>
             )}
-          </div>
-        </div>
-
-        {/* Last 24 Hours Activity */}
-        <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-xl p-6">
-          <div className="flex items-center gap-3 mb-3">
-            <TrendingUp className="w-5 h-5 text-blue-600" />
-            <h4 className="font-semibold text-gray-900">System Status</h4>
-          </div>
-          <div className="space-y-2">
-            <div className="flex justify-between">
-              <span className="text-gray-700">Uptime</span>
-              <span className="font-bold text-blue-600">99.8%</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-700">Last Check</span>
-              <span className="font-bold text-blue-600">Just now</span>
-            </div>
-            <p className="text-sm text-gray-600 pt-2">
-              System running normally
-            </p>
           </div>
         </div>
       </div>

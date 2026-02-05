@@ -1240,16 +1240,23 @@ async def get_admin_dashboard(
                 logger.error(f"❌ Error loading from {geojson_path}: {path_e}")
                 continue
         
-        if not geojson_loaded:
-            error_msg = f"❌ CRITICAL: terrain_roads.geojson NOT FOUND! Checked locations: {[str(p) for p in possible_paths]}"
-            logger.error(error_msg)
-            raise HTTPException(status_code=500, detail=error_msg)
+        # Get actual flood data from database instead of static GeoJSON
+        # A road is considered "currently flooded" if it flooded in the last 2 days
+        from models import FloodHotspot
+        from datetime import datetime, timedelta
+        
+        # Only count roads with recent floods (within last 2 days)
+        two_days_ago = datetime.utcnow() - timedelta(days=2)
+        flooded_hotspots = db.query(FloodHotspot).filter(
+            FloodHotspot.last_flood_end >= two_days_ago  # Flooded in last 2 days
+        ).count()
+        
+        total_roads_in_db = db.query(FloodHotspot).count()
         
         # Count total users
         total_users = db.query(User).count()
         
         # Count active users (users who logged in today)
-        from datetime import datetime, timedelta
         today = datetime.utcnow().date()
         active_users_today = db.query(User).filter(
             User.last_activity >= datetime.combine(today, datetime.min.time())
@@ -1293,12 +1300,11 @@ async def get_admin_dashboard(
         return {
             "timestamp": datetime.utcnow().isoformat(),
             "system_overview": {
-                "total_road_segments": total_roads,
-                "currently_flooded_roads": flooded_roads,
-                "flood_percentage": round((flooded_roads / total_roads * 100), 2),
+                "total_road_segments": total_roads_in_db,
+                "currently_flooded_roads": flooded_hotspots,
+                "flood_percentage": round((flooded_hotspots / total_roads_in_db * 100), 2) if total_roads_in_db > 0 else 0,
                 "total_users": total_users,
-                "active_users_today": active_users_today,
-                "system_uptime_percentage": 99.8  # Example uptime
+                "active_users_today": active_users_today
             },
             "reports_summary": {
                 "total_reports": total_reports,
