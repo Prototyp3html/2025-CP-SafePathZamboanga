@@ -291,16 +291,16 @@
 @media (max-width: 900px) {
   .flood-forecast-container {
     left: 8px;
-    right: 8px;
+    right: auto;
     top: 55px;
     transform: none;
-    max-width: calc(100vw - 16px);
+    width: auto;
   }
 
   .flood-forecast-panel {
-    max-width: 100%;
+    max-width: 340px;
+    width: 340px;
     min-width: auto;
-    width: 100%;
   }
 
   .day-buttons {
@@ -311,17 +311,17 @@
 @media (max-width: 600px) {
   .flood-forecast-container {
     left: 8px;
-    right: 8px;
+    right: auto;
     top: 50px;
-    bottom: auto;
     transform: none;
-    max-width: calc(100vw - 16px);
+    width: auto;
+    max-width: none;
   }
 
   .flood-forecast-panel {
-    max-width: 100%;
+    max-width: 320px;
+    width: 320px;
     min-width: auto;
-    width: 100%;
     max-height: 55vh;
     padding: 10px;
   }
@@ -908,14 +908,16 @@
 @media (max-width: 380px) {
   .flood-forecast-container {
     left: 5px;
-    right: 5px;
+    right: auto;
     top: 45px;
-    max-width: calc(100vw - 10px);
+    width: auto;
+    max-width: none;
   }
 
   .flood-forecast-panel {
-    max-width: 100%;
-    width: 100%;
+    max-width: 280px;
+    width: 280px;
+    min-width: auto;
     max-height: 50vh;
     padding: 8px;
   }
