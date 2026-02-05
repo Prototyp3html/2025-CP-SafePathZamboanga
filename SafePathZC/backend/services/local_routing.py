@@ -779,9 +779,9 @@ class LocalRoutingService:
                 logger.info(f"A* Progress: Found goal! Completed in {iterations} iterations, visited {len(visited)} nodes")
                 logger.info(f"Successfully calculated route with {len(path)} waypoint nodes")
                 
-                # Simplify the path - keep high detail to ensure routes stay on roads
-                # Tolerance of 5 meters - preserves route accuracy and prevents visual artifacts
-                simplified_path = self._simplify_path(path, tolerance=5.0)
+                # Simplify the path - keep very high detail to ensure routes stay on roads
+                # Tolerance of 1 meter - preserves road alignment and prevents routes floating off roads
+                simplified_path = self._simplify_path(path, tolerance=1.0)
                 
                 logger.info(f"Simplified route to {len(simplified_path)} points")
                 
