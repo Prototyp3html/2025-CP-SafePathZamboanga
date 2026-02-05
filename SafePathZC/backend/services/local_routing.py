@@ -719,16 +719,16 @@ class LocalRoutingService:
         visited = set()
         
         iterations = 0
-        max_iterations = 50000  # Reduced from 100k - routes in Zamboanga shouldn't need this many
+        max_iterations = 100000  # Increased from 50000 to allow more exploration
         
         # Track best distance to goal for early termination
         best_distance_to_goal = float('inf')
         iterations_since_improvement = 0
-        max_stagnant_iterations = 3000  # Reduced from 10k - terminate faster if stuck
+        max_stagnant_iterations = 5000  # Increased from 3000 to allow longer searches
         
         # Calculate search boundary - don't explore nodes too far from direct line
         direct_distance = start.distance_to(end)
-        max_detour_factor = 2.5  # Allow up to 2.5x the direct distance as detour
+        max_detour_factor = 3.5  # Increased from 2.5 to allow larger detours
         search_boundary = direct_distance * max_detour_factor
         
         logger.info(f"A* Search: Direct distance {direct_distance:.0f}m, Search boundary {search_boundary:.0f}m")
@@ -842,15 +842,15 @@ class LocalRoutingService:
                                         dist_closest = dist_current
                                     
                                     # Apply penalties based on risk profile
-                                    # Safe: 100x penalty to strongly avoid the zone while allowing paths to exist
+                                    # Safe: 20x penalty to strongly avoid the zone while allowing paths
                                     # Manageable: 4x penalty for moderate avoidance
                                     # Prone: 1.5x penalty for light avoidance
                                     if dist_current < zone_radius or dist_neighbor < zone_radius or dist_closest < zone_radius:
                                         if risk_profile == "safe":
-                                            # Extreme penalty for safe routes - avoid zone but don't hard-block
-                                            routing_cost *= 100.0
+                                            # Strong penalty for safe routes - avoid zone but allow alternative paths
+                                            routing_cost *= 20.0
                                             logger.debug(
-                                                f"SAFE: Segment intersects simulated zone - extreme penalty: {routing_cost:.1f}x"
+                                                f"SAFE: Segment intersects simulated zone - strong penalty: {routing_cost:.1f}x"
                                             )
                                         elif risk_profile == "manageable":
                                             # Moderate penalty for manageable routes
