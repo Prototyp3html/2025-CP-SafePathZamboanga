@@ -1168,22 +1168,53 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
         used_indices.add(safe_idx)
         logger.info(f"Selected BEST route (index {safe_idx}): {safe_route['flood_percentage']:.1f}% flooded, traffic={traffic_level}, score={safe_route['routing_score']:.1f}")
         
-        # FLOOD-PRONE ROUTE (Red): Find the route with HIGHEST flood percentage OR shortest distance
-        # Priority 1: Route with highest flood % that's significantly different from safe route
-        flood_prone_idx = len(all_routes) - 1
-        flood_prone_route = all_routes[flood_prone_idx]
+        # PRIORITY LOGIC: When simulated zones exist, PRIORITIZE A* routes
+        # Separate A* routes from OSRM routes
+        a_star_routes = [(i, r) for i, r in enumerate(all_routes) if "a_star" in r.get("source", "").lower()]
+        non_a_star_routes = [(i, r) for i, r in enumerate(all_routes) if "a_star" not in r.get("source", "").lower()]
         
-        # Check if there's meaningful difference in flood risk
-        flood_diff = flood_prone_route['flood_percentage'] - safe_route['flood_percentage']
+        logger.info(f"Available routes: {len(a_star_routes)} A*, {len(non_a_star_routes)} OSRM")
         
-        if flood_diff < 5.0 and len(all_routes) > 1:
-            # All routes have similar flood %, so pick the shortest distance route as flood-prone
-            shortest_idx = min(
-                range(len(all_routes)), 
-                key=lambda i: all_routes[i]["distance"] if i not in used_indices else float('inf')
-            )
-            if shortest_idx != safe_idx:
-                flood_prone_idx = shortest_idx
+        # FLOOD-PRONE ROUTE (Red): Prefer A* prone if simulated zones exist
+        flood_prone_idx = None
+        flood_prone_route = None
+        
+        if request.simulated_flood_zones and len(request.simulated_flood_zones) > 0 and a_star_routes:
+            # For simulated zones: Pick the A* route with HIGHEST flood % that hasn't been used
+            a_star_prone_candidates = [
+                (i, r) for i, r in a_star_routes
+                if i not in used_indices and r.get("risk_level") == "prone"
+            ]
+            if a_star_prone_candidates:
+                # Pick the one with highest flood %
+                flood_prone_idx, flood_prone_route = max(
+                    a_star_prone_candidates, 
+                    key=lambda x: x[1]['flood_percentage']
+                )
+            else:
+                # Fallback: any unused A* route with highest flood
+                a_star_candidates = [
+                    (i, r) for i, r in a_star_routes if i not in used_indices
+                ]
+                if a_star_candidates:
+                    flood_prone_idx, flood_prone_route = max(
+                        a_star_candidates, 
+                        key=lambda x: x[1]['flood_percentage']
+                    )
+        
+        # If no A* route found, use best available
+        if flood_prone_route is None:
+            candidates = [
+                (i, r) for i, r in enumerate(all_routes) if i not in used_indices
+            ]
+            if candidates:
+                # Pick highest flood percentage
+                flood_prone_idx, flood_prone_route = max(
+                    candidates, 
+                    key=lambda x: x[1]['flood_percentage']
+                )
+            else:
+                flood_prone_idx = len(all_routes) - 1
                 flood_prone_route = all_routes[flood_prone_idx]
         
         selected_routes.append({
@@ -1193,24 +1224,36 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
             "description": f"Flood-prone route: {flood_prone_route['flood_percentage']:.1f}% flood risk"
         })
         used_indices.add(flood_prone_idx)
-        logger.info(f"Selected FLOOD-PRONE route (index {flood_prone_idx}): {flood_prone_route['flood_percentage']:.1f}% flooded, {flood_prone_route['distance']:.0f}m")
+        logger.info(f"Selected FLOOD-PRONE route (index {flood_prone_idx}): {flood_prone_route['flood_percentage']:.1f}% flooded, {flood_prone_route['distance']:.0f}m, source={flood_prone_route.get('source', 'unknown')}")
         
-        # MANAGEABLE ROUTE (Orange): Find a route in the MIDDLE range
-        # Look for a route with moderate flood risk between safe and flood-prone
+        # MANAGEABLE ROUTE (Orange): Prefer A* manageable if simulated zones exist
         manageable_route = None
         manageable_idx = None
         
-        if len(all_routes) >= 3:
-            # Calculate target flood percentage (midpoint between safe and flood-prone)
-            target_flood_pct = (safe_route['flood_percentage'] + flood_prone_route['flood_percentage']) / 2
+        if request.simulated_flood_zones and len(request.simulated_flood_zones) > 0 and a_star_routes:
+            # For simulated zones: Pick the A* route with "manageable" risk_level
+            a_star_manageable = [
+                (i, r) for i, r in a_star_routes
+                if i not in used_indices and r.get("risk_level") == "manageable"
+            ]
+            if a_star_manageable:
+                # Pick the first one (should only be one)
+                manageable_idx, manageable_route = a_star_manageable[0]
+        
+        # If no strict manageable, find middle ground
+        if manageable_route is None:
+            # Find route closest to midpoint between safe and flood-prone
+            target_flood = (safe_route['flood_percentage'] + flood_prone_route['flood_percentage']) / 2
             
-            # Find the route closest to the target percentage that hasn't been used
+            # Prefer A* routes if simulated zones
+            candidate_list = a_star_routes if (request.simulated_flood_zones and a_star_routes) else enumerate(all_routes)
+            
             best_diff = float('inf')
-            for i, route in enumerate(all_routes):
+            for i, route in candidate_list:
                 if i in used_indices:
                     continue
                 
-                diff = abs(route['flood_percentage'] - target_flood_pct)
+                diff = abs(route['flood_percentage'] - target_flood)
                 if diff < best_diff:
                     best_diff = diff
                     manageable_route = route
@@ -1218,17 +1261,11 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
         
         # Fallback: use middle index if no good candidate found
         if manageable_route is None:
-            mid_idx = len(all_routes) // 2
-            if mid_idx not in used_indices:
-                manageable_idx = mid_idx
-                manageable_route = all_routes[mid_idx]
-            elif len(all_routes) > 1:
-                # Find any unused route
-                for i, route in enumerate(all_routes):
-                    if i not in used_indices:
-                        manageable_idx = i
-                        manageable_route = route
-                        break
+            for i, route in enumerate(all_routes):
+                if i not in used_indices:
+                    manageable_idx = i
+                    manageable_route = route
+                    break
         
         # Final fallback: duplicate safe route if still no manageable found
         if manageable_route is None:
