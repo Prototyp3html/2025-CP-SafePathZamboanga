@@ -10145,7 +10145,7 @@ export const MapView = ({
           display: flex;
           flex-direction: column;
           gap: 10px;
-          z-index: 1000;
+          z-index: 40;
         }
         
         .action-button {

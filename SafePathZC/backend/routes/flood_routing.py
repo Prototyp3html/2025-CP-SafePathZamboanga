@@ -478,7 +478,8 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                             # Get route info
                             segment_info = routing_service.get_route_info(segment_coords, mode)
                             
-                            # Create route info
+                            # Create route info - PRESERVE the risk_profile used to generate the route
+                            # Don't reclassify based on flood percentage
                             route_info = {
                                 "geometry": {
                                     "type": "LineString",
@@ -488,7 +489,7 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                 "duration": segment_info["duration"],
                                 "flood_percentage": flood_analysis["flooded_percentage"],
                                 "flooded_distance": flood_analysis["flooded_distance_m"],
-                                "risk_level": flood_analysis["risk_level"],
+                                "risk_level": risk_profile,  # Use the intended risk profile, not the calculated one
                                 "weather_impact": flood_analysis.get("weather_impact", "none"),
                                 "simulated_zone_intersection": intersects_simulated,
                                 "source": f"a_star_{risk_profile}_zones"
@@ -861,7 +862,7 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                 )
                                 flood_analysis["risk_level"] = "prone"
                             
-                            # Create route info
+                            # Create route info - PRESERVE the risk_profile used to generate the route
                             route_info = {
                                 "geometry": {
                                     "type": "LineString",
@@ -871,7 +872,7 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                                 "duration": total_duration,
                                 "flood_percentage": flood_analysis["flooded_percentage"],
                                 "flooded_distance": flood_analysis["flooded_distance_m"],
-                                "risk_level": flood_analysis["risk_level"],
+                                "risk_level": risk_profile,  # Use the intended risk profile, not the calculated one
                                 "weather_impact": flood_analysis.get("weather_impact", "none"),
                                 "simulated_zone_intersection": intersects_simulated,
                                 "source": f"a_star_{risk_profile}_waypoints"
