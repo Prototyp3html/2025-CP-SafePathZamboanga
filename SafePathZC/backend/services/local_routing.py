@@ -858,7 +858,13 @@ class LocalRoutingService:
                                             logger.debug(
                                                 f"MANAGEABLE: Segment intersects simulated zone - moderate penalty: 6.0x"
                                             )
-                                        # Prone: No penalty applied - takes most direct path through flood zone
+                                        elif risk_profile == "prone":
+                                            # DISCOUNT for prone routes - makes flooded segments cheaper/faster
+                                            # This actively encourages routing THROUGH the flood zone
+                                            routing_cost *= 0.5
+                                            logger.debug(
+                                                f"PRONE: Segment in simulated zone - discount applied: 0.5x (preferred)"
+                                            )
                                         break
                         
                         speed_kph = segment.get_terrain_adjusted_speed(mode)
