@@ -1158,6 +1158,7 @@ class LocalRoutingService:
     ) -> Dict: 
         """
         Calculates 3 distinct routes (Direct, Balanced, Safest) using A* pathfinding.
+        When no active flood risk is detected, returns the same route for all three profiles.
         """
         if not self.loaded:
             logger.error("Road network not loaded")
@@ -1168,7 +1169,71 @@ class LocalRoutingService:
         # 1. Prepare the full sequence of points (A, C, D, E, B)
         full_coords = [start_coord] + waypoints + [end_coord]
 
-        # 2. Risk profiles: direct (prone), balanced (manageable), safest (safe)
+        # 2. Check if there's active flood risk
+        flood_service = get_flood_service()
+        flooded_roads_count = sum(1 for seg in flood_service.road_segments if seg.flooded)
+        has_active_flood_risk = flooded_roads_count > 0
+        
+        logger.info(f"🌊 Flood status: {flooded_roads_count} flooded roads detected - Active risk: {has_active_flood_risk}")
+        
+        # If no active flood risk, calculate only one route and replicate for all profiles
+        if not has_active_flood_risk:
+            logger.info("✅ No active flood risk - Calculating single route for all profiles")
+            
+            segment_routes = []
+            total_distance = 0.0
+            total_duration = 0.0
+            
+            for i in range(len(full_coords) - 1):
+                seg_start = full_coords[i]
+                seg_end = full_coords[i + 1]
+                
+                seg_route = self.calculate_route(seg_start, seg_end, mode="car", risk_profile="manageable")
+                
+                if not seg_route:
+                    logger.warning(f"Segment {i} failed")
+                    return {"success": False, "message": f"Failed to calculate segment {i}"}
+                
+                segment_routes.append(seg_route)
+                route_info = self.get_route_info(seg_route, mode="car")
+                total_distance += route_info["distance"]
+                total_duration += route_info["duration"]
+            
+            full_route = self._join_segment_routes(segment_routes)
+            
+            route_data = {
+                "label": "single",
+                "risk_profile": "manageable",
+                "geometry": {
+                    "coordinates": [[coord.lng, coord.lat] for coord in full_route],
+                    "type": "LineString"
+                },
+                "distance": total_distance,
+                "duration": total_duration,
+                "flooded_distance": 0.0,
+                "flood_percentage": 0.0,
+            }
+            
+            waypoints_formatted = [{"lat": coord[1], "lng": coord[0]} for coord in route_data["geometry"]["coordinates"]]
+            
+            analyses = [{
+                "waypoints": waypoints_formatted,
+                "distance": f"{route_data['distance'] / 1000:.1f} km",
+                "time": f"{int(route_data['duration'] / 60)} min",
+                "flooded_distance_m": 0.0,
+                "flooded_percentage": 0.0,
+                "risk_level": "manageable",
+                "description": "No flood risk - Same route for all profiles"
+            }]
+            
+            return {
+                "success": True,
+                "routes": [route_data] * 3,
+                "analyses": analyses * 3,
+                "message": "No active flood risk - All profiles use identical route"
+            }
+
+        # 3. Risk profiles: direct (prone), balanced (manageable), safest (safe)
         risk_profiles = ["prone", "manageable", "safe"]
         route_labels = ["direct", "balanced", "safest"]
         all_routes = []
