@@ -842,28 +842,23 @@ class LocalRoutingService:
                                         dist_closest = dist_current
                                     
                                     # Apply penalties based on risk profile
-                                    # Safe: 20x penalty to strongly avoid the zone
-                                    # Manageable: 3x penalty for moderate avoidance
-                                    # Prone: 1.2x penalty (nearly no avoidance - takes direct path)
+                                    # Safe: 25x penalty to strongly avoid the zone
+                                    # Manageable: 6x penalty for moderate avoidance
+                                    # Prone: NO penalty (1.0x) - takes direct path regardless of flood
                                     if dist_current < zone_radius or dist_neighbor < zone_radius or dist_closest < zone_radius:
                                         if risk_profile == "safe":
                                             # Strong penalty for safe routes - avoid zone but allow alternative paths
-                                            routing_cost *= 20.0
+                                            routing_cost *= 25.0
                                             logger.debug(
-                                                f"SAFE: Segment intersects simulated zone - strong penalty: {routing_cost:.1f}x"
+                                                f"SAFE: Segment intersects simulated zone - strong penalty: 25.0x"
                                             )
                                         elif risk_profile == "manageable":
-                                            # Moderate penalty for manageable routes - mild avoidance
-                                            routing_cost *= 3.0
+                                            # Moderate penalty for manageable routes - some avoidance
+                                            routing_cost *= 6.0
                                             logger.debug(
-                                                f"MANAGEABLE: Segment intersects simulated zone - moderate penalty: {routing_cost:.1f}x"
+                                                f"MANAGEABLE: Segment intersects simulated zone - moderate penalty: 6.0x"
                                             )
-                                        elif risk_profile == "prone":
-                                            # Minimal penalty for prone routes - nearly direct path through zone
-                                            routing_cost *= 1.2
-                                            logger.debug(
-                                                f"PRONE: Segment intersects simulated zone - minimal penalty: {routing_cost:.1f}x"
-                                            )
+                                        # Prone: No penalty applied - takes most direct path through flood zone
                                         break
                         
                         speed_kph = segment.get_terrain_adjusted_speed(mode)
