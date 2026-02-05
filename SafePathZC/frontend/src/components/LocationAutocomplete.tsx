@@ -97,6 +97,10 @@ export const LocationAutocomplete = ({
     console.log("📍 Location selected:", suggestion);
     onChange(suggestion.display_name);
     setShowSuggestions(false);
+    // Blur input to close dropdown
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     if (onLocationSelect) {
       onLocationSelect(suggestion);
     }

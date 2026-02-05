@@ -200,6 +200,10 @@ export const LocationMapPicker = ({
     onChange(suggestion.display_name);
     setSelectedLocation({ lat, lng });
     setShowSuggestions(false);
+    // Blur input to close dropdown
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
 
     if (mapRef.current) {
       mapRef.current.setView([lat, lng], 16);
