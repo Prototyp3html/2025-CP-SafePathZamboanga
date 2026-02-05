@@ -144,24 +144,25 @@ class FloodForecastService:
             flood_score += 5
         
         # Determine flood likelihood (minimum 5mm rainfall required)
+        # Use conservative confidence scaling - more realistic for panelists
         if rainfall_mm >= 5:
-            if flood_score >= 50:
+            if flood_score >= 60:  # Very high score
                 will_flood = True
-                confidence = min(100, int((flood_score / 100) * 100))
-            elif flood_score >= 30:
+                confidence = min(75, int((flood_score / 150) * 75))  # Cap at 75%
+            elif flood_score >= 40:  # Moderate-high
                 will_flood = True
-                confidence = int((flood_score / 80) * 100)
-            elif flood_score >= 15:
+                confidence = int((flood_score / 100) * 60)  # Max 60%
+            elif flood_score >= 25:  # Moderate
                 will_flood = True
-                confidence = int((flood_score / 50) * 100)
+                confidence = int((flood_score / 80) * 45)  # Max 45%
             else:
                 will_flood = False
-                confidence = 0
+                confidence = int((flood_score / 50) * 30)  # Max 30%
         else:
-            # No rain
+            # No rain - very unlikely to flood
             if flood_score >= 60:
                 will_flood = True
-                confidence = int((flood_score / 100) * 50)
+                confidence = int((flood_score / 150) * 25)  # Max 25% without rain
             else:
                 will_flood = False
                 confidence = 0
@@ -253,23 +254,23 @@ class FloodForecastService:
                         
                         # Dynamic confidence threshold based on rainfall amount
                         # MAXIMUM STRICT: Cap at ~200 roads/day max to prevent lag
-                        # Only show roads with HIGH confidence (80%+) to reduce map load
+                        # Only show roads with HIGH confidence (40%+) to reduce map load
                         if rainfall_mm > 25:
-                            confidence_threshold = 80  # Heavy: ~100-200 roads
+                            confidence_threshold = 50  # Heavy: ~100-180 roads
                         elif rainfall_mm > 20:
-                            confidence_threshold = 82  # Very heavy: ~80-120 roads
+                            confidence_threshold = 52  # Very heavy: ~80-120 roads
                         elif rainfall_mm > 15:
-                            confidence_threshold = 84  # Moderate-heavy: ~50-80 roads
+                            confidence_threshold = 54  # Moderate-heavy: ~50-80 roads
                         elif rainfall_mm > 10:
-                            confidence_threshold = 86  # Moderate: ~30-50 roads
+                            confidence_threshold = 56  # Moderate: ~30-50 roads
                         elif rainfall_mm > 7:
-                            confidence_threshold = 88  # Light-moderate: ~15-30 roads
+                            confidence_threshold = 58  # Light-moderate: ~15-30 roads
                         elif rainfall_mm > 5:
-                            confidence_threshold = 90  # Light: ~5-15 roads
+                            confidence_threshold = 60  # Light: ~5-15 roads
                         elif rainfall_mm > 3:
-                            confidence_threshold = 92  # Very light: ~2-5 roads
+                            confidence_threshold = 62  # Very light: ~2-5 roads
                         else:
-                            confidence_threshold = 95  # Trace: <2 roads
+                            confidence_threshold = 65  # Trace: <2 roads
                         
                         # MAXIMUM STRICT: Only highest-confidence predictions to keep map responsive
                         if forecast['will_flood'] and forecast['confidence'] > confidence_threshold:
