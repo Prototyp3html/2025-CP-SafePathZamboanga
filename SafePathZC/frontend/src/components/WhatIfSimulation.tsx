@@ -117,6 +117,13 @@ export const WhatIfSimulation = ({
   const [showStartSuggestions, setShowStartSuggestions] = useState(false);
   const [showEndSuggestions, setShowEndSuggestions] = useState(false);
 
+  const [isAddingFloodZone, setIsAddingFloodZone] = useState(false);
+  const [isAddingIncident, setIsAddingIncident] = useState(false);
+  const [floodZoneRadius, setFloodZoneRadius] = useState(500);
+  const [floodZoneSeverity, setFloodZoneSeverity] = useState("moderate");
+  const [incidentType, setIncidentType] = useState("damage");
+  const [incidentSeverity, setIncidentSeverity] = useState("moderate");
+
   const [selectedLocation, setSelectedLocation] = useState<{
     lat: number;
     lng: number;
@@ -215,12 +222,6 @@ export const WhatIfSimulation = ({
       updateMarker(incidentMiniMapInstance, incidentMarkerRef);
     }
   }, [selectedLocation, isAddingFloodZone, isAddingIncident]);
-  const [isAddingFloodZone, setIsAddingFloodZone] = useState(false);
-  const [isAddingIncident, setIsAddingIncident] = useState(false);
-  const [floodZoneRadius, setFloodZoneRadius] = useState(500);
-  const [floodZoneSeverity, setFloodZoneSeverity] = useState("moderate");
-  const [incidentType, setIncidentType] = useState("damage");
-  const [incidentSeverity, setIncidentSeverity] = useState("moderate");
 
   // Search locations function
   const searchLocations = async (
