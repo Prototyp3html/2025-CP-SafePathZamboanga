@@ -409,7 +409,7 @@ export function FloodForecastPins({ map, isVisible }: FloodForecastPinsProps) {
                     <span>Flood Impact Radius</span>
                   </div>
                   <div className="legend-tip">
-                    💡 Orange markers = 95%+ confidence roads will flood
+                    💡 Orange markers = High confidence (50-75%) roads will flood
                     <br />
                     Hover in zone = See flooding severity by distance from center
                   </div>
@@ -459,7 +459,7 @@ export function FloodForecastPins({ map, isVisible }: FloodForecastPinsProps) {
             borderTop: '1px solid #444',
             paddingTop: '4px'
           }}>
-            (Road markers show 95%+ confidence they will flood)
+            (Road markers show 50-75% confidence they will flood)
           </div>
         </div>
       )}
