@@ -808,59 +808,10 @@ class LocalRoutingService:
                         
                         base_distance = current.distance_to(neighbor)
                         
-                        # HARD BLOCK: For "safe" routes, reject nodes within an EXPANDED buffer zone around simulated zones
-                        # This creates a "safety corridor" that safe routes must detour around
-                        if simulated_flood_zones and risk_profile == "safe":
-                            neighbor_in_safety_buffer = False
-                            for zone in simulated_flood_zones:
-                                zone_lat = zone.get("lat")
-                                zone_lng = zone.get("lng")
-                                zone_radius = zone.get("radius", 300)
-                                
-                                # Expand the exclusion zone by 50% for safe routes to create safety buffer
-                                # This ensures routes have to detour significantly around the flood area
-                                safe_route_buffer = zone_radius * 1.5
-                                
-                                if zone_lat and zone_lng:
-                                    zone_center = Coordinate(lat=zone_lat, lng=zone_lng)
-                                    dist_current = current.distance_to(zone_center)
-                                    dist_neighbor = neighbor.distance_to(zone_center)
-
-                                    segment_dx = neighbor.lng - current.lng
-                                    segment_dy = neighbor.lat - current.lat
-                                    segment_len_sq = segment_dx ** 2 + segment_dy ** 2
-                                    if segment_len_sq > 0:
-                                        t = max(
-                                            0.0,
-                                            min(
-                                                1.0,
-                                                ((zone_lng - current.lng) * segment_dx + (zone_lat - current.lat) * segment_dy)
-                                                / segment_len_sq,
-                                            ),
-                                        )
-                                        closest_lng = current.lng + t * segment_dx
-                                        closest_lat = current.lat + t * segment_dy
-                                        dist_closest = Coordinate(lat=closest_lat, lng=closest_lng).distance_to(zone_center)
-                                    else:
-                                        dist_closest = dist_current
-                                    
-                                    # If segment intersects the safety buffer zone, SKIP ENTIRELY for safe routes
-                                    # Use safe_route_buffer (1.5x zone radius) instead of just zone_radius
-                                    if dist_current < safe_route_buffer or dist_neighbor < safe_route_buffer or dist_closest < safe_route_buffer:
-                                        neighbor_in_safety_buffer = True
-                                        logger.debug(
-                                            f"BLOCKING segment ({current.lat:.4f},{current.lng:.4f})->({neighbor.lat:.4f},{neighbor.lng:.4f}) - intersects safety buffer"
-                                        )
-                                        break
-                            
-                            # Skip this neighbor completely if in safety buffer
-                            if neighbor_in_safety_buffer:
-                                continue
-                        
                         routing_cost = segment.get_routing_cost(mode, risk_profile, flood_cache)
                         
-                        # For manageable/prone routes, apply penalties to simulated zones
-                        if simulated_flood_zones and risk_profile in ["manageable", "prone"]:
+                        # Apply flood zone penalties based on risk profile
+                        if simulated_flood_zones:
                             for zone in simulated_flood_zones:
                                 zone_lat = zone.get("lat")
                                 zone_lng = zone.get("lng")
@@ -890,18 +841,34 @@ class LocalRoutingService:
                                     else:
                                         dist_closest = dist_current
                                     
-                                    # If segment intersects simulated zone, apply penalty
+                                    # Apply penalties based on risk profile
+                                    # Safe: 100x penalty to strongly avoid the zone while allowing paths to exist
+                                    # Manageable: 4x penalty for moderate avoidance
+                                    # Prone: 1.5x penalty for light avoidance
                                     if dist_current < zone_radius or dist_neighbor < zone_radius or dist_closest < zone_radius:
-                                        if zone_severity == "high":
-                                            routing_cost *= 8.0
-                                        elif zone_severity == "moderate":
-                                            routing_cost *= 4.0
-                                        else:  # low
+                                        if risk_profile == "safe":
+                                            # Extreme penalty for safe routes - avoid zone but don't hard-block
+                                            routing_cost *= 100.0
+                                            logger.debug(
+                                                f"SAFE: Segment intersects simulated zone - extreme penalty: {routing_cost:.1f}x"
+                                            )
+                                        elif risk_profile == "manageable":
+                                            # Moderate penalty for manageable routes
+                                            if zone_severity == "high":
+                                                routing_cost *= 8.0
+                                            elif zone_severity == "moderate":
+                                                routing_cost *= 4.0
+                                            else:  # low
+                                                routing_cost *= 1.5
+                                            logger.debug(
+                                                f"MANAGEABLE: Segment intersects simulated {zone_severity} zone - penalty: {routing_cost:.1f}x"
+                                            )
+                                        elif risk_profile == "prone":
+                                            # Light penalty for prone routes
                                             routing_cost *= 1.5
-                                        
-                                        logger.debug(
-                                            f"Segment intersects simulated {zone_severity} zone - penalty: {routing_cost:.1f}x"
-                                        )
+                                            logger.debug(
+                                                f"PRONE: Segment intersects simulated zone - light penalty: {routing_cost:.1f}x"
+                                            )
                                         break
                         
                         speed_kph = segment.get_terrain_adjusted_speed(mode)
