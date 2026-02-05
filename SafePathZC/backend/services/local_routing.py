@@ -121,10 +121,12 @@ class RoadSegment:
         slope_factor = 1.0 + (self.get_elevation_gain() / self.length_m * 10.0)  # Slope penalty
         return elevation_factor * slope_factor
     
-    def get_routing_cost(self, transportation_mode: str = "car", risk_profile: str = "safe", flood_lookup_cache: Optional[Dict[str, bool]] = None) -> float:
+    def get_routing_cost(self, transportation_mode: str = "car", risk_profile: str = "safe", flood_lookup_cache: Optional[Dict[str, bool]] = None, has_active_flooding: bool = False) -> float:
         """Calculate routing cost based on transportation mode and flood risk profile
         
-        Risk profiles: safe (50x penalty), manageable (5x), prone (1.1x)
+        Risk profiles:
+        - With active flooding: safe (50x penalty), manageable (5x), prone (1.1x)
+        - Without active flooding: All routes use minimal penalties (1.5x max) for slight preference
         """
         base_cost = self.length_m
         is_flooded = self.flooded
@@ -144,12 +146,24 @@ class RoadSegment:
                         is_flooded = True
                         break
         
-        if risk_profile == "safe":
-            flood_factor = 50.0 if is_flooded else 1.0 
-        elif risk_profile == "manageable":
-            flood_factor = 5.0 if is_flooded else 1.0  
-        else:  
-            flood_factor = 1.1 if is_flooded else 1.0 
+        # Apply flood penalties based on whether there's active flooding
+        if has_active_flooding:
+            # Active flooding (rain or simulation) - apply aggressive penalties
+            if risk_profile == "safe":
+                flood_factor = 50.0 if is_flooded else 1.0 
+            elif risk_profile == "manageable":
+                flood_factor = 5.0 if is_flooded else 1.0  
+            else:  # prone
+                flood_factor = 1.1 if is_flooded else 1.0
+        else:
+            # No active flooding - minimal penalties (all routes will be similar)
+            # Slight preference to avoid historically flooded areas, but not extreme
+            if risk_profile == "safe":
+                flood_factor = 1.5 if is_flooded else 1.0 
+            elif risk_profile == "manageable":
+                flood_factor = 1.2 if is_flooded else 1.0  
+            else:  # prone
+                flood_factor = 1.0  # No penalty at all 
         
         # Apply terrain difficulty (elevation, surface)
         terrain_factor = self.get_terrain_difficulty()
@@ -578,7 +592,7 @@ class LocalRoutingService:
         
         return None
     
-    def calculate_route(self, start: Coordinate, end: Coordinate, mode: str = "car", risk_profile: str = "safe", simulated_flood_zones: Optional[List[Dict[str, Any]]] = None) -> Optional[List[Coordinate]]:
+    def calculate_route(self, start: Coordinate, end: Coordinate, mode: str = "car", risk_profile: str = "safe", simulated_flood_zones: Optional[List[Dict[str, Any]]] = None, current_rainfall: float = 0.0) -> Optional[List[Coordinate]]:
         """Calculate route using A* algorithm with terrain awareness
         
         Args:
@@ -607,7 +621,7 @@ class LocalRoutingService:
         logger.info(f"Using road points: start=({start_road.lat}, {start_road.lng}), end=({end_road.lat}, {end_road.lng})")
         
         # Use A* algorithm with terrain awareness and risk profile
-        route = self._a_star_search(start_road, end_road, mode, risk_profile, simulated_flood_zones)
+        route = self._a_star_search(start_road, end_road, mode, risk_profile, simulated_flood_zones, current_rainfall)
         
         if route:
             # Add original start/end points if different
@@ -625,12 +639,20 @@ class LocalRoutingService:
         
         return None
     
-    def _a_star_search(self, start: Coordinate, end: Coordinate, mode: str = "car", risk_profile: str = "safe", simulated_flood_zones: Optional[List[Dict[str, Any]]] = None) -> Optional[List[Coordinate]]:
+    def _a_star_search(self, start: Coordinate, end: Coordinate, mode: str = "car", risk_profile: str = "safe", simulated_flood_zones: Optional[List[Dict[str, Any]]] = None, current_rainfall: float = 0.0) -> Optional[List[Coordinate]]:
         """A* pathfinding algorithm with terrain-aware routing costs and flood risk profiles
         
         Args:
             simulated_flood_zones: List of simulated flood zones [{lat, lng, radius, severity}, ...]
+            current_rainfall: Current rainfall in mm (for determining if flood penalties apply)
         """
+        
+        # Determine if we should apply flood penalties:
+        # Only apply aggressive penalties if there's active flooding (rainfall > 2mm) OR simulated zones
+        has_active_flooding = current_rainfall > 2.0 or (simulated_flood_zones and len(simulated_flood_zones) > 0)
+        
+        if not has_active_flooding:
+            logger.info(f"📍 No active flooding detected (rainfall: {current_rainfall:.1f}mm) - using minimal flood penalties")
         
         # Build flood lookup cache ONCE at the start (O(n) build time, then O(1) lookups!)
         flood_cache = {}
@@ -808,7 +830,7 @@ class LocalRoutingService:
                         
                         base_distance = current.distance_to(neighbor)
                         
-                        routing_cost = segment.get_routing_cost(mode, risk_profile, flood_cache)
+                        routing_cost = segment.get_routing_cost(mode, risk_profile, flood_cache, has_active_flooding)
                         
                         # Apply flood zone penalties based on risk profile
                         if simulated_flood_zones:

@@ -444,13 +444,17 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                     try:
                         logger.info(f"  Generating {risk_profile} route with A* algorithm (zones={len(request.simulated_flood_zones)})...")
                         
+                        # Get current rainfall for flood penalty determination
+                        current_rainfall = request.weather_data.get('rainfall', 0.0) if request.weather_data else 0.0
+                        
                         # Use A* routing with simulated zone constraints
                         segment_coords = routing_service.calculate_route(
                             start_coord,
                             end_coord,
                             mode=mode,
                             risk_profile=risk_profile,
-                            simulated_flood_zones=request.simulated_flood_zones  # Hard zone blocking for safe routes!
+                            simulated_flood_zones=request.simulated_flood_zones,  # Hard zone blocking for safe routes!
+                            current_rainfall=current_rainfall  # Pass rainfall to determine penalty severity
                         )
                         
                         if segment_coords and len(segment_coords) >= 2:
@@ -770,13 +774,17 @@ async def get_flood_aware_routes(request: FloodRouteRequest):
                             
                             logger.info(f"    Routing segment {i+1}/{len(waypoint_sequence)-1}: ({segment_start.lat:.4f}, {segment_start.lng:.4f}) -> ({segment_end.lat:.4f}, {segment_end.lng:.4f})")
                             
+                            # Get current rainfall for flood penalty determination
+                            current_rainfall = request.weather_data.get('rainfall', 0.0) if request.weather_data else 0.0
+                            
                             # Try A* first
                             segment_coords = routing_service.calculate_route(
                                 segment_start,
                                 segment_end,
                                 mode=mode,
                                 risk_profile=risk_profile,
-                                simulated_flood_zones=request.simulated_flood_zones  # Pass what-if zones!
+                                simulated_flood_zones=request.simulated_flood_zones,  # Pass what-if zones!
+                                current_rainfall=current_rainfall  # Pass rainfall to determine penalty severity
                             )
                             
                             # If A* fails, fallback to OSRM for this segment
