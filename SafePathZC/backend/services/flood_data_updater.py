@@ -981,6 +981,10 @@ class FloodDataUpdater:
         
         road_history = flooded_history[road_id]
         
+        # Track state transitions (IMPORTANT: prevents duplicate event logging)
+        just_started_flooding = False
+        just_stopped_flooding = False
+        
         # Road was previously flooded
         if road_history['flooded_start_time'] is not None:
             start_time = datetime.fromisoformat(road_history['flooded_start_time'])
@@ -988,26 +992,28 @@ class FloodDataUpdater:
         else:
             current_duration = 0
         
-        # Road just started flooding
+        # Road just started flooding (transition from NOT flooded to FLOODED)
         if currently_flooded and road_history['flooded_start_time'] is None:
             road_history['flooded_start_time'] = now.isoformat()
             road_history['times_flooded'] = road_history.get('times_flooded', 0) + 1
             current_duration = 0
+            just_started_flooding = True  # FLAG: Only true on first detection!
             logger.debug(f"🚨 Road {road_id} STARTED FLOODING at {now.strftime('%Y-%m-%d %H:%M:%S')}")
         
-        # Road stopped flooding
+        # Road stopped flooding (transition from FLOODED to NOT flooded)
         if not currently_flooded and road_history['flooded_start_time'] is not None:
             total_duration = (now - datetime.fromisoformat(road_history['flooded_start_time'])).total_seconds() / 3600
             road_history['flood_duration_hours'] = round(total_duration, 2)
             road_history['flooded_start_time'] = None
+            just_stopped_flooding = True  # FLAG: Only true when flood ends!
             logger.debug(f"✅ Road {road_id} STOPPED FLOODING after {total_duration:.1f} hours")
             current_duration = 0
         
-        # Road still flooded
-        if currently_flooded and road_history['flooded_start_time'] is not None:
+        # Road still flooded (no state change)
+        if currently_flooded and road_history['flooded_start_time'] is not None and not just_started_flooding:
             road_history['current_flood_duration_hours'] = round(current_duration, 2)
         else:
-            road_history['current_flood_duration_hours'] = 0
+            road_history['current_flood_duration_hours'] = 0 if not currently_flooded else 0
         
         road_history['last_update'] = now.isoformat()
         
@@ -1017,7 +1023,9 @@ class FloodDataUpdater:
             'last_flooded_hours_ago': road_history.get('flood_duration_hours', 0),
             'times_flooded': road_history.get('times_flooded', 0),
             'flooded_start_time': road_history.get('flooded_start_time'),
-            'last_update': road_history.get('last_update')
+            'last_update': road_history.get('last_update'),
+            'just_started_flooding': just_started_flooding,  # NEW: Only true on first detection
+            'just_stopped_flooding': just_stopped_flooding   # NEW: Only true when flood ends
         }
     
     def get_flood_hotspots(self, limit: int = 20) -> List[Dict[str, Any]]:
@@ -1312,7 +1320,6 @@ class FloodDataUpdater:
                     
                     # Only apply decay if NO floods in last 2 days (let it cool down)
                     if needs_decay and days_since_last >= 2:
-                        # Apply 2% daily decay for each day without floods
                         # But only once per day (not multiple times per update)
                         decay_factor = 0.98 ** days_since_last
                         risk_score = risk_score * decay_factor
@@ -1564,8 +1571,9 @@ class FloodDataUpdater:
                     rainfall = float(current_rainfall) if isinstance(current_rainfall, str) else current_rainfall
                     logger.info(f"🌊 FLOODED: {road_name} | Lat: {lat:.4f}, Lon: {lon:.4f} | Level: {flood_assessment['flood_level']} | Rainfall: {rainfall:.0f}mm")
                 
-                # Log if road just started flooding (only with significant rainfall >= 2mm to avoid weather noise)
-                if flood_assessment['flooded'] and flood_duration_info['flooded_start_time'] is not None and current_rainfall >= 2:
+                # Log if road JUST started flooding (only on state transition, not every update!)
+                # BUG FIX: Previously logged flood_start every update while flooded
+                if flood_duration_info.get('just_started_flooding') and current_rainfall >= 2:
                     logger.info(f"🚨 FLOOD START: {road_name} | {flood_duration_info['flooded_start_time']}")
                     self.log_flood_event(
                         road_id=road_id,
@@ -1579,9 +1587,11 @@ class FloodDataUpdater:
                         location_lon=mid_point['lon']
                     )
                 
-                # Log if road just stopped flooding (only if rainfall is minimal - natural drying)
-                if not flood_assessment['flooded'] and flood_duration_info.get('flood_duration_hours', 0) > 0 and current_rainfall < 2:
-                    duration = float(flood_duration_info['flood_duration_hours']) if isinstance(flood_duration_info.get('flood_duration_hours'), str) else flood_duration_info.get('flood_duration_hours', 0)
+                # Log if road JUST stopped flooding (only on state transition!)
+                # BUG FIX: Use the new flag instead of checking duration
+                if flood_duration_info.get('just_stopped_flooding') and current_rainfall < 2:
+                    # Use last_flooded_hours_ago which contains the duration of the just-ended flood
+                    duration = float(flood_duration_info.get('last_flooded_hours_ago', 0))
                     logger.info(f"✅ FLOOD END: {road_name} | Duration: {duration:.1f} hours")
                     self.log_flood_event(
                         road_id=road_id,
