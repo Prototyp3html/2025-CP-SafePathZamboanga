@@ -1,0 +1,483 @@
+SAFEPATHZC USER MANUAL
+Flood-Aware Navigation and Community Safety Information System
+Date: March 9, 2026
+Version: 1.0
+
+TABLE OF CONTENTS
+
+1.0 General Information
+1.1 System Overview
+1.2 Purpose of the System
+1.3 Scope and Major Features
+1.4 Intended Users
+1.5 Basic System Requirements
+
+2.0 System Summary
+2.1 Functional Modules
+2.2 User Roles
+2.3 Data Sources and Decision Support
+2.4 Route Output Summary
+2.5 System Limitations
+
+3.0 Using the System
+3.1 Accessing the System
+3.2 Home Map Interface
+3.3 Entering Start and Destination Points
+3.4 Selecting Transportation Mode
+3.5 Generating Route Options
+3.6 Understanding Route Results
+3.7 Safe Routes Only Option
+3.8 Alerts and Weather Updates
+3.9 Reporting Road or Flood Conditions
+3.10 Emergency Tools
+
+4.0 Account Features
+4.1 User Login and Registration
+4.2 My Routes
+4.3 Community Forum
+4.4 Profile
+4.5 Settings and Preferences
+
+5.0 Administrator Functions
+5.1 Admin Access
+5.2 Admin Dashboard Overview
+5.3 Report Moderation
+5.4 User Management
+5.5 Flood Data Management
+5.6 Flood History Analytics
+5.7 System Configuration
+
+6.0 Troubleshooting and Maintenance Notes
+6.1 Common User Issues
+6.2 Common Admin Issues
+6.3 Safety Reminder
+6.4 Maintenance Notes
+
+7.0 Conclusion
+
+
+1.0 General Information
+
+1.1 System Overview
+SafePathZC is a web-based decision support and navigation system developed for Zamboanga City. It helps users identify safer travel routes by considering flood conditions, road conditions, terrain-related information, weather status, and community-submitted incident reports. The system combines map-based navigation with community awareness and administrative monitoring.
+
+1.2 Purpose of the System
+The main purpose of the system is to support safer travel and mobility decisions, especially during heavy rain, flooding, and road disruption events. It assists users by:
+
+- showing route alternatives with different risk levels;
+- presenting flood-related and weather-related warnings;
+- allowing users to submit community reports;
+- storing route history, favorites, and search records; and
+- helping administrators monitor reports, users, and flood data updates.
+
+1.3 Scope and Major Features
+The current system includes the following major features:
+
+- map-based route planning;
+- flood-aware route generation;
+- route comparison by safety and efficiency;
+- transportation mode selection;
+- weather and alert monitoring;
+- community forum and report sharing;
+- user account, profile, and preferences management;
+- administrative moderation and monitoring tools; and
+- flood data update and analytics tools.
+
+1.4 Intended Users
+The system is designed for:
+
+- commuters and residents of Zamboanga City;
+- students, workers, and travelers needing safer route guidance;
+- community members who want to share local road or flood conditions; and
+- administrators who manage reports, users, and system data.
+
+1.5 Basic System Requirements
+To use the system properly, the following are recommended:
+
+- a desktop or mobile browser;
+- stable internet connection;
+- enabled location access for map assistance, if needed;
+- an active user account for personalized features; and
+- an admin account for administrative functions.
+
+
+2.0 System Summary
+
+2.1 Functional Modules
+The system is composed of the following main modules:
+
+Map and Routing Module
+This is the primary screen where the user selects locations, transportation mode, and route preference.
+
+Alerts Module
+This module displays active warnings, weather-driven updates, and bulletin-style information relevant to travel safety.
+
+My Routes Module
+This module stores route history, favorite routes, recent searches, and route analytics.
+
+Community Forum Module
+This module allows users to create posts, react to posts, read replies, and share local road or disaster-related observations.
+
+Profile and Settings Module
+This module lets users manage their personal information, preferences, security options, and notification settings.
+
+Admin Module
+This module lets administrators review reports, manage users, monitor flood updates, and adjust selected system settings.
+
+2.2 User Roles
+The system currently supports two major roles:
+
+Regular User
+Regular users can plan routes, read alerts, use account tools, save routes, and participate in the community forum.
+
+Administrator
+Administrators can review and approve reports, manage users, monitor system statistics, trigger flood data updates, and manage selected configuration values.
+
+2.3 Data Sources and Decision Support
+SafePathZC uses multiple data inputs to support route recommendations and flood awareness. Based on the current implementation, these include:
+
+- road network data from OpenStreetMap;
+- elevation data used for flood risk assessment;
+- weather and rainfall information from online weather services;
+- flood status and flood history records maintained by the system; and
+- community-submitted road, flood, and incident reports.
+
+2.4 Route Output Summary
+The routing component presents multiple route choices so the user can compare risk and travel efficiency. These route outputs generally include:
+
+- Safe Route;
+- Manageable Route; and
+- Flood-Prone Route.
+
+Each route is displayed with corresponding visual indicators such as color, estimated distance, estimated travel time, and route description.
+
+2.5 System Limitations
+Users must understand that the system is a decision support tool and not a guarantee of safety. Actual road conditions may change suddenly due to:
+
+- fast-changing weather;
+- unreported flooding;
+- temporary road closures;
+- traffic conditions;
+- incomplete or delayed public data; and
+- limits in map and sensor coverage.
+
+
+3.0 Using the System
+
+3.1 Accessing the System
+To start using the system:
+
+1. Open the SafePathZC web application.
+2. Wait for the main map page to load.
+3. If needed, allow location permissions for better route assistance.
+4. Log in if you want access to personalized features such as My Routes, Community Forum participation, and saved preferences.
+
+3.2 Home Map Interface
+The Home Map Interface is the main workspace of the system. It contains:
+
+- the interactive map;
+- route search controls;
+- transportation mode selector;
+- route result cards;
+- flood and route overlays;
+- access to reporting tools; and
+- emergency and simulation tools when available.
+
+The map page is the best place to start when the user wants to search for a route or inspect current route conditions.
+
+3.3 Entering Start and Destination Points
+To plan a route:
+
+1. Enter the starting location.
+2. Enter the destination.
+3. Select from the suggested location results if suggestions appear.
+4. Confirm the correct points on the map.
+5. Proceed to route generation.
+
+The system may also support route planning from selected map points or stored route requests.
+
+3.4 Selecting Transportation Mode
+Before confirming the route, the user can choose a transportation mode. The system currently supports the following options:
+
+- Car
+- Bicycle/Motorcycle
+- Walking
+- Public Transport
+- Truck
+
+Each transportation mode affects route behavior because different vehicles have different flood tolerance, road access, and travel characteristics.
+
+3.5 Generating Route Options
+After entering the origin, destination, and transportation mode, the system calculates route alternatives. The route engine considers flood risk, road accessibility, and route efficiency before showing the results.
+
+3.6 Understanding Route Results
+The route result panel typically shows three alternatives:
+
+Safe Route
+This route prioritizes safer road segments and generally avoids flood-affected paths whenever possible.
+
+Manageable Route
+This route balances safety and travel efficiency. It may allow moderate exposure if it significantly improves travel time or practicality.
+
+Flood-Prone Route
+This route usually favors directness or shorter travel time even when flood exposure is higher. It should be chosen with caution.
+
+Users should compare:
+
+- route color;
+- risk label;
+- route description;
+- estimated travel time; and
+- estimated distance.
+
+3.7 Safe Routes Only Option
+The system includes a Safe Routes Only viewing option on the map. When enabled, the map emphasizes the safest route and hides or de-emphasizes higher-risk alternatives. This is useful for users who want a simpler and more safety-focused decision view.
+
+3.8 Alerts and Weather Updates
+The Alerts page allows the user to:
+
+- review active warnings;
+- read weather-related safety updates;
+- refresh alert data;
+- bookmark selected alerts;
+- read more details;
+- share alert information; and
+- jump back to route planning for alternative paths.
+
+Users should consult this page before traveling during heavy rain or severe weather.
+
+3.9 Reporting Road or Flood Conditions
+The system provides a reporting feature for community participation. A user may submit a report to describe:
+
+- flooding;
+- road closure;
+- accident;
+- infrastructure damage;
+- emergency conditions; or
+- other travel-related hazards.
+
+General reporting workflow:
+
+1. Open the report tool from the map or related screen.
+2. Enter the incident details.
+3. Specify the location.
+4. Add severity and supporting description.
+5. Submit the report.
+
+Submitted reports may be reviewed by administrators before wider public visibility.
+
+3.10 Emergency Tools
+The system also includes emergency-related access points such as emergency modal tools and alert escalation views. These are intended to help the user quickly respond to urgent situations and check critical advisories.
+
+
+4.0 Account Features
+
+4.1 User Login and Registration
+Logging in allows the user to access personalized features. Once authenticated, the user can:
+
+- save route history;
+- create favorite routes;
+- participate in the community forum;
+- manage profile information; and
+- preserve application preferences.
+
+4.2 My Routes
+The My Routes page is divided into route history, favorite routes, and recent searches.
+
+Route History
+This section stores previously used or recorded routes. A user may:
+
+- review past route records;
+- repeat a route;
+- save a route as favorite;
+- delete route history entries; and
+- mark selected planned routes as completed when applicable.
+
+Favorite Routes
+This section stores frequently used routes for quick reuse.
+
+Recent Searches
+This section stores recent route or location searches and allows the user to search them again quickly.
+
+4.3 Community Forum
+The Community Forum allows authenticated users to:
+
+- read posts from other users;
+- create a new post;
+- search and filter posts;
+- open replies and discussions;
+- like posts; and
+- view reports that have been synchronized into forum content.
+
+This module strengthens community-based situational awareness.
+
+4.4 Profile
+The Profile page allows the user to:
+
+- view personal information;
+- check membership details;
+- review activity;
+- view route and report statistics; and
+- log out from the system.
+
+4.5 Settings and Preferences
+The Settings page allows the user to adjust:
+
+- profile information;
+- profile picture;
+- emergency contact information;
+- notification preferences;
+- language preference;
+- distance units;
+- theme;
+- default map style;
+- password;
+- two-factor authentication when available; and
+- account deletion options.
+
+Users should save changes after updating settings to ensure the latest preferences are stored.
+
+
+5.0 Administrator Functions
+
+5.1 Admin Access
+Administrator functions are available only to authorized admin accounts. Regular users should not have access to these tools. Admin credentials should be managed securely by the project team or system owner.
+
+5.2 Admin Dashboard Overview
+The Admin Dashboard serves as the control center for system supervision. Based on the current implementation, the dashboard includes tabs or views for:
+
+- reports;
+- users;
+- analytics; and
+- flood data monitoring.
+
+5.3 Report Moderation
+Administrators can review submitted reports and perform the following actions:
+
+- search and filter reports;
+- inspect report details and attached information;
+- approve reports;
+- reject reports;
+- mark reports under review;
+- change urgency level;
+- toggle public visibility; and
+- delete reports when necessary.
+
+Report moderation is important because community reports influence public awareness and may also be reflected in the community forum.
+
+5.4 User Management
+The admin user management tools allow administrators to:
+
+- review user accounts;
+- view user roles and activity state;
+- activate or deactivate user access; and
+- delete non-admin accounts when necessary.
+
+This function helps maintain platform integrity and reduce abuse.
+
+5.5 Flood Data Management
+The system includes a Flood Data Management interface for administrators. This section allows the admin to:
+
+- monitor the latest flood data update status;
+- see whether an update is idle, running, completed, or failed;
+- view update progress and elapsed time;
+- read update logs; and
+- manually trigger flood data updates.
+
+This function is important because route decisions depend on updated flood-related information.
+
+5.6 Flood History Analytics
+The Flood Data Management area also includes flood history analytics. Administrators can:
+
+- review total flood events;
+- check the number of affected roads;
+- inspect average event frequency;
+- sort flood-prone roads by event count, hours flooded, or risk score; and
+- review the most flood-prone roads in the monitored data.
+
+This information is useful for research analysis, planning, and operational monitoring.
+
+5.7 System Configuration
+The system includes a configuration interface for selected parameters. Based on the current implementation, administrators may adjust:
+
+- elevation factor weight;
+- rainfall factor weight;
+- proximity to water source weight;
+- safe route penalty;
+- manageable route penalty;
+- flood-prone route penalty; and
+- automatic API update frequency.
+
+These settings influence how the system evaluates route risk and flood-related route behavior. Configuration changes should be made carefully and preferably by authorized technical personnel.
+
+
+6.0 Troubleshooting and Maintenance Notes
+
+6.1 Common User Issues
+Issue: Route does not load.
+Possible action:
+- check internet connection;
+- verify that the start and destination are valid;
+- refresh the page; and
+- try another transportation mode.
+
+Issue: Map is visible but route options are missing.
+Possible action:
+- re-enter the route points;
+- confirm that the selected points are within supported map coverage;
+- disable and retry route overlays; and
+- refresh the application.
+
+Issue: Alerts or weather data are unavailable.
+Possible action:
+- refresh the Alerts page;
+- wait for service recovery if external weather services are delayed; and
+- use extra caution because missing alerts do not mean the environment is safe.
+
+Issue: User cannot access forum posting.
+Possible action:
+- log in first;
+- verify that the session is still active; and
+- reload the page if authentication data appears outdated.
+
+6.2 Common Admin Issues
+Issue: Flood data update cannot be triggered.
+Possible action:
+- verify admin login status;
+- confirm that the admin token is still valid;
+- review update logs;
+- check backend service availability; and
+- retry only after the current update has completed.
+
+Issue: Admin dashboard does not show reports or users.
+Possible action:
+- confirm admin authorization;
+- refresh the page;
+- verify backend connectivity; and
+- check whether required admin endpoints are available.
+
+6.3 Safety Reminder
+The system should always be used as a guide, not as the sole basis for life-critical decisions. Users must still consider:
+
+- official government warnings;
+- actual road conditions;
+- water depth that may not be visible on the map;
+- vehicle limitations; and
+- local emergency instructions.
+
+If conditions appear dangerous in real life, the user should prioritize evacuation, delay travel, or follow official emergency guidance.
+
+6.4 Maintenance Notes
+For proper system operation, administrators or developers should:
+
+- monitor backend service availability;
+- keep flood data updates functioning correctly;
+- review pending reports regularly;
+- maintain account security;
+- confirm external data sources remain reachable; and
+- periodically review route behavior and configuration values.
+
+
+7.0 Conclusion
+
+SafePathZC is a flood-aware navigation and community safety information system intended to support safer route planning in Zamboanga City. By combining map routing, flood awareness, weather monitoring, community reporting, and administrative supervision, the system provides both operational value and research relevance. Proper use of the platform can help users make more informed travel decisions, while administrators can maintain data quality and system responsiveness through the provided monitoring and management tools.
